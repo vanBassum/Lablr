@@ -127,12 +127,18 @@ export function compatiblePresets(
   })
 }
 
-/** Default preset for a draft: the one using its suggested template, else the first. */
+/** Default preset for a draft: prefer its explicit preset, else its suggested template, else the first compatible. */
 export function defaultPreset(
   draft: Draft,
   presets: Preset[],
   templates: Template[],
 ): Preset | undefined {
   const compatible = compatiblePresets(draft, presets, templates)
+  // Prefer explicit preset if draft has one
+  if (draft.preset) {
+    const match = presets.find((p) => p.id === draft.preset)
+    if (match) return match
+  }
+  // Fall back to template suggestion
   return compatible.find((p) => p.template === draft.template) ?? compatible[0]
 }
