@@ -314,3 +314,17 @@ Wiring: `loadPrinters()` + `printerForMedia()` in `templates.ts`, `parsePrinter(
 
 1. The Y correction is **negative** (~-20 dots on the 25mm, -22 on the 54×70 — the LW450 prints ~1.7mm *low*), so it's a signed *placement offset*, not a "dead zone / top margin" (which would be positive). So `topMarginMm` was the wrong shape.
 2. **Offsets live per physical media, not per printer.** A roll is always loaded on a *specific* printer, so the (printer + roll) calibration is uniquely the media's — and the per-roll values differ anyway (-20 vs -22), so per-media is *more accurate*, not just simpler. So the brief "dead zone on the printer" split above is **reverted**: the printer profile drops back to **identity** (id, name) and each media carries its own `offset: {x, y}` (mm). Final placement = `media.offset` + calibration nudge; printer link (`media.printers`) is just for identity/targeting (the target printer name now shows under the preview). Measured: `s0929120 {-0.5, -1.7}`, `dymo-54x70 {0, -1.86}` (X still to calibrate).
+
+---
+
+## 2026-06-04 — Serverless AI handoff: deep links + catalog + GitHub Pages (items 27, 28, 31)
+
+Decided the AI flow needs **no backend and no MCP server** — those fight "PC off / static hosting." Instead:
+
+- **AI builds the link itself.** A Custom GPT fetches a generated **`catalog.json`** (templates + fields, compiled from the config by `scripts/build-catalog.mjs`, served on Pages) and emits a `#/draft?t=<id>&<field>=<value>…` URL as text. No tool/MCP process runs. Decided **fetch** over pasting a catalog so new templates appear automatically on push (the AI always reads live config; zero instruction upkeep).
+- **PWA deep-link route.** `parseDraftFromHash` + `LabelApp` open a `#/draft` link straight into `DraftDetail` (the linked draft is data-only, flows through the same preset/orientation/print machinery). Hash routing so it's pure-static on Pages (no SPA rewrite). Back clears the hash.
+- **Hosting.** GitHub Pages via Actions (`.github/workflows/deploy.yml`) builds `lablr-ui` → `vanbassum.github.io/Lablr/`. Vite `base` set to `/Lablr/` for builds; config fetches already use `import.meta.env.BASE_URL`.
+
+**Why this satisfies "PC off":** the AI is cloud, the PWA is on Pages — neither is the user's PC. Caveat logged: *printing* to the USB Dymo still needs the PC; fully PC-off printing is the planned Bluetooth/Niimbot path.
+
+**Deferred (start simple):** inline custom templates per-draft (the draft model will allow `template` as an object later) and a draft-store backend for short links — only if URL/paste delivery proves limiting. Auto-fit text (item 35) still pending and will help AI-generated values of varying length.

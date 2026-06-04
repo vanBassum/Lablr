@@ -1,0 +1,86 @@
+{
+  "linkFormat": "#/draft?t=<templateId>&<fieldKey>=<value>&...",
+  "howto": "Pick the one template that matches what the user is labeling. Fill EVERY field listed for it. URL-encode values. Return this site's origin + linkFormat.",
+  "templates": [
+    {
+      "id": "smd-basic",
+      "name": "SMD / through-hole part",
+      "size": {
+        "w": 25,
+        "h": 25
+      },
+      "fields": [
+        {
+          "key": "name",
+          "label": "Part"
+        },
+        {
+          "key": "subtitle",
+          "label": "Description"
+        },
+        {
+          "key": "package",
+          "label": "Package"
+        }
+      ]
+    },
+    {
+      "id": "storage-box",
+      "name": "Storage box",
+      "size": {
+        "w": 25,
+        "h": 25
+      },
+      "fields": [
+        {
+          "key": "code",
+          "label": "Bin code"
+        },
+        {
+          "key": "contents",
+          "label": "Contents"
+        }
+      ]
+    },
+    {
+      "id": "chemical-large",
+      "name": "Chemical — large (bucket)",
+      "size": {
+        "w": 54,
+        "h": 70
+      },
+      "fields": [
+        {
+          "key": "name",
+          "label": "Name"
+        },
+        {
+          "key": "formula",
+          "label": "Formula"
+        },
+        {
+          "key": "hazard",
+          "label": "Hazard"
+        }
+      ]
+    },
+    {
+      "id": "chemical-small",
+      "name": "Chemical — small (vial)",
+      "size": {
+        "w": 25,
+        "h": 25
+      },
+      "fields": [
+        {
+          "key": "name",
+          "label": "Name"
+        },
+        {
+          "key": "formula",
+          "label": "Formula"
+        }
+      ]
+    }
+  ]
+}

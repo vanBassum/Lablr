@@ -4,7 +4,9 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // GitHub Pages serves this project site under /Lablr/. Dev stays at /.
+  base: command === "build" ? "/Lablr/" : "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -14,4 +16,4 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
   },
-})
+}))

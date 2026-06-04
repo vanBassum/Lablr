@@ -11,6 +11,7 @@ import {
   pickTemplate,
 } from "@/label/templates"
 import type { Draft, Media, Preset, Printer, Template } from "@/label/types"
+import { parseDraftFromHash } from "@/label/deeplink"
 import { LabelCanvas } from "@/components/LabelCanvas"
 import { DraftDetail } from "@/components/DraftDetail"
 
@@ -22,6 +23,10 @@ export function LabelApp() {
   const [printers, setPrinters] = useState<Printer[] | null>(null)
   const [loadError, setLoadError] = useState("")
   const [selected, setSelected] = useState<number | null>(null)
+  // A draft passed in via a #/draft?... deep link (AI → link → print).
+  const [linkedDraft, setLinkedDraft] = useState<Draft | null>(() =>
+    parseDraftFromHash(window.location.hash),
+  )
 
   useEffect(() => {
     Promise.all([loadTemplates(), loadDrafts(), loadMedia(), loadPresets(), loadPrinters()])
@@ -35,10 +40,37 @@ export function LabelApp() {
       .catch((e) => setLoadError((e as Error).message))
   }, [])
 
+  useEffect(() => {
+    const onHash = () => setLinkedDraft(parseDraftFromHash(window.location.hash))
+    window.addEventListener("hashchange", onHash)
+    return () => window.removeEventListener("hashchange", onHash)
+  }, [])
+
+  function closeLinkedDraft() {
+    setLinkedDraft(null)
+    if (window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search)
+    }
+  }
+
   if (loadError)
     return <p className="text-destructive p-4 text-sm">Failed to load config: {loadError}</p>
   if (!templates || !drafts || !media || !presets || !printers)
     return <p className="text-muted-foreground p-4 text-sm">Loading…</p>
+
+  // A deep link takes precedence — open straight into the linked draft.
+  if (linkedDraft) {
+    return (
+      <DraftDetail
+        draft={linkedDraft}
+        templates={templates}
+        media={media}
+        presets={presets}
+        printers={printers}
+        onBack={closeLinkedDraft}
+      />
+    )
+  }
 
   if (selected !== null && drafts[selected]) {
     return (

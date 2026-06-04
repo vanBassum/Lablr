@@ -28,11 +28,11 @@
 24. [~] Add support for additional printers — printer **profiles** introduced as YAML (`config/printers/`, first: dymo-450), identity only for now; media link to their printer via `media.printers` (and carry the per-roll print offset). (Still single printer + WebUSB; DPI/head width remain in the driver, multi-printer + Bluetooth selection later.)
 25. [ ] Add a simple server/API if needed
 26. [ ] Add draft persistence if needed
-27. [ ] Add ChatGPT/MCP draft creation
-28. [ ] Add ChatGPT → open draft → print workflow
+27. [~] Add ChatGPT/MCP draft creation — **serverless, no MCP server**: a generated `public/catalog.json` (templates + fields, from config) is published on Pages; the AI fetches it and builds a `#/draft?t=…&field=…` URL itself. Custom-GPT Action to fetch + emit links still to configure.
+28. [~] Add ChatGPT → open draft → print workflow — PWA `#/draft` deep-link route done: a link opens straight into the detail view, ready to print. AI-emitted link pending the GPT setup; printing PC-off still needs the Bluetooth printer (USB Dymo needs the PC).
 29. [ ] Add headless/server-side printing if it becomes useful
 30. [ ] Add remote printer support if it becomes useful
-31. [ ] Add deployment and configuration packaging
+31. [~] Add deployment and configuration packaging — GitHub Pages deploy workflow (Actions) builds `lablr-ui` → https://vanbassum.github.io/Lablr/ (Vite `base: /Lablr/`). Config + `catalog.json` served statically alongside.
 32. [x] Support landscape/portrait orientation — per-print toggle; renderer rotates the design 90° within the physical label (head width is fixed, so the bitmap stays the media's physical size)
 33. [x] Persistent printer connection — connect once (open + claim) held in a PrinterProvider; each print is just transferOut. Silent reconnect on load via `navigator.usb.getDevices()`; unplug detected via the `disconnect` event. Header shows connect/disconnect.
 34. [x] Offset calibration aid — "Print alignment pattern" (border + corner-to-corner cross + center crosshair, sized to the media) in the gear, printed with the current offset; nudge X/Y and reprint to dial in each media's offset.
