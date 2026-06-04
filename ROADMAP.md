@@ -24,7 +24,7 @@
 20. [ ] Add Git-based template/media/preset configuration
 21. [ ] Add Claude-assisted template editing workflow
 22. [ ] Add support for multiple templates (SMD, chemical, storage) — mechanism + UI template selector done (smd-basic, storage-box); add the remaining real templates
-23. [ ] Add support for multiple media sizes
+23. [x] Add support for multiple media sizes — 3 real rolls: 25mm square (S0929120), 54×70, chemical-resistant 54×101 (LD 014 02.MMXIII)
 24. [ ] Add support for additional printers
 25. [ ] Add a simple server/API if needed
 26. [ ] Add draft persistence if needed
@@ -33,5 +33,6 @@
 29. [ ] Add headless/server-side printing if it becomes useful
 30. [ ] Add remote printer support if it becomes useful
 31. [ ] Add deployment and configuration packaging
+32. [x] Support landscape/portrait orientation — per-print toggle; renderer rotates the design 90° within the physical label (head width is fixed, so the bitmap stays the media's physical size)
 
 > **Guiding principle:** Keep questioning every feature that does not directly reduce the time between needing a label and having a label in your hand.

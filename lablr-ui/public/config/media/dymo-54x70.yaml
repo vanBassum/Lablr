@@ -1,0 +1,7 @@
+# Second physical roll on hand: 54mm wide × 70mm long DYMO label (no SKU).
+# Within the 450's ~56mm-wide head.
+id: dymo-54x70
+name: 54×70mm
+material: direct-thermal
+size: { w: 54, h: 70 } # mm
+offset: { x: 0, y: 0 } # mm — calibrate per printer

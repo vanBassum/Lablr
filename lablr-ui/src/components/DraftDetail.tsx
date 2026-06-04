@@ -1,5 +1,12 @@
 import { useRef, useState, type ReactNode } from "react"
-import { ChevronDown, ChevronLeft, Loader2, Printer, Settings2 } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronLeft,
+  Loader2,
+  Printer,
+  RotateCw,
+  Settings2,
+} from "lucide-react"
 import { mmToDots, openDymo, printCanvas } from "@/dymo"
 import {
   compatiblePresets,
@@ -9,7 +16,7 @@ import {
   pickTemplate,
   templateFitsMedia,
 } from "@/label/templates"
-import type { Draft, Media, Preset, Template } from "@/label/types"
+import type { Draft, Media, Orientation, Preset, Template } from "@/label/types"
 import { LabelCanvas } from "@/components/LabelCanvas"
 import { WebUsbProbe } from "@/WebUsbProbe"
 import { Button } from "@/components/ui/button"
@@ -41,6 +48,7 @@ export function DraftDetail({
   const [presetId, setPresetId] = useState(
     () => defaultPreset(draft, presets, templates)?.id ?? "",
   )
+  const [orientation, setOrientation] = useState<Orientation>("portrait")
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
   const [advanced, setAdvanced] = useState(false)
@@ -53,7 +61,10 @@ export function DraftDetail({
     pickTemplate(draft, templates)
   const selectedMedia =
     (preset && media.find((m) => m.id === preset.media)) ?? pickMedia(template, media)
-  const fits = template && selectedMedia ? templateFitsMedia(template, selectedMedia) : true
+  const fits =
+    template && selectedMedia
+      ? templateFitsMedia(template, selectedMedia, orientation)
+      : true
 
   async function handlePrint() {
     const canvas = canvasRef.current
@@ -95,6 +106,7 @@ export function DraftDetail({
             template={template}
             values={draft.values}
             media={selectedMedia}
+            orientation={orientation}
             maxEdgePx={280}
           />
         ) : (
@@ -115,21 +127,29 @@ export function DraftDetail({
           </div>
         )}
 
-        {/* Output options (presets) — the big/small choice. */}
-        {options.length > 1 && (
-          <div className="flex flex-wrap justify-center gap-2">
-            {options.map((p) => (
-              <Button
-                key={p.id}
-                size="sm"
-                variant={p.id === preset?.id ? "default" : "outline"}
-                onClick={() => setPresetId(p.id)}
-              >
-                {p.name}
-              </Button>
-            ))}
-          </div>
-        )}
+        {/* Output options: preset (the big/small choice) + orientation. */}
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {options.map((p) => (
+            <Button
+              key={p.id}
+              size="sm"
+              variant={p.id === preset?.id ? "default" : "outline"}
+              onClick={() => setPresetId(p.id)}
+            >
+              {p.name}
+            </Button>
+          ))}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setOrientation((o) => (o === "portrait" ? "landscape" : "portrait"))
+            }
+          >
+            <RotateCw />
+            {orientation === "portrait" ? "Portrait" : "Landscape"}
+          </Button>
+        </div>
       </main>
 
       {/* Sticky action bar: Print + gear */}

@@ -1,0 +1,7 @@
+# Chemical-resistant roll on hand (marking: LD 014 02.MMXIII). 54 wide × 101 long.
+id: chem-resistant
+name: Chemical-resistant 54×101
+sku: LD 014 02.MMXIII
+material: chemical-resistant
+size: { w: 54, h: 101 } # mm
+offset: { x: 0, y: 0 } # mm — calibrate per printer

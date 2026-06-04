@@ -12,6 +12,9 @@
 
 export type FieldType = "text" // v1 only; barcode/qr later.
 
+/** How the design is laid out on the physical label. */
+export type Orientation = "portrait" | "landscape"
+
 export interface TemplateField {
   key: string
   label: string

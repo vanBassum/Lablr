@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react"
 import { renderLabel } from "@/label/render"
-import type { Media, Template } from "@/label/types"
+import type { Media, Orientation, Template } from "@/label/types"
 
 /**
  * A white-framed label preview, scaled so its longest edge is `maxEdgePx`.
@@ -11,20 +11,22 @@ export function LabelCanvas({
   values,
   media,
   maxEdgePx,
+  orientation = "portrait",
   canvasRef,
 }: {
   template: Template
   values: Record<string, string>
   media: Media
   maxEdgePx: number
+  orientation?: Orientation
   canvasRef?: RefObject<HTMLCanvasElement | null>
 }) {
   const internal = useRef<HTMLCanvasElement>(null)
   const ref = canvasRef ?? internal
 
   useEffect(() => {
-    if (ref.current) renderLabel(ref.current, template, values, media)
-  }, [template, values, media, ref])
+    if (ref.current) renderLabel(ref.current, template, values, media, orientation)
+  }, [template, values, media, orientation, ref])
 
   const scale = Math.min(maxEdgePx / media.size.w, maxEdgePx / media.size.h)
 

@@ -1,5 +1,5 @@
 import { mmToDots } from "@/dymo"
-import type { LayoutNode, Media, Template, TextNode } from "./types"
+import type { LayoutNode, Media, Orientation, Template, TextNode } from "./types"
 
 type Align = "left" | "center" | "right"
 
@@ -52,31 +52,47 @@ function draw(
 
 /**
  * Render a template + draft values onto `canvas` as a 1-bit-ready black/white
- * bitmap. The canvas is sized to the MEDIA (the physical label); layout is
- * authored in mm with a center origin and centered within the label. This
- * canvas IS both the preview and the print payload — there is no second
- * renderer, and no head offset here (that's a printer-positioning concern,
- * applied as commands at print time — see dymo.ts HeadOffset).
+ * bitmap. The canvas is always the MEDIA's physical size (the head width can't
+ * change); `orientation` decides whether the design is laid out upright or
+ * rotated 90° within that physical label. Layout is authored in mm with a
+ * center origin and centered within the design area. This canvas IS both the
+ * preview and the print payload — there is no second renderer, and no head
+ * offset here (that's a print-time printer command — see dymo.ts HeadOffset).
  */
 export function renderLabel(
   canvas: HTMLCanvasElement,
   template: Template,
   values: Record<string, string>,
   media: Media,
+  orientation: Orientation = "portrait",
 ): void {
-  const labelW = mmToDots(media.size.w)
-  const labelH = mmToDots(media.size.h)
-  canvas.width = labelW
-  canvas.height = labelH
+  const Wd = mmToDots(media.size.w)
+  const Hd = mmToDots(media.size.h)
+  canvas.width = Wd
+  canvas.height = Hd
 
   const ctx = canvas.getContext("2d")
   if (!ctx) throw new Error("no 2d context")
 
   ctx.fillStyle = "white"
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillRect(0, 0, Wd, Hd)
   ctx.fillStyle = "black"
 
+  // In landscape the design area is the label rotated 90°: its width is the
+  // label's height and vice-versa. We lay out into that area, then rotate it
+  // onto the physical bitmap.
+  const landscape = orientation === "landscape"
+  const designW = landscape ? Hd : Wd
+  const designH = landscape ? Wd : Hd
+
+  ctx.save()
+  if (landscape) {
+    ctx.translate(Wd / 2, Hd / 2)
+    ctx.rotate(Math.PI / 2)
+    ctx.translate(-designW / 2, -designH / 2)
+  }
   const total = measure(template.layout)
-  const startY = Math.max(0, (labelH - total) / 2)
-  draw(ctx, template.layout, values, 0, startY, labelW, "center")
+  const startY = Math.max(0, (designH - total) / 2)
+  draw(ctx, template.layout, values, 0, startY, designW, "center")
+  ctx.restore()
 }

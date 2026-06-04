@@ -1,5 +1,5 @@
 import { parseMedia, parseTemplate } from "./load"
-import type { Draft, Media, Preset, Template } from "./types"
+import type { Draft, Media, Orientation, Preset, Template } from "./types"
 
 // Config is fetched at runtime from /config (the public folder), NOT bundled —
 // so templates/drafts can be edited or added without rebuilding, matching the
@@ -49,9 +49,18 @@ export function templateAccepts(template: Template, draft: Draft): boolean {
 /** A human-readable name for a draft (its label, or its values joined). */
 export const draftName = (d: Draft) => d.label ?? Object.values(d.values).join(" · ")
 
-/** A template fits a media when its design size is no larger than the label. */
-export function templateFitsMedia(template: Template, media: Media): boolean {
-  return template.size.w <= media.size.w && template.size.h <= media.size.h
+/**
+ * A template fits a media when its design size is no larger than the label.
+ * In landscape the label's dimensions are effectively swapped.
+ */
+export function templateFitsMedia(
+  template: Template,
+  media: Media,
+  orientation: Orientation = "portrait",
+): boolean {
+  const w = orientation === "landscape" ? media.size.h : media.size.w
+  const h = orientation === "landscape" ? media.size.w : media.size.h
+  return template.size.w <= w && template.size.h <= h
 }
 
 /** The template to show for a draft by default: its suggestion, else first that fits. */

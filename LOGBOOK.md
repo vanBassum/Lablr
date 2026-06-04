@@ -261,3 +261,11 @@ Reworked the UX into the flow the user described:
 - **Media physicality stands:** a preset names a media, but you can only physically print the one whose roll is loaded. Preview works for any; a "roll not loaded" warning is a later nicety.
 
 **UI:** the detail screen shows compatible presets as **chips** (the big/small choice) above Print — elevated from the gear to the main screen. The gear now holds **calibration & diagnostics** (offset nudge + WebUSB probe) rather than template/media selects, since presets are the curated template+media choice. Added media `dymo-99014` (54×101mm) and resized `chemical-large` to fill it so "Bucket" is a real output. CLAUDE.md model section updated to Draft / Template / Media / Preset / Printer.
+
+---
+
+## 2026-06-04 — Real media inventory + landscape/portrait (items 23, 32)
+
+**Media inventory** — replaced the invented placeholder with the user's actual rolls (`public/config/media/`): `s0929120` (25mm square), `dymo-54x70` (54×70, no SKU), `chem-resistant` (54×101, marking "LD 014 02.MMXIII"). Chemical presets now offer **Vial** (25mm) · **Bucket** (54×70) · **Chem-resistant** (54×101); `chemical-large` resized to 54×70 so it fits. Item 23 done.
+
+**Orientation (item 32)** — added a per-print **portrait/landscape toggle** on the detail screen. Implementation: the print head width is fixed, so the bitmap is always the media's physical `w×h` dots; landscape lays the design into a *swapped* area (label height × width) and rotates it 90° onto the bitmap (`renderLabel(…, orientation)`). `templateFitsMedia` is orientation-aware (swaps the label's dims). Kept as a per-print toggle (default portrait) rather than a preset/template field — simplest, most "mode"-like; can be promoted to a preset default later if wanted. Rotation direction is a guess (clockwise) — verify on the device; trivial to flip.

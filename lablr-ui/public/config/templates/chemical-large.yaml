@@ -2,7 +2,7 @@
 # bigger media + layout. Proves draft ⟂ template (one draft, many outputs).
 id: chemical-large
 name: Chemical — large (bucket)
-size: { w: 54, h: 101 } # mm — fills the 54×101 roll
+size: { w: 54, h: 70 } # mm — fills the 54×70 roll
 
 fields:
   - { key: name, label: Name }
