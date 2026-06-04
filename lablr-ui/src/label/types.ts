@@ -87,4 +87,5 @@ export interface Preset {
   name: string
   template: string // template id
   media: string // media id
+  orientation?: Orientation // defaults to "portrait"
 }

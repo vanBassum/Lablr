@@ -50,7 +50,7 @@ Labels compose from decoupled concepts:
 - **Draft** — the data (field values) + an **optional, overridable suggested template**. Created by the AI; *not* bound to a template (the same draft prints big or small).
 - **Template** — declarative layout + field schema + design size. Owns which fields exist; a template can render any draft that supplies its fields.
 - **Media** — the physical roll (size, material, SKU) + calibrated head offset. *What's loaded* determines the media at print time — physical runtime state, never baked into a draft.
-- **Preset** — a named, reusable **(template + media)** output format (e.g. "Vial" = chemical-small + 25mm; "Bucket" = chemical-large + big roll). A draft **auto-offers every preset whose template fits its data**, so one draft can produce multiple deliberate outputs (big *and* small). Presets are shared, defined once — not per-draft.
+- **Preset** — a named, reusable **(template + media + orientation)** output format (e.g. "Vial" = chemical-small + 25mm + portrait). A draft **auto-offers every preset whose template fits its data**, so one draft can produce multiple deliberate outputs (big *and* small, portrait *and* landscape). Presets are shared, defined once — not per-draft. Orientation defaults to portrait; a per-print toggle overrides it.
 - **Printer** — whatever's connected (DPI lives here).
 
 Note: presets are scoped to **(template + media)**, not printer, and exist to serve **multi-output** drafts (the human picks "Vial" vs "Bucket"). They were briefly dropped when each draft had a single output; the multi-output need brought them back in this refined form. (See LOGBOOK.)

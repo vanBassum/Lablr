@@ -48,7 +48,8 @@ export function DraftDetail({
   const [presetId, setPresetId] = useState(
     () => defaultPreset(draft, presets, templates)?.id ?? "",
   )
-  const [orientation, setOrientation] = useState<Orientation>("portrait")
+  const [seenPreset, setSeenPreset] = useState(presetId)
+  const [orientationOverride, setOrientationOverride] = useState<Orientation | null>(null)
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
   const [advanced, setAdvanced] = useState(false)
@@ -56,6 +57,13 @@ export function DraftDetail({
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const preset = options.find((p) => p.id === presetId) ?? options[0]
+  // Orientation defaults to the selected preset's; reset the override when the
+  // preset changes (render-phase reset, not an effect).
+  if (seenPreset !== presetId) {
+    setSeenPreset(presetId)
+    setOrientationOverride(null)
+  }
+  const orientation: Orientation = orientationOverride ?? preset?.orientation ?? "portrait"
   const template =
     (preset && templates.find((t) => t.id === preset.template)) ??
     pickTemplate(draft, templates)
@@ -143,7 +151,7 @@ export function DraftDetail({
             size="sm"
             variant="outline"
             onClick={() =>
-              setOrientation((o) => (o === "portrait" ? "landscape" : "portrait"))
+              setOrientationOverride(orientation === "portrait" ? "landscape" : "portrait")
             }
           >
             <RotateCw />

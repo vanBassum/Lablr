@@ -95,7 +95,13 @@ function DraftCard({
     >
       <div className="flex h-28 items-center justify-center">
         {template && m ? (
-          <LabelCanvas template={template} values={draft.values} media={m} maxEdgePx={110} />
+          <LabelCanvas
+            template={template}
+            values={draft.values}
+            media={m}
+            orientation={preset?.orientation}
+            maxEdgePx={110}
+          />
         ) : (
           <span className="text-muted-foreground text-xs">no template</span>
         )}
