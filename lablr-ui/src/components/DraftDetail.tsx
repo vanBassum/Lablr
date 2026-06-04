@@ -147,7 +147,7 @@ export function DraftDetail({
           <LabelCanvas
             canvasRef={canvasRef}
             template={template}
-            values={draft.values}
+            fields={draft.fields}
             media={selectedMedia}
             orientation={orientation}
             maxEdgePx={280}

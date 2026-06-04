@@ -63,26 +63,39 @@ export function printerForMedia(
   return printers[0]
 }
 
-/** A template can render a draft when the draft supplies all the fields it needs. */
+/** A template can render a draft when the draft supplies all required fields. */
 export function templateAccepts(template: Template, draft: Draft): boolean {
-  return template.fields.every((f) => f.key in draft.values)
+  return Object.entries(template.fields).every(([key, field]) => {
+    // Required fields (or any field if not explicitly optional) must be present
+    if (field.required !== false) return key in draft.fields
+    return true
+  })
 }
 
-/** A human-readable name for a draft (its label, or its values joined). */
-export const draftName = (d: Draft) => d.label ?? Object.values(d.values).join(" · ")
+/** A human-readable name for a draft (its label, or its fields joined). */
+export const draftName = (d: Draft) => d.label ?? Object.values(d.fields).join(" · ")
 
 /**
- * A template fits a media when its design size is no larger than the label.
- * In landscape the label's dimensions are effectively swapped.
+ * A template fits a media when its design size can fit on the label.
+ * Uses contain scaling, so as long as the template's aspect ratio is reasonable,
+ * it fits. (We may want to add a min-scale threshold later.)
  */
 export function templateFitsMedia(
   template: Template,
   media: Media,
   orientation: Orientation = "portrait",
 ): boolean {
-  const w = orientation === "landscape" ? media.size.h : media.size.w
-  const h = orientation === "landscape" ? media.size.w : media.size.h
-  return template.size.w <= w && template.size.h <= h
+  // In landscape, design dimensions are swapped
+  const designW = orientation === "landscape" ? template.designSize.height : template.designSize.width
+  const designH = orientation === "landscape" ? template.designSize.width : template.designSize.height
+  const mediaW = media.size.w
+  const mediaH = media.size.h
+
+  // Contain always fits (scale factor is at least > 0), so we could return true.
+  // For now, require minimum scale (e.g., don't shrink below 50% of design).
+  // This prevents tiny designs but allows flexibility.
+  const scale = Math.min(mediaW / designW, mediaH / designH)
+  return scale >= 0.3 // At least 30% of design size
 }
 
 /** The template to show for a draft by default: its suggestion, else first that fits. */

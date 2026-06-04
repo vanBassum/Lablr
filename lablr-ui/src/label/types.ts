@@ -16,51 +16,47 @@ export type FieldType = "text" // v1 only; barcode/qr later.
 export type Orientation = "portrait" | "landscape"
 
 export interface TemplateField {
-  key: string
+  required?: boolean
   label: string
-  type?: FieldType // defaults to "text"
 }
 
-/** A line of text — either a literal, or bound to a field's value via `field`. */
-export interface TextNode {
+export interface TextElement {
   type: "text"
-  field?: string
-  text?: string
-  size: number // cap height, mm
-  weight?: "normal" | "bold"
+  field?: string // field key from template.fields
+  text?: string // literal text if no field
+  rect: { x: number; y: number; width: number; height: number } // mm
   align?: "left" | "center" | "right"
+  valign?: "top" | "center" | "bottom"
+  font: {
+    maxSize: number // mm, cap height
+    minSize: number // mm, minimum size before giving up
+    weight?: "normal" | "bold"
+  }
+  wrap?: boolean
+  maxLines?: number
+  fit?: "shrink" // more modes later
 }
 
-/** A stack of nodes. v1 renders vertical stacks; horizontal comes later. */
-export interface StackNode {
-  type: "stack"
-  direction?: "vertical"
-  align?: "left" | "center" | "right" // cross-axis default for children
-  gap?: number // mm
-  children: LayoutNode[]
-}
-
-export type LayoutNode = TextNode | StackNode
+export type TemplateElement = TextElement
 
 export interface Template {
   id: string
   name: string
-  size: { w: number; h: number } // mm — the label this template is designed for
-  fields: TemplateField[]
-  layout: LayoutNode
+  designSize: { width: number; height: number } // mm — coordinate space for design
+  fields: Record<string, TemplateField>
+  elements: TemplateElement[]
 }
 
 /**
- * The data for a label — values only, NOT bound to a template. The same draft
- * (e.g. a chemical) can be rendered by any compatible template (big bucket
- * label, small vial label). A template is compatible when the draft supplies
- * every field the template needs (see `templateAccepts`).
+ * The data for a label. References a preset (template + media + orientation).
+ * A draft is pure data; the preset determines how it renders.
  */
 export interface Draft {
   label?: string // optional display name
-  /** Optional template the AI suggests for this data — a hint, freely overridable. */
+  preset?: string // the preset id (template + media + orientation)
+  /** Legacy: template suggestion from old-style deep links; will be resolved to preset. */
   template?: string
-  values: Record<string, string>
+  fields: Record<string, string>
 }
 
 /**

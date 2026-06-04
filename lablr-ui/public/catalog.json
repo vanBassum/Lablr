@@ -5,9 +5,9 @@
     {
       "id": "smd-basic",
       "name": "SMD / through-hole part",
-      "size": {
-        "w": 25,
-        "h": 25
+      "designSize": {
+        "width": 50,
+        "height": 20
       },
       "fields": [
         {
@@ -27,9 +27,9 @@
     {
       "id": "storage-box",
       "name": "Storage box",
-      "size": {
-        "w": 25,
-        "h": 25
+      "designSize": {
+        "width": 50,
+        "height": 20
       },
       "fields": [
         {
@@ -45,9 +45,9 @@
     {
       "id": "chemical-large",
       "name": "Chemical — large (bucket)",
-      "size": {
-        "w": 54,
-        "h": 70
+      "designSize": {
+        "width": 108,
+        "height": 140
       },
       "fields": [
         {
@@ -67,9 +67,9 @@
     {
       "id": "chemical-small",
       "name": "Chemical — small (vial)",
-      "size": {
-        "w": 25,
-        "h": 25
+      "designSize": {
+        "width": 50,
+        "height": 20
       },
       "fields": [
         {
@@ -79,6 +79,10 @@
         {
           "key": "formula",
           "label": "Formula"
+        },
+        {
+          "key": "hazard",
+          "label": "Hazard"
         }
       ]
     }

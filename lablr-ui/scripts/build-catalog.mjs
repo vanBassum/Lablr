@@ -11,11 +11,12 @@ const ids = JSON.parse(await readFile(new URL("index.json", TEMPLATES), "utf8"))
 const templates = []
 for (const id of ids) {
   const t = load(await readFile(new URL(`${id}.yaml`, TEMPLATES), "utf8"))
+  const fields = Object.entries(t.fields ?? {}).map(([key, field]) => ({ key, label: field.label }))
   templates.push({
     id: t.id,
     name: t.name,
-    size: t.size,
-    fields: (t.fields ?? []).map((f) => ({ key: f.key, label: f.label })),
+    designSize: t.designSize,
+    fields,
   })
 }
 

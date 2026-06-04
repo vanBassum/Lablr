@@ -7,14 +7,14 @@ export function parseTemplate(yamlText: string): Template {
   if (!t || typeof t.id !== "string") {
     throw new Error("template: missing string `id`")
   }
-  if (!t.size || typeof t.size.w !== "number" || typeof t.size.h !== "number") {
-    throw new Error(`template ${t.id}: missing size { w, h } in mm`)
+  if (!t.designSize || typeof t.designSize.width !== "number" || typeof t.designSize.height !== "number") {
+    throw new Error(`template ${t.id}: missing designSize { width, height } in mm`)
   }
-  if (!Array.isArray(t.fields) || t.fields.length === 0) {
-    throw new Error(`template ${t.id}: missing fields`)
+  if (!t.fields || typeof t.fields !== "object") {
+    throw new Error(`template ${t.id}: missing fields object`)
   }
-  if (!t.layout) {
-    throw new Error(`template ${t.id}: missing layout`)
+  if (!Array.isArray(t.elements) || t.elements.length === 0) {
+    throw new Error(`template ${t.id}: missing elements array`)
   }
   return t
 }

@@ -8,14 +8,14 @@ import type { Media, Orientation, Template } from "@/label/types"
  */
 export function LabelCanvas({
   template,
-  values,
+  fields,
   media,
   maxEdgePx,
   orientation = "portrait",
   canvasRef,
 }: {
   template: Template
-  values: Record<string, string>
+  fields: Record<string, string>
   media: Media
   maxEdgePx: number
   orientation?: Orientation
@@ -25,8 +25,8 @@ export function LabelCanvas({
   const ref = canvasRef ?? internal
 
   useEffect(() => {
-    if (ref.current) renderLabel(ref.current, template, values, media, orientation)
-  }, [template, values, media, orientation, ref])
+    if (ref.current) renderLabel(ref.current, template, fields, media, orientation)
+  }, [template, fields, media, orientation, ref])
 
   const scale = Math.min(maxEdgePx / media.size.w, maxEdgePx / media.size.h)
 

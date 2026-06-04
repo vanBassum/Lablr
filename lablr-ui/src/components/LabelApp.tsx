@@ -147,7 +147,7 @@ function DraftCard({
         {template && m ? (
           <LabelCanvas
             template={template}
-            values={draft.values}
+            fields={draft.fields}
             media={m}
             orientation={preset?.orientation}
             maxEdgePx={110}

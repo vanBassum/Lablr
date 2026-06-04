@@ -11,15 +11,17 @@ export function parseDraftFromHash(hash: string): Draft | null {
   if (!m) return null
 
   const params = new URLSearchParams(m[1])
-  const values: Record<string, string> = {}
+  const fields: Record<string, string> = {}
   let template: string | undefined
+  let preset: string | undefined
   let label: string | undefined
 
   for (const [k, v] of params) {
     if (k === "t") template = v
+    else if (k === "p") preset = v
     else if (k === "label") label = v
-    else values[k] = v
+    else fields[k] = v
   }
 
-  return { label, template, values }
+  return { label, template, preset, fields }
 }

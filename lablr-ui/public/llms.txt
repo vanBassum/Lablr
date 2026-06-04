@@ -11,10 +11,10 @@ preview and print it. Reply with that URL.
 4. Reply with the full URL.
 
 ## Templates
-- smd-basic — "SMD / through-hole part" (25×25mm) — fields: name, subtitle, package
-- storage-box — "Storage box" (25×25mm) — fields: code, contents
-- chemical-large — "Chemical — large (bucket)" (54×70mm) — fields: name, formula, hazard
-- chemical-small — "Chemical — small (vial)" (25×25mm) — fields: name, formula
+- smd-basic — "SMD / through-hole part" (undefined×undefinedmm) — fields: name, subtitle, package
+- storage-box — "Storage box" (undefined×undefinedmm) — fields: code, contents
+- chemical-large — "Chemical — large (bucket)" (undefined×undefinedmm) — fields: name, formula, hazard
+- chemical-small — "Chemical — small (vial)" (undefined×undefinedmm) — fields: name, formula, hazard
 
 ## Example
 "a TIP31 NPN power transistor in a TO-220 package" →
