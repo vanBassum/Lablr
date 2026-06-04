@@ -151,3 +151,11 @@ Templates moved from `src/label/templates/*.yaml` (imported via Vite `?raw`, **b
 **Mechanism:** a static folder can't be directory-listed, so a tiny **manifest** `public/config/templates/index.json` (`["smd-basic"]`) lists template ids; the loader reads the manifest, then fetches+parses each `<id>.yaml`. Adding a template = drop the file + add its id to the manifest. Loading is async, so the UI has loading/error states. Paths use `import.meta.env.BASE_URL` to survive a sub-path deploy behind Traefik.
 
 **Not yet:** this is runtime *loading*, not git-based config (item 20) or live HMR reload (item 19 — a manual refresh re-fetches, which is enough for now).
+
+---
+
+## 2026-06-04 — Manual editor dropped; second template + selector (item 6 dropped, item 22 started)
+
+**Decision (user): no manual label editor.** The PWA is a renderer/printer, not an authoring tool — drafts are created by the AI (the ChatGPT→draft→link→print workflow, items 27–28), and the bundled sample drafts are stand-ins for those. A manual field-editor would build something the architecture says shouldn't exist. **Item 6 dropped** (number retained per stable-ID rule).
+
+**Built instead:** a second template `storage-box.yaml` (fields `code` + `contents`, different layout from smd-basic) and a **template selector** dropdown in the test page. Switching template changes the fields *and* layout entirely — concrete proof that the template, not the draft, defines what a label is. Draft labels in the UI are now generic (`Object.values(values).join(" · ")`) since fields differ per template. This lands the multi-template mechanism for **item 22** (remaining: add the real template set).

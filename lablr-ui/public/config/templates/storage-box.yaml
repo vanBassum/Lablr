@@ -1,0 +1,23 @@
+# Second template — deliberately different fields + layout from smd-basic, to
+# prove the template (not the draft) decides what a label is.
+id: storage-box
+name: Storage box
+size: { w: 25, h: 25 } # mm — same 25mm square media
+
+fields:
+  - { key: code, label: Bin code }
+  - { key: contents, label: Contents }
+
+layout:
+  type: stack
+  direction: vertical
+  align: center
+  gap: 1.5
+  children:
+    - { type: text, field: code, size: 7, weight: bold }
+    - { type: text, field: contents, size: 2.8 }
+
+samples:
+  - { code: A1, contents: M3 × 6 screws }
+  - { code: B4, contents: 0603 resistors }
+  - { code: C2, contents: JST connectors }

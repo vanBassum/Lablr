@@ -7,11 +7,15 @@ import type { Draft, Template } from "@/label/types"
 
 const HEAD_DOTS = MAX_BYTES_PER_LINE * 8
 
+/** A human label for a draft — generic, since every template has different fields. */
+const draftLabel = (d: Draft) => Object.values(d.values).join(" · ")
+
 export function DymoPrintTest() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [templates, setTemplates] = useState<Template[] | null>(null)
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [loadError, setLoadError] = useState("")
+  const [templateId, setTemplateId] = useState("")
   const [draftIndex, setDraftIndex] = useState(0)
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
@@ -23,19 +27,25 @@ export function DymoPrintTest() {
       .then((t) => {
         setTemplates(t)
         setDrafts(draftsFrom(t))
+        setTemplateId(t[0]?.id ?? "")
       })
       .catch((e) => setLoadError((e as Error).message))
   }, [])
 
-  const draft = drafts[draftIndex]
-  const template =
-    templates && draft ? templates.find((t) => t.id === draft.templateId) : undefined
+  const template = templates?.find((t) => t.id === templateId)
+  const templateDrafts = drafts.filter((d) => d.templateId === templateId)
+  const draft = templateDrafts[draftIndex]
 
   useEffect(() => {
     if (canvasRef.current && template && draft) {
       renderLabel(canvasRef.current, template, draft.values, { offsetX, offsetY })
     }
   }, [template, draft, offsetX, offsetY])
+
+  function selectTemplate(id: string) {
+    setTemplateId(id)
+    setDraftIndex(0)
+  }
 
   async function handlePrint() {
     const canvas = canvasRef.current
@@ -48,7 +58,7 @@ export function DymoPrintTest() {
       await printCanvas(device, canvas)
       await device.releaseInterface(0)
       await device.close()
-      setStatus(`✓ Printed "${draft.values.name}" (offset X=${offsetX} Y=${offsetY}).`)
+      setStatus(`✓ Printed "${draftLabel(draft)}" (offset X=${offsetX} Y=${offsetY}).`)
     } catch (e) {
       setStatus(`✗ ${(e as Error).message}`)
     } finally {
@@ -58,7 +68,7 @@ export function DymoPrintTest() {
 
   if (loadError) return <p>Failed to load templates: {loadError}</p>
   if (!templates) return <p>Loading templates…</p>
-  if (!template || !draft) return <p>No templates found in config.</p>
+  if (!template) return <p>No templates found in config.</p>
 
   const labelH = mmToDots(template.size.h)
 
@@ -66,20 +76,37 @@ export function DymoPrintTest() {
     <div className="flex flex-col gap-3">
       <h2 className="font-medium">Render a draft → preview = print</h2>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-xs">Test draft ({template.name})</span>
-        <select
-          value={draftIndex}
-          onChange={(e) => setDraftIndex(Number(e.target.value))}
-          className="bg-background w-64 rounded border px-2 py-1"
-        >
-          {drafts.map((d, i) => (
-            <option key={i} value={i}>
-              {d.values.name} — {d.values.subtitle}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="flex flex-wrap gap-4">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs">Template</span>
+          <select
+            value={templateId}
+            onChange={(e) => selectTemplate(e.target.value)}
+            className="bg-background w-56 rounded border px-2 py-1"
+          >
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs">Test draft</span>
+          <select
+            value={draftIndex}
+            onChange={(e) => setDraftIndex(Number(e.target.value))}
+            className="bg-background w-56 rounded border px-2 py-1"
+          >
+            {templateDrafts.map((d, i) => (
+              <option key={i} value={i}>
+                {draftLabel(d)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       <canvas
         ref={canvasRef}
@@ -118,13 +145,13 @@ export function DymoPrintTest() {
             className="bg-background w-24 rounded border px-2 py-1 font-mono"
           />
         </label>
-        <Button onClick={handlePrint} disabled={busy}>
+        <Button onClick={handlePrint} disabled={busy || !draft}>
           Print label
         </Button>
       </div>
 
       <pre className="bg-muted rounded p-3 font-mono text-xs whitespace-pre-wrap">
-        {status || "Pick a draft and print. Swap drafts to see the template re-render."}
+        {status || "Switch template or draft — the preview re-renders from the YAML."}
       </pre>
     </div>
   )

@@ -7,7 +7,7 @@
 3. [x] Decide how printing works — one printer-transport interface, first impl WebUSB from desktop Chrome; Web Bluetooth added later
 4. [x] Prove a label can be printed to the target printer — Dymo 450 over WebUSB, render→preview→raster→print. (Alignment offset is a media/printer-profile concern, deferred to items 12–14.)
 5. [x] Define the draft model — generic envelope `{ templateId, values }`; the **template** owns the field schema, so fields vary per template (not a fixed draft schema). Draft references template by id and supplies all values.
-6. [ ] Create a minimal label editor (edit field values; today only fixture selection)
+6. [ ] ~~Create a minimal label editor~~ — **dropped**. The PWA renders/prints; it does not author. Field values come from AI-created drafts (items 27–28), not manual entry. (Number kept per stable-ID rule.)
 7. [x] Create a minimal preview — canvas render of a draft via the declarative layout
 8. [x] Ensure preview and print use the same bitmap — one canvas is both preview and print payload, by construction
 9. [x] Create the first hardcoded template — `smd-basic` (name/subtitle/package) + sample drafts
@@ -23,7 +23,7 @@
 19. [ ] Add live template reload during development
 20. [ ] Add Git-based template/media/preset configuration
 21. [ ] Add Claude-assisted template editing workflow
-22. [ ] Add support for multiple templates (SMD, chemical, storage)
+22. [ ] Add support for multiple templates (SMD, chemical, storage) — mechanism + UI template selector done (smd-basic, storage-box); add the remaining real templates
 23. [ ] Add support for multiple media sizes
 24. [ ] Add support for additional printers
 25. [ ] Add a simple server/API if needed
