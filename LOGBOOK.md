@@ -31,3 +31,20 @@ This dream only becomes possible with a **networked (WiFi) printer** + server-si
 **Consequence for roadmap item 2 (choose printer):** the printer choice decides which future is open. Bluetooth (e.g. Niimbot) → phone-driven flow (v1 target above). Networked printer → server could print directly, enabling the hands-free ChatGPT dream later.
 
 **Note:** This does not change build order — we still prove plain printing first, before any ChatGPT wiring.
+
+---
+
+## 2026-06-04 — Refinement: ChatGPT hands off via a deep link
+
+ChatGPT can return a **link** after creating the draft. That's the handoff mechanism:
+```
+talk to ChatGPT → it POSTs a draft to the server → server returns a draft link
+   → user taps link → PWA opens DIRECTLY on that draft → preview → one tap → print
+```
+
+**Why this is good:**
+- Removes the last navigation friction — no opening the app and hunting for the draft; the link lands you on it.
+- Sidesteps the "ChatGPT can't show the real preview" wall entirely — it doesn't need to; the link carries you into the PWA where the single real preview lives.
+- Still fully frontend-first: ChatGPT only produces draft *data* + a URL; the phone renders/previews/prints.
+
+**Implication for later:** the server must mint a draft ID and the PWA needs deep-link routing (`/draft/:id`). Both small.
