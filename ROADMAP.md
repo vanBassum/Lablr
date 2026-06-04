@@ -1,6 +1,6 @@
 # Lablr — Roadmap
 
-- [ ] Define the end-to-end workflow from "I need a label" to "label printed"
+- [x] Define the end-to-end workflow from "I need a label" to "label printed"
 - [ ] Choose the first printer target (likely Niimbot)
 - [ ] Decide how printing works (Web Bluetooth, local bridge, etc.)
 - [ ] Prove a label can be printed to the target printer
