@@ -16,9 +16,17 @@ import {
   draftName,
   pickMedia,
   pickTemplate,
+  printerForMedia,
   templateFitsMedia,
 } from "@/label/templates"
-import type { Draft, Media, Orientation, Preset, Template } from "@/label/types"
+import type {
+  Draft,
+  Media,
+  Orientation,
+  Preset,
+  Printer as PrinterProfile,
+  Template,
+} from "@/label/types"
 import { renderCalibration } from "@/label/render"
 import { LabelCanvas } from "@/components/LabelCanvas"
 import { WebUsbProbe } from "@/WebUsbProbe"
@@ -38,12 +46,14 @@ export function DraftDetail({
   templates,
   media,
   presets,
+  printers,
   onBack,
 }: {
   draft: Draft
   templates: Template[]
   media: Media[]
   presets: Preset[]
+  printers: PrinterProfile[]
   onBack: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -78,11 +88,17 @@ export function DraftDetail({
       ? templateFitsMedia(template, selectedMedia, orientation)
       : true
 
-  // Head offset in dots = media calibration + manual nudge (both per-dot now).
+  const printerProfile = printerForMedia(selectedMedia, printers)
+
+  // Head offset in dots: the printer's leading-edge dead zone (Y, shared by all
+  // rolls) + the media's per-roll position + the manual calibration nudge.
   function headOffset() {
     return {
       x: mmToDots(selectedMedia?.offset?.x ?? 0) + offsetX,
-      y: mmToDots(selectedMedia?.offset?.y ?? 0) + offsetY,
+      y:
+        mmToDots(printerProfile?.topMarginMm ?? 0) +
+        mmToDots(selectedMedia?.offset?.y ?? 0) +
+        offsetY,
     }
   }
   const dotsToMm = (dots: number) => ((dots / DPI) * 25.4).toFixed(1)
@@ -221,9 +237,9 @@ export function DraftDetail({
                   </Field>
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  Print the pattern, see where it lands, nudge, repeat. Current offset ≈{" "}
-                  {dotsToMm(headOffset().x)}×{dotsToMm(headOffset().y)}mm — bake it into the
-                  media YAML's <code>offset</code>.
+                  Print, nudge to align. X ≈ {dotsToMm(headOffset().x)}mm → media{" "}
+                  <code>offset.x</code> (per roll); Y ≈ {dotsToMm(headOffset().y)}mm → printer{" "}
+                  <code>topMarginMm</code> (shared by all rolls).
                 </p>
                 <Button
                   variant="outline"

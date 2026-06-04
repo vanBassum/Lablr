@@ -295,3 +295,17 @@ Printing used to `requestDevice → open → claim → print → release → clo
 **Thin lines printed faint** — anti-aliased thin strokes render as gray pixels above the black cutoff. Added `thresholdTo1Bit` in the renderer (cutoff `INK_THRESHOLD = 176`) applied at the end of `renderLabel` and `renderCalibration`, so the canvas becomes pure black/white: thin lines round to solid black, and the **preview now shows the true 1-bit result** (tightening preview = print, which previously showed smooth gray the printer wouldn't reproduce). One knob (`INK_THRESHOLD`) tunes overall darkness.
 
 The calibration panel now also shows the current offset in **mm** (nudge is in dots; media YAML `offset` is mm) so the value is copy-pasteable.
+
+---
+
+## 2026-06-04 — Printer profiles; dead zone is a printer trait (item 24, partial)
+
+The leading-edge dead zone is a **printer** property (gap-sensor → head distance), identical for every roll — so storing it per-media was wrong. Introduced **printer profiles** as YAML config (`config/printers/`, first `dymo-450.yaml`) holding `topMarginMm`. And, per the user, **media link to compatible printers** via `media.printers: [ids]` (a DYMO roll fits the LabelWriter, not the Niimbot).
+
+The print-placement offset is now split by ownership:
+
+- **Y (dead zone)** → `printer.topMarginMm`, shared by all rolls (`printerForMedia` resolves the media's printer; first compatible, else first).
+- **X (position across head)** → `media.offset.x`, per roll.
+- Manual nudge in the gear still finds the values; the calibration hint says which knob each axis feeds. Preview stays untouched (offset is print-only).
+
+Wiring: `loadPrinters()` + `printerForMedia()` in `templates.ts`, `parsePrinter()` in `load.ts`, `Printer` type, `LabelApp` loads + passes printers to `DraftDetail`. DPI + head width still live in `dymo.ts` (single printer); they migrate to the profile when multi-printer / Niimbot lands. Item 24 marked partial (`[~]`).

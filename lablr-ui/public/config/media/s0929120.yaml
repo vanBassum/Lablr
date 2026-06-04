@@ -10,3 +10,4 @@ size: { w: 25, h: 25 } # mm
 # deferred item-4 offset). Measured once, stored here; 0 until calibrated.
 # (When multiple printers exist, this becomes a printer×media calibration.)
 offset: { x: 0, y: 0 } # mm
+printers: [dymo-450]

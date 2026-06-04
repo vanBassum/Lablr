@@ -25,7 +25,7 @@
 21. [ ] Add Claude-assisted template editing workflow
 22. [ ] Add support for multiple templates (SMD, chemical, storage) — mechanism + UI template selector done (smd-basic, storage-box); add the remaining real templates
 23. [x] Add support for multiple media sizes — 3 real rolls: 25mm square (S0929120), 54×70, chemical-resistant 54×101 (LD 014 02.MMXIII)
-24. [ ] Add support for additional printers
+24. [~] Add support for additional printers — printer **profiles** introduced as YAML (`config/printers/`, first: dymo-450) holding the leading-edge dead zone (`topMarginMm`); media link to compatible printers via `media.printers`. (Still single printer + WebUSB; DPI/head width remain in the driver, multi-printer + Bluetooth selection later.)
 25. [ ] Add a simple server/API if needed
 26. [ ] Add draft persistence if needed
 27. [ ] Add ChatGPT/MCP draft creation

@@ -5,3 +5,4 @@ name: 54×70mm
 material: direct-thermal
 size: { w: 54, h: 70 } # mm
 offset: { x: 0, y: 0 } # mm — calibrate per printer
+printers: [dymo-450]

@@ -75,6 +75,20 @@ export interface Media {
   material?: string
   size: { w: number; h: number } // mm
   offset?: { x: number; y: number } // mm — where the label sits on the head
+  printers?: string[] // ids of printers this roll can be used on
+}
+
+/**
+ * A printer profile. Holds printer-level physical traits shared by all media —
+ * notably the leading-edge dead zone (gap sensor → print head distance), which
+ * is the same for every roll. (DPI + head width still live in the driver while
+ * there's a single printer; they move here when item 24 adds more.)
+ */
+export interface Printer {
+  id: string
+  name: string
+  /** Unprintable band at the label's leading edge, mm. Same for every roll. */
+  topMarginMm?: number
 }
 
 /**

@@ -1,5 +1,5 @@
-import { parseMedia, parseTemplate } from "./load"
-import type { Draft, Media, Orientation, Preset, Template } from "./types"
+import { parseMedia, parsePrinter, parseTemplate } from "./load"
+import type { Draft, Media, Orientation, Preset, Printer, Template } from "./types"
 
 // Config is fetched at runtime from /config (the public folder), NOT bundled —
 // so templates/drafts can be edited or added without rebuilding, matching the
@@ -39,6 +39,27 @@ export async function loadMedia(): Promise<Media[]> {
   return Promise.all(
     ids.map(async (id) => parseMedia(await fetchText(`${base}${id}.yaml`))),
   )
+}
+
+/** Read the printer manifest, then fetch and parse each printer profile. */
+export async function loadPrinters(): Promise<Printer[]> {
+  const base = `${CONFIG_BASE}printers/`
+  const ids = JSON.parse(await fetchText(`${base}index.json`)) as string[]
+  return Promise.all(
+    ids.map(async (id) => parsePrinter(await fetchText(`${base}${id}.yaml`))),
+  )
+}
+
+/** The printer to print a media on: first compatible (per `media.printers`), else first. */
+export function printerForMedia(
+  media: Media | undefined,
+  printers: Printer[],
+): Printer | undefined {
+  if (media?.printers?.length) {
+    const match = printers.find((p) => media.printers!.includes(p.id))
+    if (match) return match
+  }
+  return printers[0]
 }
 
 /** A template can render a draft when the draft supplies all the fields it needs. */

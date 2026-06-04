@@ -5,11 +5,12 @@ import {
   loadDrafts,
   loadMedia,
   loadPresets,
+  loadPrinters,
   loadTemplates,
   pickMedia,
   pickTemplate,
 } from "@/label/templates"
-import type { Draft, Media, Preset, Template } from "@/label/types"
+import type { Draft, Media, Preset, Printer, Template } from "@/label/types"
 import { LabelCanvas } from "@/components/LabelCanvas"
 import { DraftDetail } from "@/components/DraftDetail"
 
@@ -18,23 +19,25 @@ export function LabelApp() {
   const [drafts, setDrafts] = useState<Draft[] | null>(null)
   const [media, setMedia] = useState<Media[] | null>(null)
   const [presets, setPresets] = useState<Preset[] | null>(null)
+  const [printers, setPrinters] = useState<Printer[] | null>(null)
   const [loadError, setLoadError] = useState("")
   const [selected, setSelected] = useState<number | null>(null)
 
   useEffect(() => {
-    Promise.all([loadTemplates(), loadDrafts(), loadMedia(), loadPresets()])
-      .then(([t, d, m, p]) => {
+    Promise.all([loadTemplates(), loadDrafts(), loadMedia(), loadPresets(), loadPrinters()])
+      .then(([t, d, m, p, pr]) => {
         setTemplates(t)
         setDrafts(d)
         setMedia(m)
         setPresets(p)
+        setPrinters(pr)
       })
       .catch((e) => setLoadError((e as Error).message))
   }, [])
 
   if (loadError)
     return <p className="text-destructive p-4 text-sm">Failed to load config: {loadError}</p>
-  if (!templates || !drafts || !media || !presets)
+  if (!templates || !drafts || !media || !presets || !printers)
     return <p className="text-muted-foreground p-4 text-sm">Loading…</p>
 
   if (selected !== null && drafts[selected]) {
@@ -44,6 +47,7 @@ export function LabelApp() {
         templates={templates}
         media={media}
         presets={presets}
+        printers={printers}
         onBack={() => setSelected(null)}
       />
     )

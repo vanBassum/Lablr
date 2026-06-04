@@ -1,0 +1,9 @@
+# Printer profile. Holds printer-level traits shared by every roll.
+id: dymo-450
+name: DYMO LabelWriter 450
+
+# Leading-edge dead zone: the gap sensor sits before the print head, so the
+# printer can't mark the first few mm after a label starts. Same for every
+# roll on this printer. Calibrate with the alignment pattern, then set it here
+# (mm). The renderer is untouched — this only shifts the print.
+topMarginMm: 0

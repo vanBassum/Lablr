@@ -1,5 +1,5 @@
 import { load } from "js-yaml"
-import type { Media, Template } from "./types"
+import type { Media, Printer, Template } from "./types"
 
 /** Parse a YAML template string into a Template, with light structural checks. */
 export function parseTemplate(yamlText: string): Template {
@@ -29,4 +29,13 @@ export function parseMedia(yamlText: string): Media {
     throw new Error(`media ${m.id}: missing size { w, h } in mm`)
   }
   return m
+}
+
+/** Parse a YAML printer profile, with light structural checks. */
+export function parsePrinter(yamlText: string): Printer {
+  const p = load(yamlText) as Printer | undefined
+  if (!p || typeof p.id !== "string") {
+    throw new Error("printer: missing string `id`")
+  }
+  return p
 }

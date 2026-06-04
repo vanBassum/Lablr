@@ -5,3 +5,4 @@ sku: LD 014 02.MMXIII
 material: chemical-resistant
 size: { w: 54, h: 101 } # mm
 offset: { x: 0, y: 0 } # mm — calibrate per printer
+printers: [dymo-450]
