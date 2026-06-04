@@ -236,3 +236,14 @@ Layout: sticky header (title + light/dark toggle) → centered label **preview**
 Offset-nudge inputs and the WebUSB diagnostics probe moved into a collapsible **Advanced** section — they're calibration/dev concerns, off the main path.
 
 **Note:** the draft→template defaulting was reworked from a setState-in-effect into a render-phase reset (track `seenDraft`, clear the override when the draft changes) — the lint rule `react-hooks/set-state-in-effect` flagged the effect version; the render-phase pattern is React's recommended alternative and avoids cascading renders.
+
+---
+
+## 2026-06-04 — Two-screen flow: browse grid → detail/print + gear
+
+Reworked the UX into the flow the user described:
+
+- **Browse** (`LabelApp` + `DraftCard`): a 2-column grid of draft cards, each rendering a live mini label preview (its suggested template + a fitting media). Scroll/swipe through; tap a card to open it.
+- **Detail/print** (`DraftDetail`): back button + large preview + a sticky bottom bar with a big **Print** button and a **gear** (Settings2) next to it. The gear opens a **Drawer** (vaul bottom sheet) holding Template + Media selects, with offset-nudge + WebUSB diagnostics under an Advanced disclosure.
+
+`LabelCanvas` is a shared preview component (white frame, scaled to longest edge `maxEdgePx`); it takes an optional `canvasRef` so the detail view can read the canvas to print it. Shared `draftName` + `pickTemplate`/`pickMedia` resolvers in `label/templates.ts` keep cards and detail consistent. Replaced the single `PrintScreen` with `LabelApp`/`DraftDetail`/`LabelCanvas`. Added shadcn `drawer` (vaul).

@@ -1,6 +1,6 @@
 import { Moon, Sun, Tag } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
-import { PrintScreen } from "@/components/PrintScreen"
+import { LabelApp } from "@/components/LabelApp"
 import { Button } from "@/components/ui/button"
 
 function ThemeToggle() {
@@ -28,7 +28,7 @@ export function App() {
         </span>
         <ThemeToggle />
       </header>
-      <PrintScreen />
+      <LabelApp />
     </div>
   )
 }

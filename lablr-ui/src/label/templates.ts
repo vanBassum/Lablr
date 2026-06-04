@@ -41,7 +41,27 @@ export function templateAccepts(template: Template, draft: Draft): boolean {
   return template.fields.every((f) => f.key in draft.values)
 }
 
+/** A human-readable name for a draft (its label, or its values joined). */
+export const draftName = (d: Draft) => d.label ?? Object.values(d.values).join(" · ")
+
 /** A template fits a media when its design size is no larger than the label. */
 export function templateFitsMedia(template: Template, media: Media): boolean {
   return template.size.w <= media.size.w && template.size.h <= media.size.h
+}
+
+/** The template to show for a draft by default: its suggestion, else first that fits. */
+export function pickTemplate(draft: Draft, templates: Template[]): Template | undefined {
+  const compatible = templates.filter((t) => templateAccepts(t, draft))
+  return (
+    (draft.template && compatible.find((t) => t.id === draft.template)) || compatible[0]
+  )
+}
+
+/** The media to show for a template by default: first that fits, else first available. */
+export function pickMedia(
+  template: Template | undefined,
+  media: Media[],
+): Media | undefined {
+  if (!template) return media[0]
+  return media.find((m) => templateFitsMedia(template, m)) ?? media[0]
 }
