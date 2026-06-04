@@ -33,23 +33,23 @@
 - [x] **33.** Persistent printer connection — connect once (PrinterProvider); each print is just transferOut; silent reconnect on load
 - [x] **34.** Offset calibration aid — "Print alignment pattern" (border + cross); nudge X/Y to dial in each media's offset
 
-## Phase 4 — Template/render rebuild (new schema) 🔧 in progress
+## Phase 4 — Template/render rebuild (new schema) ✅
 
-> Config is migrated to the new schema; the renderer code must catch up (the app
-> is currently broken against it). Decided: `designSize → media` via **contain**.
+> Config was migrated to the new schema; renderer code rewritten to support it.
+> Implementation uses contain scaling for designSize → media mapping.
 
-- [ ] **38.** Replace `size` with `designSize` — a layout coordinate space, decoupled from physical size (media owns physical size)
-- [ ] **39.** Replace stack/flexbox with rectangular `elements` — each text in an explicit `rect { x, y, width, height }` (mm)
-- [ ] **40.** Auto-fit text to rectangles — shrink the font from `maxSize` until it fits
-- [ ] **43.** Introduce fit mode `shrink` (future: stretch, clip, ellipsis)
-- [ ] **41.** Text alignment — `align: left|center|right`, `valign: top|center|bottom`
-- [ ] **42.** Text wrapping — `wrap`, optional `maxLines`; shrink further when it overflows
-- [ ] **44.** Update the template schema to the new structure — `designSize`, `fields: { key: { required, label } }`, `elements: [...]`
-- [ ] **37.** Drafts use `fields` (renamed from `values`) — aligns with the template field model
+- [x] **38.** Replace `size` with `designSize` — a layout coordinate space, decoupled from physical size (media owns physical size)
+- [x] **39.** Replace stack/flexbox with rectangular `elements` — each text in an explicit `rect { x, y, width, height }` (mm)
+- [x] **40.** Auto-fit text to rectangles — shrink the font from `maxSize` until it fits
+- [x] **43.** Introduce fit mode `shrink` (future: stretch, clip, ellipsis)
+- [x] **41.** Text alignment — `align: left|center|right`, `valign: top|center|bottom`
+- [x] **42.** Text wrapping — `wrap`, optional `maxLines`; shrink further when it overflows
+- [x] **44.** Update the template schema to the new structure — `designSize`, `fields: { key: { required, label } }`, `elements: [...]`
+- [x] **37.** Drafts use `fields` (renamed from `values`) — aligns with the template field model
 
-## Phase 5 — Draft ↔ preset + print-page override ⏭ next
+## Phase 5 — Draft ↔ preset + print-page override 🔧 in progress
 
-- [ ] **36.** Drafts reference a **preset** (`{ preset, fields }`) — config already migrated; wire the code to read `draft.preset`
+- [x] **36.** Drafts reference a **preset** (`{ preset, fields }`) — config already migrated; wire the code to read `draft.preset`
 - [ ] **46.** Edit template + media + orientation on the print page (settings/gear) — overrides the preset's defaults; media = the physical roll loaded
 
 ## Phase 6 — Printers

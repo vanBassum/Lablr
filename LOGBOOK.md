@@ -411,3 +411,31 @@ So: **Draft = `{ preset, fields }`.** The print page still **overrides** templat
 3. **MCP server on the homelab** (item 47) — `create_label(preset, fields)` → validate → `#/draft` link.
 
 Everything decided lives in CLAUDE.md (active model) + ROADMAP.md (phased, stable IDs). This was a long session; continuing fresh is fine — read those two files + this entry.
+
+---
+
+## 2026-06-04 — Phase 4 complete: new-schema renderer deployed (items 38–44, 37, 36)
+
+**Finished the new-schema renderer build that was blocked since commit `6b96f27`.**
+
+**Completed items 38–44, 37:**
+- Updated `types.ts`: `Template.designSize` replaces `size`; `fields` is now an object map; `elements` is an array of rectangular text elements (no more layout tree).
+- Updated `load.ts` validation to check for new schema structure.
+- **Rewrote `render.ts` completely:** elements render as rectangles with auto-fit text shrinking from `maxSize` → `minSize`. Text wrapping via word-break. Alignment (`align`, `valign`) in rectangles. **Contain scaling:** `designSize → media` via uniform scale-to-fit, centered (same design on different media, preserved aspect ratio).
+- Fixed `build-catalog.mjs` to handle `fields` as object (convert to array for the catalog JSON for AI consumption).
+- Updated `deeplink.ts` to use `fields` instead of `values`; supports both old deeplinks (`template`) and new YAML drafts (`preset`).
+- Updated component usages (`LabelCanvas`, `DraftDetail`, `LabelApp`) to pass `fields` instead of `values`.
+- Updated helper functions in `templates.ts`: `templateAccepts` checks field presence in object; `templateFitsMedia` uses `designSize` + contain; `draftName` uses `fields`.
+
+**Completed item 36:**
+- `defaultPreset()` now prefers explicit `draft.preset` if it exists, falls back to `draft.template` (for old deeplinks), else first compatible preset.
+
+**Build status:** ✅ Green (deployed to GitHub Pages).
+
+**App verified:** dev server running, config loads correctly (templates, media, presets, drafts), catalog generated, llms.txt regenerated. All endpoints return expected data.
+
+**Next (Phase 5):**
+- Item 46: Print-page overrides (template + media + orientation in the gear drawer) — preset buttons + orientation toggle already wired; structure in place for full override UI later.
+- Item 47: MCP server on homelab (`create_label` validates + returns `#/draft` link) — stateless, no draft DB.
+
+**Decision note:** contain scaling (uniform scale, preserves aspect) was chosen for designSize → media mapping. Allows a single template (e.g. 50×20mm design) to render on 25mm or 54mm media (scaled to fit). This is friendlier for AI generation and template reuse than fixed-size designs.
