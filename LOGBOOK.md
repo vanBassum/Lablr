@@ -328,3 +328,5 @@ Decided the AI flow needs **no backend and no MCP server** — those fight "PC o
 **Why this satisfies "PC off":** the AI is cloud, the PWA is on Pages — neither is the user's PC. Caveat logged: *printing* to the USB Dymo still needs the PC; fully PC-off printing is the planned Bluetooth/Niimbot path.
 
 **Deferred (start simple):** inline custom templates per-draft (the draft model will allow `template` as an object later) and a draft-store backend for short links — only if URL/paste delivery proves limiting. Auto-fit text (item 35) still pending and will help AI-generated values of varying length.
+
+**Refinement — instructions live on the site (no Custom GPT needed):** instead of configuring a per-user Custom GPT, the build also generates **`llms.txt`** — self-contained instructions (protocol + live template list + a TIP31 example) — and `index.html` carries a `<noscript>` pointer to it. So in *any* browsing chat you paste the site link (or llms.txt), ask for a part, and it reads the instructions + templates and returns a `#/draft` URL. Zero per-user setup, and it stays current because llms.txt is generated from config on every deploy.

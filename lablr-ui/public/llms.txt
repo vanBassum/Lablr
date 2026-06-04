@@ -1,0 +1,21 @@
+# Lablr — label maker
+
+When the user asks for a label, build a URL they can open on their phone to
+preview and print it. Reply with that URL.
+
+## Steps
+1. Pick ONE template below that matches what the user is labeling.
+2. Fill EVERY field it lists (omit none).
+3. Build this URL, URL-encoding each value:
+   https://vanbassum.github.io/Lablr/#/draft?t=<templateId>&<fieldKey>=<value>&...
+4. Reply with the full URL.
+
+## Templates
+- smd-basic — "SMD / through-hole part" (25×25mm) — fields: name, subtitle, package
+- storage-box — "Storage box" (25×25mm) — fields: code, contents
+- chemical-large — "Chemical — large (bucket)" (54×70mm) — fields: name, formula, hazard
+- chemical-small — "Chemical — small (vial)" (25×25mm) — fields: name, formula
+
+## Example
+"a TIP31 NPN power transistor in a TO-220 package" →
+https://vanbassum.github.io/Lablr/#/draft?t=smd-basic&name=TIP31&subtitle=NPN%20power%20transistor&package=TO-220

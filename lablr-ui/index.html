@@ -4,10 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>vite-app</title>
+    <title>Lablr — label maker</title>
+    <meta
+      name="description"
+      content="Lablr label maker. AI: to create a printable label, read llms.txt for the templates and link format, then return a #/draft URL."
+    />
   </head>
   <body>
     <div id="root"></div>
+    <!-- For AI assistants fetching this page: how to make a label link. -->
+    <noscript>
+      Lablr label maker. To create a label, read
+      <a href="llms.txt">llms.txt</a> for the available templates and the link
+      format, then build a <code>#/draft?t=…&amp;field=…</code> URL.
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -28,7 +28,7 @@
 24. [~] Add support for additional printers — printer **profiles** introduced as YAML (`config/printers/`, first: dymo-450), identity only for now; media link to their printer via `media.printers` (and carry the per-roll print offset). (Still single printer + WebUSB; DPI/head width remain in the driver, multi-printer + Bluetooth selection later.)
 25. [ ] Add a simple server/API if needed
 26. [ ] Add draft persistence if needed
-27. [~] Add ChatGPT/MCP draft creation — **serverless, no MCP server**: a generated `public/catalog.json` (templates + fields, from config) is published on Pages; the AI fetches it and builds a `#/draft?t=…&field=…` URL itself. Custom-GPT Action to fetch + emit links still to configure.
+27. [~] Add ChatGPT/MCP draft creation — **serverless, no MCP server, no Custom GPT**: a generated `llms.txt` (+ `catalog.json`) is published on Pages with the protocol + live templates + an example; `index.html` `<noscript>` points to it. Any browsing chat reads it and builds a `#/draft?t=…&field=…` URL — paste the site link, ask for a part, get a label link. (Needs real-world testing in ChatGPT/Claude.)
 28. [~] Add ChatGPT → open draft → print workflow — PWA `#/draft` deep-link route done: a link opens straight into the detail view, ready to print. AI-emitted link pending the GPT setup; printing PC-off still needs the Bluetooth printer (USB Dymo needs the PC).
 29. [ ] Add headless/server-side printing if it becomes useful
 30. [ ] Add remote printer support if it becomes useful
