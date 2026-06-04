@@ -140,8 +140,14 @@ export function renderLabel(
   media: Media,
   orientation: Orientation = "portrait",
 ): void {
-  const Wd = mmToDots(media.size.w)
-  const Hd = mmToDots(media.size.h)
+  const landscape = orientation === "landscape"
+
+  // In landscape, media dimensions are swapped (54×70 → 70×54)
+  const mediaW = landscape ? media.size.h : media.size.w
+  const mediaH = landscape ? media.size.w : media.size.h
+
+  const Wd = mmToDots(mediaW)
+  const Hd = mmToDots(mediaH)
   canvas.width = Wd
   canvas.height = Hd
 
@@ -152,45 +158,27 @@ export function renderLabel(
   ctx.fillRect(0, 0, Wd, Hd)
   ctx.fillStyle = "black"
 
-  const landscape = orientation === "landscape"
-
   // Use designSize if provided, otherwise template is responsive (fills media)
   const isResponsive = !template.designSize
 
-  // For responsive templates in landscape, swap media dimensions instead of rotating
-  const mediaForLayout = isResponsive && landscape
-    ? { w: media.size.h, h: media.size.w }
-    : media.size
-
-  const designSize = template.designSize || { width: mediaForLayout.w, height: mediaForLayout.h }
-  const designW = landscape && !isResponsive ? designSize.height : designSize.width
-  const designH = landscape && !isResponsive ? designSize.width : designSize.height
+  const designSize = template.designSize || { width: mediaW, height: mediaH }
+  const designW = isResponsive ? mediaW : designSize.width
+  const designH = isResponsive ? mediaH : designSize.height
 
   // Contain scaling: fit design into media
-  const scale = isResponsive ? 1 : Math.min(mediaForLayout.w / designW, mediaForLayout.h / designH)
+  const scale = isResponsive ? 1 : Math.min(mediaW / designW, mediaH / designH)
   const scaledW = designW * scale
   const scaledH = designH * scale
 
   // Center the design on the media (in mm)
   const offsetMm = {
-    x: (mediaForLayout.w - scaledW) / 2,
-    y: (mediaForLayout.h - scaledH) / 2,
+    x: (mediaW - scaledW) / 2,
+    y: (mediaH - scaledH) / 2,
   }
 
-  // Apply canvas transforms for rotation (only for fixed-size templates)
+  // Just translate to the design offset (no rotation needed)
   ctx.save()
-  if (landscape && !isResponsive) {
-    const offsetDots = { x: mmToDots(offsetMm.x), y: mmToDots(offsetMm.y) }
-    const designWDots = mmToDots(designW * scale)
-    const designHDots = mmToDots(designH * scale)
-    // Translate to center, rotate, translate back to (0,0) in the rotated space
-    ctx.translate(offsetDots.x + designWDots / 2, offsetDots.y + designHDots / 2)
-    ctx.rotate(Math.PI / 2)
-    ctx.translate(-designWDots / 2, -designHDots / 2)
-  } else {
-    // Portrait or responsive template: just translate to the design offset
-    ctx.translate(mmToDots(offsetMm.x), mmToDots(offsetMm.y))
-  }
+  ctx.translate(mmToDots(offsetMm.x), mmToDots(offsetMm.y))
 
   // For each element, auto-fit text and render it (in design space, pre-scaled)
   for (const element of template.elements) {
@@ -201,18 +189,19 @@ export function renderLabel(
     if (!text) continue
 
     // Parse element coordinates (supports both mm and percentage)
+    // For responsive templates in landscape, percentages are still based on original media
     const elemMm = {
-      x: parseCoord(element.rect.x, media.size.w),
-      y: parseCoord(element.rect.y, media.size.h),
-      w: parseCoord(element.rect.width, media.size.w),
-      h: parseCoord(element.rect.height, media.size.h),
+      x: parseCoord(element.rect.x, landscape && isResponsive ? media.size.h : media.size.w),
+      y: parseCoord(element.rect.y, landscape && isResponsive ? media.size.w : media.size.h),
+      w: parseCoord(element.rect.width, landscape && isResponsive ? media.size.h : media.size.w),
+      h: parseCoord(element.rect.height, landscape && isResponsive ? media.size.w : media.size.h),
     }
 
     // Map element rect from design space to canvas dots (accounting for contain scaling)
     const rect = designToCanvasDots(
       elemMm,
-      template.designSize || { width: media.size.w, height: media.size.h },
-      media.size,
+      template.designSize || { width: mediaW, height: mediaH },
+      { w: mediaW, h: mediaH },
     )
 
     const boxX = rect.x
