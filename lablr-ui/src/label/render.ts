@@ -26,50 +26,24 @@ function thresholdTo1Bit(
 }
 
 /**
- * Map mm coordinates from the design space to the media, applying contain scaling.
- * In landscape, the design is rotated 90° within the physical media.
+ * Map mm coordinates from the design space to canvas dots.
+ * Assumes canvas transforms have already been applied for rotation/centering.
  */
-function designToMedia(
+function designToCanvasDots(
   designMm: { x: number; y: number; w: number; h: number },
   designSize: { width: number; height: number },
   media: { w: number; h: number },
-  landscape: boolean,
 ): { x: number; y: number; w: number; h: number } {
-  // In landscape, design dimensions are swapped, then rotated onto the media.
-  const designW = landscape ? designSize.height : designSize.width
-  const designH = landscape ? designSize.width : designSize.height
-
   // Contain scaling: fit design into media without clipping
-  const scale = Math.min(media.w / designW, media.h / designH)
+  const scale = Math.min(media.w / designSize.width, media.h / designSize.height)
 
-  // Scaled design size
-  const scaledW = designW * scale
-  const scaledH = designH * scale
+  // Convert mm to canvas dots (accounting for scaling)
+  const x = mmToDots(designMm.x * scale)
+  const y = mmToDots(designMm.y * scale)
+  const w = mmToDots(designMm.w * scale)
+  const h = mmToDots(designMm.h * scale)
 
-  // Center the scaled design on the media
-  const offsetX = (media.w - scaledW) / 2
-  const offsetY = (media.h - scaledH) / 2
-
-  if (!landscape) {
-    // Portrait: direct scaling and centering
-    return {
-      x: offsetX + designMm.x * scale,
-      y: offsetY + designMm.y * scale,
-      w: designMm.w * scale,
-      h: designMm.h * scale,
-    }
-  }
-
-  // Landscape: rotate design 90° CCW, then translate to center
-  // Point (x, y) in the rotated space is at (y, designW - x) in the original space
-  const origX = designMm.y
-  const origY = designW - (designMm.x + designMm.w)
-  return {
-    x: offsetX + origX * scale,
-    y: offsetY + origY * scale,
-    w: designMm.h * scale,
-    h: designMm.w * scale,
-  }
+  return { x, y, w, h }
 }
 
 /**
@@ -165,8 +139,36 @@ export function renderLabel(
   ctx.fillStyle = "black"
 
   const landscape = orientation === "landscape"
+  const designW = landscape ? template.designSize.height : template.designSize.width
+  const designH = landscape ? template.designSize.width : template.designSize.height
 
-  // For each element, auto-fit text and render it
+  // Contain scaling: fit design into media
+  const scale = Math.min(media.size.w / designW, media.size.h / designH)
+  const scaledW = designW * scale
+  const scaledH = designH * scale
+
+  // Center the design on the media (in mm)
+  const offsetMm = {
+    x: (media.size.w - scaledW) / 2,
+    y: (media.size.h - scaledH) / 2,
+  }
+
+  // Apply canvas transforms for rotation
+  ctx.save()
+  if (landscape) {
+    const offsetDots = { x: mmToDots(offsetMm.x), y: mmToDots(offsetMm.y) }
+    const designWDots = mmToDots(designW * scale)
+    const designHDots = mmToDots(designH * scale)
+    // Translate to center, rotate, translate back to (0,0) in the rotated space
+    ctx.translate(offsetDots.x + designWDots / 2, offsetDots.y + designHDots / 2)
+    ctx.rotate(Math.PI / 2)
+    ctx.translate(-designWDots / 2, -designHDots / 2)
+  } else {
+    // Portrait: just translate to the design offset
+    ctx.translate(mmToDots(offsetMm.x), mmToDots(offsetMm.y))
+  }
+
+  // For each element, auto-fit text and render it (in design space, pre-scaled)
   for (const element of template.elements) {
     if (element.type !== "text") continue
 
@@ -174,19 +176,17 @@ export function renderLabel(
     const text = element.field ? fieldValues[element.field] ?? "" : element.text ?? ""
     if (!text) continue
 
-    // Map element rect from design space to media space (in mm)
-    const rectMm = designToMedia(
+    // Map element rect from design space to canvas dots (accounting for contain scaling)
+    const rect = designToCanvasDots(
       { x: element.rect.x, y: element.rect.y, w: element.rect.width, h: element.rect.height },
       template.designSize,
       media.size,
-      landscape,
     )
 
-    // Convert to canvas dots
-    const boxX = mmToDots(rectMm.x)
-    const boxY = mmToDots(rectMm.y)
-    const boxW = mmToDots(rectMm.w)
-    const boxH = mmToDots(rectMm.h)
+    const boxX = rect.x
+    const boxY = rect.y
+    const boxW = rect.w
+    const boxH = rect.h
 
     // Binary search for the largest font size that fits
     let fontSize = mmToDots(element.font.maxSize)
@@ -235,6 +235,7 @@ export function renderLabel(
     })
   }
 
+  ctx.restore()
   thresholdTo1Bit(ctx, Wd, Hd)
 }
 
