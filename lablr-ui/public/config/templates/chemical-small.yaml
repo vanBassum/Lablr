@@ -20,8 +20,8 @@ elements:
     align: center
     valign: center
     font:
-      maxSize: 4
-      minSize: 2
+      maxSize: 3
+      minSize: 1.5
       weight: bold
     wrap: true
     maxLines: 2
@@ -34,7 +34,7 @@ elements:
     valign: center
     font:
       maxSize: 5
-      minSize: 2
+      minSize: 1.5
       weight: bold
     wrap: false
     fit: shrink

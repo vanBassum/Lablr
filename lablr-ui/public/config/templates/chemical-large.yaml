@@ -36,10 +36,9 @@ elements:
     valign: center
     font:
       maxSize: 28
-      minSize: 12
+      minSize: 8
       weight: bold
-    wrap: true
-    maxLines: 3
+    wrap: false
     fit: shrink
 
   - type: text

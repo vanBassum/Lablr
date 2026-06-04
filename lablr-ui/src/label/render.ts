@@ -110,13 +110,15 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
       fit = 1
     }
 
-    // Try to break at a word boundary
+    // Break at word boundary (space) if possible, otherwise break at character limit
     let breakAt = fit
     const chunk = remaining.slice(0, fit)
     const lastSpace = chunk.lastIndexOf(" ")
-    if (lastSpace > 0 && lastSpace > fit * 0.6) {
+    if (lastSpace > 0) {
+      // Always prefer breaking at a space
       breakAt = lastSpace
     }
+    // else: no space found, break at character limit (unavoidable)
 
     lines.push(remaining.slice(0, breakAt).trim())
     remaining = remaining.slice(breakAt).trim()
