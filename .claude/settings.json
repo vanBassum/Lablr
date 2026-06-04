@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:download.dymo.com)",
+      "WebFetch(domain:www.manualslib.com)"
+    ]
+  }
+}

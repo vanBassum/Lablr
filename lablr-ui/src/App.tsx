@@ -1,16 +1,25 @@
 import { WebUsbProbe } from "@/WebUsbProbe"
+import { DymoPrintTest } from "@/DymoPrintTest"
 
 export function App() {
   return (
     <div className="flex min-h-svh p-6">
-      <div className="flex max-w-2xl min-w-0 flex-col gap-4 text-sm leading-loose">
+      <div className="flex max-w-2xl min-w-0 flex-col gap-8 text-sm leading-loose">
         <div>
-          <h1 className="font-medium">Lablr — WebUSB printer probe</h1>
+          <h1 className="font-medium">Lablr — item 4: print a label</h1>
           <p className="text-muted-foreground">
-            Item 4 spike: confirm Chrome can open and claim the DYMO over WebUSB.
+            Render → preview → raster → print to the DYMO LabelWriter 450 over WebUSB.
           </p>
         </div>
-        <WebUsbProbe />
+        <DymoPrintTest />
+        <details>
+          <summary className="text-muted-foreground cursor-pointer">
+            WebUSB connection probe (diagnostics)
+          </summary>
+          <div className="mt-3">
+            <WebUsbProbe />
+          </div>
+        </details>
       </div>
     </div>
   )
