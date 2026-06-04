@@ -6,6 +6,12 @@ A full-stack label creation and printing application designed to minimize fricti
 
 ---
 
+## Working Agreements
+
+- **Always commit and push** after completing a piece of work — don't wait to be asked.
+
+---
+
 ## Core Philosophy
 
 Optimize for:
