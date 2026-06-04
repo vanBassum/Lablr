@@ -1,0 +1,30 @@
+# First template (roadmap item 9), now declared in YAML.
+# All numbers are millimetres; layout is centered on the label center (0,0).
+id: smd-basic
+name: SMD / through-hole part
+size: { w: 25, h: 25 } # mm — designed for the 25mm square (S0929120)
+
+# The field schema. THIS is what decides which values a draft can set.
+fields:
+  - { key: name, label: Part }
+  - { key: subtitle, label: Description }
+  - { key: package, label: Package }
+
+# Declarative layout. A text node binds to a field via `field`, or holds a
+# literal via `text`. `size` is cap height in mm.
+layout:
+  type: stack
+  direction: vertical
+  align: center
+  gap: 1.2
+  children:
+    - { type: text, field: name, size: 4.5, weight: bold }
+    - { type: text, field: subtitle, size: 1.8 }
+    - { type: text, field: package, size: 2.6 }
+
+# Sample drafts — design-time fixtures that ship with the template so it can be
+# previewed against real data while being built.
+samples:
+  - { name: BC547, subtitle: NPN Transistor, package: TO-92 }
+  - { name: LM358, subtitle: Dual Op-Amp, package: SOIC-8 }
+  - { name: "100nF", subtitle: Ceramic X7R 50V, package: "0805" }

@@ -122,3 +122,20 @@ A physical label came off the Dymo 450: full pipeline **render canvas → on-scr
 **Built (`lablr-ui/src/label/`):** `types.ts` (Template/Draft/layout), `templates.ts` (`smd-basic` + 3 sample drafts: BC547, LM358, 100nF), `render.ts` (declarative-layout canvas renderer). The print test page is now data-driven — pick a draft, it re-renders, prints the same bitmap. This closes items 5, 7, 8, 9; item 6 (editing field values) and item 10 (confirm BC547 on hardware) remain.
 
 **Note:** config-as-code in the PWA for now; templates/drafts move to the label-config repo later (item 20).
+
+---
+
+## 2026-06-04 — Template format: YAML, millimetres, center-origin (item 11)
+
+Moved templates from inline TS to a declarative **YAML** format (parsed with `js-yaml`, imported via Vite `?raw`). First template `smd-basic.yaml` lives in `lablr-ui/src/label/templates/` and carries its own `samples:` fixtures.
+
+**Design decisions (with the user):**
+
+- **Units are millimetres, origin is the label center.** Rationale: mm is resolution- and printer-independent — the renderer maps mm→dots via the media's DPI, so a template renders at the same *physical* size on a 300 dpi Dymo or a 203 dpi Niimbot. Chosen over normalized/fraction units (which auto-fill but make text size track label size and distort aspect ratios) and over device dots (not portable). Crisp + readable + predictable wins for labels.
+- **Offset does NOT live in the template.** The per-label alignment offset (the deferred item-4 issue) is *physical calibration*, a property of (media + printer), so it belongs to the media/printer profile (items 12–14), not the design. Templates stay media-agnostic.
+- **Scale is deferred (YAGNI).** "One template on multiple physical labels" via an explicit scale factor is real but speculative while only one label exists. mm + center origin makes it a clean future add; don't build the binding now.
+- Draft model unchanged: `{ templateId, values }`, references by id, supplies all values.
+
+**Format shape:** `{ id, name, size:{w,h}mm, fields:[{key,label}], layout: <stack|text tree>, samples:[...] }`. A `text` node binds to a field via `field` or holds a literal via `text`; `size` = cap height in mm; stacks cascade `align` to children. v1 renderer handles vertical stacks + text; horizontal stacks and barcode/QR are later.
+
+**Guiding-principle check:** YAML + mm + center are the no-regret foundations; offset and scale were deliberately kept *out* to avoid baking physical/speculative concerns into the design layer.

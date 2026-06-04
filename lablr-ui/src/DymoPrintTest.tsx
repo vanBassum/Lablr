@@ -44,7 +44,7 @@ export function DymoPrintTest() {
 
   if (!template) return <p>Unknown template: {draft.templateId}</p>
 
-  const labelH = mmToDots(template.heightMm)
+  const labelH = mmToDots(template.size.h)
 
   return (
     <div className="flex flex-col gap-3">
@@ -76,7 +76,7 @@ export function DymoPrintTest() {
         }}
       />
       <p className="text-muted-foreground text-xs">
-        Full {HEAD_DOTS}-dot head width; the {template.widthMm}×{template.heightMm}mm
+        Full {HEAD_DOTS}-dot head width; the {template.size.w}×{template.size.h}mm
         label content is positioned by the offsets. This canvas is the exact
         print payload.
       </p>

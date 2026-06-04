@@ -11,8 +11,8 @@
 7. [x] Create a minimal preview — canvas render of a draft via the declarative layout
 8. [x] Ensure preview and print use the same bitmap — one canvas is both preview and print payload, by construction
 9. [x] Create the first hardcoded template — `smd-basic` (name/subtitle/package) + sample drafts
-10. [ ] Create the first printable label (e.g. BC547) — BC547 sample draft prints; confirm on hardware
-11. [ ] Introduce reusable templates
+10. [x] Create the first printable label (e.g. BC547) — BC547 sample draft prints
+11. [x] Introduce reusable templates — declarative **YAML** format (mm units, center-origin), loaded by id; adding a template = adding a YAML file. Layout is renderer-interpreted (not HTML/CSS — that stays deferred, item 18).
 12. [ ] Introduce physical media definitions (size, material, manufacturer SKU)
 13. [ ] Introduce presets (Aidetek Small, Chemical Bottle Small, Storage Bin Large)
 14. [ ] Automatically resolve preset → template + media + printer

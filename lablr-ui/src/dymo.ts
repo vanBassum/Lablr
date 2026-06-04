@@ -30,7 +30,7 @@ export interface UsbDevice {
   selectConfiguration(value: number): Promise<void>
   claimInterface(n: number): Promise<void>
   releaseInterface(n: number): Promise<void>
-  transferOut(endpointNumber: number, data: BufferSource): Promise<UsbOutTransferResult>
+  transferOut(endpointNumber: number, data: Uint8Array): Promise<UsbOutTransferResult>
   configuration: unknown
 }
 interface Usb {
