@@ -25,7 +25,7 @@
 21. [ ] Add Claude-assisted template editing workflow
 22. [ ] Add support for multiple templates (SMD, chemical, storage) — mechanism + UI template selector done (smd-basic, storage-box); add the remaining real templates
 23. [x] Add support for multiple media sizes — 3 real rolls: 25mm square (S0929120), 54×70, chemical-resistant 54×101 (LD 014 02.MMXIII)
-24. [~] Add support for additional printers — printer **profiles** introduced as YAML (`config/printers/`, first: dymo-450) holding the leading-edge dead zone (`topMarginMm`); media link to compatible printers via `media.printers`. (Still single printer + WebUSB; DPI/head width remain in the driver, multi-printer + Bluetooth selection later.)
+24. [~] Add support for additional printers — printer **profiles** introduced as YAML (`config/printers/`, first: dymo-450), identity only for now; media link to their printer via `media.printers` (and carry the per-roll print offset). (Still single printer + WebUSB; DPI/head width remain in the driver, multi-printer + Bluetooth selection later.)
 25. [ ] Add a simple server/API if needed
 26. [ ] Add draft persistence if needed
 27. [ ] Add ChatGPT/MCP draft creation
@@ -36,5 +36,6 @@
 32. [x] Support landscape/portrait orientation — per-print toggle; renderer rotates the design 90° within the physical label (head width is fixed, so the bitmap stays the media's physical size)
 33. [x] Persistent printer connection — connect once (open + claim) held in a PrinterProvider; each print is just transferOut. Silent reconnect on load via `navigator.usb.getDevices()`; unplug detected via the `disconnect` event. Header shows connect/disconnect.
 34. [x] Offset calibration aid — "Print alignment pattern" (border + corner-to-corner cross + center crosshair, sized to the media) in the gear, printed with the current offset; nudge X/Y and reprint to dial in each media's offset.
+35. [ ] Auto-fit text — give template text fields a bounding box and scale the text down to fit, so long values don't overflow/clip
 
 > **Guiding principle:** Keep questioning every feature that does not directly reduce the time between needing a label and having a label in your hand.

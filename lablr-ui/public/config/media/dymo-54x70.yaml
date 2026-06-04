@@ -4,5 +4,6 @@ id: dymo-54x70
 name: 54×70mm
 material: direct-thermal
 size: { w: 54, h: 70 } # mm
-offset: { x: 0, y: 0 } # mm — calibrate per printer
+# Calibrated shift (mm) for this roll. Measured Y ≈ -22 dots; X still to calibrate.
+offset: { x: 0, y: -1.86 } # mm
 printers: [dymo-450]

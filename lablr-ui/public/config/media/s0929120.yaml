@@ -5,9 +5,7 @@ sku: S0929120
 material: direct-thermal
 size: { w: 25, h: 25 } # mm
 
-# Calibrated shift so the image lands on the label (Dymo 450). Measured on this
-# 25mm roll: ≈ -6 × -20 dots. X is per-roll; Y (~-1.7mm, printer prints low) is
-# likely shared across rolls — once the 54×70 and chem-resistant are checked,
-# the common Y moves to the printer profile.
+# Calibrated shift (mm) so the image lands on the label, for this roll on its
+# printer. Measured ≈ -6 × -20 dots on the 25mm roll.
 offset: { x: -0.5, y: -1.7 } # mm
 printers: [dymo-450]

@@ -309,3 +309,8 @@ The print-placement offset is now split by ownership:
 - Manual nudge in the gear still finds the values; the calibration hint says which knob each axis feeds. Preview stays untouched (offset is print-only).
 
 Wiring: `loadPrinters()` + `printerForMedia()` in `templates.ts`, `parsePrinter()` in `load.ts`, `Printer` type, `LabelApp` loads + passes printers to `DraftDetail`. DPI + head width still live in `dymo.ts` (single printer); they migrate to the profile when multi-printer / Niimbot lands. Item 24 marked partial (`[~]`).
+
+**Correction (same day), two things from calibration:**
+
+1. The Y correction is **negative** (~-20 dots on the 25mm, -22 on the 54×70 — the LW450 prints ~1.7mm *low*), so it's a signed *placement offset*, not a "dead zone / top margin" (which would be positive). So `topMarginMm` was the wrong shape.
+2. **Offsets live per physical media, not per printer.** A roll is always loaded on a *specific* printer, so the (printer + roll) calibration is uniquely the media's — and the per-roll values differ anyway (-20 vs -22), so per-media is *more accurate*, not just simpler. So the brief "dead zone on the printer" split above is **reverted**: the printer profile drops back to **identity** (id, name) and each media carries its own `offset: {x, y}` (mm). Final placement = `media.offset` + calibration nudge; printer link (`media.printers`) is just for identity/targeting (the target printer name now shows under the preview). Measured: `s0929120 {-0.5, -1.7}`, `dymo-54x70 {0, -1.86}` (X still to calibrate).

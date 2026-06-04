@@ -90,15 +90,12 @@ export function DraftDetail({
 
   const printerProfile = printerForMedia(selectedMedia, printers)
 
-  // Head offset in dots: the printer's leading-edge dead zone (Y, shared by all
-  // rolls) + the media's per-roll position + the manual calibration nudge.
+  // Head offset in dots = the media's calibrated offset + the manual nudge.
+  // (Per media, because a roll is specific to a printer.)
   function headOffset() {
     return {
       x: mmToDots(selectedMedia?.offset?.x ?? 0) + offsetX,
-      y:
-        mmToDots(printerProfile?.topMarginMm ?? 0) +
-        mmToDots(selectedMedia?.offset?.y ?? 0) +
-        offsetY,
+      y: mmToDots(selectedMedia?.offset?.y ?? 0) + offsetY,
     }
   }
   const dotsToMm = (dots: number) => ((dots / DPI) * 25.4).toFixed(1)
@@ -163,6 +160,7 @@ export function DraftDetail({
           <div className="text-muted-foreground flex items-center gap-2 text-xs">
             <span>
               {selectedMedia.name} · {selectedMedia.size.w}×{selectedMedia.size.h}mm
+              {printerProfile ? ` · ${printerProfile.name}` : ""}
             </span>
             {template &&
               (fits ? (
@@ -237,9 +235,8 @@ export function DraftDetail({
                   </Field>
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  Print, nudge to align. X ≈ {dotsToMm(headOffset().x)}mm → media{" "}
-                  <code>offset.x</code> (per roll); Y ≈ {dotsToMm(headOffset().y)}mm → printer{" "}
-                  <code>topMarginMm</code> (shared by all rolls).
+                  Print, nudge to align. Offset ≈ {dotsToMm(headOffset().x)}×
+                  {dotsToMm(headOffset().y)}mm — bake into this media's <code>offset</code>.
                 </p>
                 <Button
                   variant="outline"

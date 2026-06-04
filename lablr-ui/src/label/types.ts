@@ -87,8 +87,9 @@ export interface Media {
 export interface Printer {
   id: string
   name: string
-  /** Unprintable band at the label's leading edge, mm. Same for every roll. */
-  topMarginMm?: number
+  // Identity for now, so media can link to it via `media.printers`. Physical
+  // traits (DPI, head width, transport) join here with item 24. The print
+  // placement offset lives on the media (a roll is specific to a printer).
 }
 
 /**
