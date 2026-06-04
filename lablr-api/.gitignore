@@ -1,0 +1,20 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+## ASP.NET dev certs
+*.pfx
+
+## Environment overrides (never commit)
+appsettings.*.Local.json
+.env
+
+## Rider/VS Code
+.idea/
+.vscode/
+
+## Docker runtime
+lablr-api/runtime/

@@ -1,0 +1,26 @@
+services:
+  lablr-api:
+    build: .
+    container_name: lablr-api
+    restart: unless-stopped
+    networks:
+      - ingress-network
+    expose:
+      - 8080
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Cors__AllowedOrigins__0: https://${LABLR_UI_DOMAIN}
+      # Oidc__Authority: https://${AUTHENTIK_DOMAIN}/application/o/lablr/
+      # Oidc__ClientId: ${LABLR_OIDC_CLIENT_ID}
+      # Oidc__ClientSecret: ${LABLR_OIDC_CLIENT_SECRET}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lablr-api.rule=Host(`${LABLR_API_DOMAIN}`)"
+      - "traefik.http.routers.lablr-api.entrypoints=websecure"
+      - "traefik.http.routers.lablr-api.tls.certresolver=myresolver"
+      - "traefik.http.services.lablr-api.loadbalancer.server.port=8080"
+
+networks:
+  ingress-network:
+    name: ingress-network
+    external: true
