@@ -1,251 +1,92 @@
 # Lablr — Label Printing System
 
-A full-stack label creation and printing application designed to minimize friction between deciding a label is needed and having a printed label in hand.
+A tool to minimize friction between deciding a label is needed and having a printed label in hand. **A label printing tool, not inventory software.**
 
-**Stack:** .NET 9 minimal API (lablr-api) + Vue/React UI (lablr-ui), deployed to vanbassum.com behind Traefik.
+> This file holds the **active, decided constraints** — the stable truths that guide work right now, abstracted.
+> - **What's next / open items:** [ROADMAP.md](ROADMAP.md) (items are numbered stable IDs)
+> - **Why decisions were made / brainstorms:** [LOGBOOK.md](LOGBOOK.md) (append-only)
+>
+> If something here is no longer true, change it here *and* log the reversal in LOGBOOK.
 
 ---
 
 ## Working Agreements
 
 - **Always commit and push** after completing a piece of work — don't wait to be asked.
+- When a decision changes, update this file and append the reasoning to [LOGBOOK.md](LOGBOOK.md).
 
 ---
 
-## Core Philosophy
+## Guiding Principle
 
-Optimize for:
-- **Fast workflow** — from decision to printed label in seconds
-- **Minimal maintenance** — Git-based configuration, no complex databases
-- **Easy deployment** — clone repo, run, go
-- **Claude Code integration** — templates and config editable by AI
+**Question any feature or complexity that does not directly reduce the time between needing a label and having a label in hand.** Everything else is secondary.
 
-Avoid:
-- Inventory management, stock tracking, BOM management
+Common flow: *"I have something. I need a label."*
+
+Primary use cases: electronics workshop (SMD parts), chemical storage (bottles), general storage (bins/boxes).
+
+---
+
+## Active Decisions (v1)
+
+### Frontend-first — the PWA does everything
+The **React PWA is the canonical renderer**. It loads config, edits a draft, renders the label to a canvas bitmap, shows the preview, and sends that bitmap to the printer. No backend rendering.
+
+### Preview = Print (hard requirement, invariant)
+There is **exactly one renderer and one bitmap**. The bitmap shown on screen is the identical bitmap sent to the printer. A second rendering path must never exist — this holds by construction, not as a feature to add later.
+
+### Rendering pipeline (all client-side)
+```
+draft data + template → canvas at exact dot size → threshold to 1-bit bitmap
+                      → that same bitmap = preview AND print payload
+```
+DPI is a property of the **media/printer profile**, passed into the mm→dots step — never hard-coded in the renderer.
+
+### Templates — declarative layout first
+v1 templates are a small **declarative layout** the canvas renderer interprets directly (stacks, text fields, font size/weight/align; barcode/QR later). Claude- and human-editable. **HTML/CSS templates are deferred** to a possible later alternative renderer — decoupled on purpose.
+
+### The model — Media / Template / Preset
+Labels compose from three decoupled concepts. Users pick a **preset**, not the parts:
+- **Media** — the physical roll (size, material, DPI, SKU).
+- **Template** — the layout and fields.
+- **Preset** — a user-facing choice that resolves to media + template + printer.
+
+### Platform & transport
+Target device is **Android**; printing is over **Web Bluetooth** (Chrome on Android). The phone is both the renderer and the printing device.
+
+### End-to-end workflow
+```
+talk to ChatGPT → it creates a DRAFT (data only) on the hosted server → returns a link
+   → tap link → PWA opens directly on the draft → preview → one tap → print over Bluetooth
+```
+ChatGPT never renders or prints — it only produces draft data + a URL. The hosted server (not the user's PC) holds drafts, so the flow works with the PC off.
+
+### Persistence
+Drafts are ephemeral (memory / simple storage). No database. A small server exists only to store and hand off drafts — it never renders.
+
+---
+
+## Out of Scope (now and likely forever)
+
+- Inventory / stock / BOM tracking, component or product records
 - Complex databases
-- Unnecessary administration
+- User accounts, permissions, mandatory setup
+- Backend/headless rendering, Chromium
+
+Components, chemicals, and products are optional integrations — never required. Labels are independent objects created on demand.
 
 ---
 
-## What This Project Is
+## Deployment
 
-**This is a label printing tool, not inventory software.**
-
-### Primary Entity: Label Draft
-
-The system operates on label drafts — the data and context needed to render and print a label.
-
-Drafts may be held in memory, persisted to files, or stored elsewhere. **The persistence mechanism is an implementation detail.**
-
-Everything else exists to support creating, previewing, editing, and printing label drafts.
-
-### What the System Does NOT Do
-
-- Store components, chemicals, products, or inventory records
-- Track inventory counts or locations
-- Require user accounts or permissions
-- Mandate prerequisite setup
-
-Labels are independent objects created on-demand. Components, chemicals, and products are optional integrations, never required.
-
----
-
-## Primary Use Cases
-
-1. **Electronics Workshop** — SMD components, resistors, modules, capacitors
-2. **Chemical Storage** — Bottles and containers for KCl, citric acid, etc.
-3. **General Storage** — Bins and boxes of screws, cable ties, plumbing parts
-
-Common flow: "I have something. I need a label."
-
----
-
-## Key Design Decisions
-
-### Configuration as Code
-- Templates, printers, and label definitions live in Git
-- Deploying to a new server = clone repo + run
-- Changes to templates behave like code changes (review, commit, rollback)
-
-### Three-Part Model: Media, Template, Preset
-
-Labels are composed from three decoupled concepts:
-
-**Media** — The physical roll loaded in the printer.
-```yaml
-media:
-  lbl123:
-    widthMm: 50
-    heightMm: 20
-    material: PET
-```
-Answers: How big? What material? Which SKU to buy?
-
-**Template** — The layout and field structure.
-```yaml
-templates:
-  smd-small:
-  chemical-small:
-  storage-bin:
-```
-Answers: How should the label look? Which fields exist? Where are they positioned?
-
-**Preset** — A user-facing workflow combining media + template + printer choice.
-```yaml
-presets:
-  aidetek-small:
-    media: lbl123
-    template: smd-small
-```
-Answers: Which label should the user select in the UI?
-
-**Why three parts:** Users think in presets ("Print on Aidetek Small"), not in media or templates. Decoupling allows one media type to serve multiple templates, and one template to work with different media.
-
-### Preview = Print (Hard Requirement)
-
-**The preview shown to the user must always be generated from the exact bitmap that will be sent to the printer.**
-
-No separate preview rendering pipeline may exist. This is non-negotiable.
-
-Pipeline:
-```
-HTML/CSS → Render at printer DPI → 1-bit monochrome bitmap → Preview & Send to Printer
-```
-
-The bitmap displayed on screen must be the identical bitmap sent to the device.
-
-### Printer Abstraction
-- Rendering (HTML/CSS → bitmap) decoupled from printing
-- Adapters for Niimbot, Brother, Zebra, Dymo, etc.
-- Renderer agnostic to printer choice
-
-### Minimal Persistence
-- Drafts and recent history in memory acceptable
-- Optional: simple file-based persistence (JSON)
-- No database required unless clear need emerges
-
----
-
-## Development Workflow
-
-**Intended workflow:**
-
-1. Claude Code edits HTML/CSS/YAML templates
-2. Dev server hot-reloads
-3. Browser shows live preview
-4. User reviews and tweaks
-5. Config committed to Git
-
-**Template technology:** Current preferred direction is HTML/CSS — familiar tooling, easy to edit, Claude-friendly, supports live preview. The system should be designed so alternative renderers could be introduced later without major refactoring.
-
----
-
-## Template Development
-
-Templates should be editable by both humans and AI.
-
-**Preferred workflow:**
-
-1. Edit HTML/CSS template in editor
-2. Dev server automatically reloads
-3. Print bitmap regenerates instantly
-4. Exact print preview updates in real-time
-5. Iterate until satisfied
-
-This rapid feedback loop enables effective use of Claude Code to design and modify templates.
-
----
-
-## Printer Selection Philosophy
-
-**Users generally select a preset, not a printer.**
-
-The system should determine the appropriate media, template, and printer automatically whenever possible.
-
-Bad UX:
-```
-1. Select printer
-2. Select media
-3. Select template
-4. Specify width
-5. Specify height
-```
-
-Good UX:
-```
-Print BC547 on Aidetek Small
-```
-
-Presets encapsulate all these choices, reducing user friction.
-
----
-
-## Configuration as Product
-
-**The label configuration repository is part of the product.**
-
-Templates, presets, media definitions, and printer profiles are treated as source code and versioned in Git.
-
-Benefits:
-- Git history and rollback
-- Code review workflow for template changes
-- Easy collaboration
-- No manual database migrations
-- New installation → clone repo → ready to use
-
-A fresh deployment should become fully functional without requiring manual setup, admin panels, or configuration forms.
-
----
-
-## ChatGPT Integration
-
-Future workflow:
-```
-ChatGPT (natural language)
-  → MCP Tool (create draft)
-  → PWA (review & print)
-  → Printed label
-```
-
-Users may say "Create a label for BC547" → system generates draft ready to print.
-
----
-
-## Success Criteria
-
-The project succeeds when this workflow feels effortless:
-
-1. User realizes a label is needed
-2. User creates label (ChatGPT or PWA)
-3. User optionally tweaks draft
-4. User prints
-5. User has label
-
-**Everything else is secondary.** Question any feature or complexity that doesn't directly serve this workflow.
+Destined for the strato-stack homelab at **vanbassum.com**, behind Traefik (HTTPS via Let's Encrypt). A fresh deployment should become functional without manual admin/config forms.
 
 ---
 
 ## Project Structure
 
 ```
-/lablr-api          → .NET 9 minimal API
-/lablr-ui           → Frontend (Vue/React)
-/label-config       → Git-based configuration (source of truth)
-  /media            → Physical media definitions (YAML)
-  /templates        → HTML/CSS templates (reusable layouts)
-  /presets          → User-facing workflow presets (YAML)
-  /printers         → Printer adapters & profiles (YAML)
+/lablr-ui      → React PWA — the canonical renderer (primary)
+/lablr-api     → .NET 9 minimal API — dormant in v1; later only for draft storage/handoff
+/label-config  → configuration (media, templates, presets, printers) — introduced incrementally
 ```
-
-Configuration is the source of truth. Deploy by cloning the configuration repository.
-
----
-
-## Implementation Notes
-
-- **Configuration is permanent.** Media, templates, and presets are stored in Git.
-- **Labels are ephemeral.** Drafts exist in memory or temporary storage. No history archive needed.
-- Templates should be reusable and generic (not tied to specific products)
-- Rendering pipeline: HTML/CSS → bitmap → preview/print (same pipeline)
-- Printer adapters consume 1-bit bitmaps, ignorant of rendering source
-- Avoid user management unless absolutely necessary
