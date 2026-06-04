@@ -47,7 +47,6 @@ export type TemplateElement = TextElement
 export interface Template {
   id: string
   name: string
-  designSize?: { width: number; height: number } // mm — coordinate space for design. If omitted, template is responsive (elements use %)
   fields: Record<string, TemplateField>
   elements: TemplateElement[]
 }

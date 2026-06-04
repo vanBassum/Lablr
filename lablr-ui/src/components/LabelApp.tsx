@@ -136,7 +136,7 @@ function DraftCard({
   const template =
     (preset && templates.find((t) => t.id === preset.template)) ??
     pickTemplate(draft, templates)
-  const m = (preset && media.find((x) => x.id === preset.media)) ?? pickMedia(template, media)
+  const m = (preset && media.find((x) => x.id === preset.media)) ?? pickMedia(media)
 
   return (
     <button

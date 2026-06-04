@@ -107,14 +107,10 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
 }
 
 /**
- * Render a template + draft values onto `canvas` as a 1-bit bitmap.
- *
- * Architecture:
- * 1. Effective media = media with landscape swapping dimensions upfront
- * 2. All coordinates work with effective media (mm or % of it)
- * 3. Template fills effective media (responsive) or scales via contain (fixed)
- * 4. Elements position in that space, auto-fit text to rectangles
- * 5. Canvas renders normally (no rotation transforms)
+ * Render template on media.
+ * Template elements use percentages (5%, 50%, etc.) of media width/height.
+ * Canvas size = media size (in dots). No scaling needed, just percentages.
+ * Landscape swaps media dimensions upfront.
  */
 export function renderLabel(
   canvas: HTMLCanvasElement,
@@ -123,16 +119,14 @@ export function renderLabel(
   media: Media,
   orientation: Orientation = "portrait",
 ): void {
-  // Step 1: Effective media dimensions (landscape swaps width/height)
+  // Media dimensions (landscape swaps them)
   const landscape = orientation === "landscape"
-  const effectiveMedia = {
-    w: landscape ? media.size.h : media.size.w,
-    h: landscape ? media.size.w : media.size.h,
-  }
+  const mediaW = landscape ? media.size.h : media.size.w
+  const mediaH = landscape ? media.size.w : media.size.h
 
-  // Step 2: Set canvas to effective media size (in dots)
-  const Wd = mmToDots(effectiveMedia.w)
-  const Hd = mmToDots(effectiveMedia.h)
+  // Canvas = media size in dots
+  const Wd = mmToDots(mediaW)
+  const Hd = mmToDots(mediaH)
   canvas.width = Wd
   canvas.height = Hd
 
@@ -141,47 +135,26 @@ export function renderLabel(
   ctx.fillRect(0, 0, Wd, Hd)
   ctx.fillStyle = "black"
 
-  // Step 3: Design space (what the template fills)
-  const isResponsive = !template.designSize
-  const designSpace = isResponsive
-    ? effectiveMedia
-    : {
-        w: template.designSize!.width,
-        h: template.designSize!.height,
-      }
-
-  // Step 4: Scale (how much to shrink fixed templates to fit media)
-  const scale = isResponsive ? 1 : Math.min(effectiveMedia.w / designSpace.w, effectiveMedia.h / designSpace.h)
-
-  // Step 5: Offset to center design on media
-  const offsetMm = {
-    x: (effectiveMedia.w - designSpace.w * scale) / 2,
-    y: (effectiveMedia.h - designSpace.h * scale) / 2,
-  }
-
-  // Step 6: Render elements
-  ctx.save()
-  ctx.translate(mmToDots(offsetMm.x), mmToDots(offsetMm.y))
-
+  // Render elements
   for (const element of template.elements) {
     if (element.type !== "text") continue
 
     const text = element.field ? fieldValues[element.field] ?? "" : element.text ?? ""
     if (!text) continue
 
-    // Parse element rect (supports "5%" or "5" mm)
+    // Element rect: percentages of media dimensions
     const elemMm = {
-      x: parseCoord(element.rect.x, effectiveMedia.w),
-      y: parseCoord(element.rect.y, effectiveMedia.h),
-      w: parseCoord(element.rect.width, effectiveMedia.w),
-      h: parseCoord(element.rect.height, effectiveMedia.h),
+      x: parseCoord(element.rect.x, mediaW),
+      y: parseCoord(element.rect.y, mediaH),
+      w: parseCoord(element.rect.width, mediaW),
+      h: parseCoord(element.rect.height, mediaH),
     }
 
-    // Apply scale and convert to canvas dots
-    const boxX = mmToDots(elemMm.x * scale)
-    const boxY = mmToDots(elemMm.y * scale)
-    const boxW = mmToDots(elemMm.w * scale)
-    const boxH = mmToDots(elemMm.h * scale)
+    // Convert to canvas dots
+    const boxX = mmToDots(elemMm.x)
+    const boxY = mmToDots(elemMm.y)
+    const boxW = mmToDots(elemMm.w)
+    const boxH = mmToDots(elemMm.h)
 
     // Auto-fit: binary search for largest font that fits
     const maxFontSize = mmToDots(element.font.maxSize)
@@ -227,7 +200,6 @@ export function renderLabel(
     })
   }
 
-  ctx.restore()
   thresholdTo1Bit(ctx, Wd, Hd)
 }
 

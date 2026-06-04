@@ -1,6 +1,6 @@
 import { load } from "js-yaml"
 import { parseMedia, parsePrinter, parseTemplate } from "./load"
-import type { Draft, Media, Orientation, Preset, Printer, Template } from "./types"
+import type { Draft, Media, Preset, Printer, Template } from "./types"
 
 // Config is fetched at runtime from /config (the public folder), NOT bundled —
 // so templates/drafts can be edited or added without rebuilding, matching the
@@ -76,26 +76,11 @@ export function templateAccepts(template: Template, draft: Draft): boolean {
 export const draftName = (d: Draft) => d.label ?? Object.values(d.fields).join(" · ")
 
 /**
- * A template fits a media when its design size can fit on the label.
- * Responsive templates (no designSize) always fit. Fixed-size templates use contain scaling.
+ * All templates are responsive and fit any media.
+ * (Templates use percentages, so they adapt to whatever media they're on.)
  */
-export function templateFitsMedia(
-  template: Template,
-  media: Media,
-  orientation: Orientation = "portrait",
-): boolean {
-  // Responsive templates always fit (they adapt to the media)
-  if (!template.designSize) return true
-
-  // Fixed-size templates: check if design fits with contain scaling
-  const designW = orientation === "landscape" ? template.designSize.height : template.designSize.width
-  const designH = orientation === "landscape" ? template.designSize.width : template.designSize.height
-  const mediaW = media.size.w
-  const mediaH = media.size.h
-
-  // Require minimum scale (don't shrink below 30% of design)
-  const scale = Math.min(mediaW / designW, mediaH / designH)
-  return scale >= 0.3
+export function templateFitsMedia(): boolean {
+  return true
 }
 
 /** The template to show for a draft by default: its suggestion, else first that fits. */
@@ -106,13 +91,11 @@ export function pickTemplate(draft: Draft, templates: Template[]): Template | un
   )
 }
 
-/** The media to show for a template by default: first that fits, else first available. */
+/** The media to show by default: first available. */
 export function pickMedia(
-  template: Template | undefined,
   media: Media[],
 ): Media | undefined {
-  if (!template) return media[0]
-  return media.find((m) => templateFitsMedia(template, m)) ?? media[0]
+  return media[0]
 }
 
 /** Presets whose template can render this draft's data. */

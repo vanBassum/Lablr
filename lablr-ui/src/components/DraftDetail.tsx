@@ -17,7 +17,6 @@ import {
   pickMedia,
   pickTemplate,
   printerForMedia,
-  templateFitsMedia,
 } from "@/label/templates"
 import type {
   Draft,
@@ -82,11 +81,9 @@ export function DraftDetail({
     (preset && templates.find((t) => t.id === preset.template)) ??
     pickTemplate(draft, templates)
   const selectedMedia =
-    (preset && media.find((m) => m.id === preset.media)) ?? pickMedia(template, media)
-  const fits =
-    template && selectedMedia
-      ? templateFitsMedia(template, selectedMedia, orientation)
-      : true
+    (preset && media.find((m) => m.id === preset.media)) ?? pickMedia(media)
+  // All templates fit all media (responsive layout)
+  const fits = true
 
   const printerProfile = printerForMedia(selectedMedia, printers)
 
