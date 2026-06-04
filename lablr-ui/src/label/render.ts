@@ -26,27 +26,6 @@ function thresholdTo1Bit(
 }
 
 /**
- * Map mm coordinates from the design space to canvas dots.
- * Assumes canvas transforms have already been applied for rotation/centering.
- */
-function designToCanvasDots(
-  designMm: { x: number; y: number; w: number; h: number },
-  designSize: { width: number; height: number },
-  media: { w: number; h: number },
-): { x: number; y: number; w: number; h: number } {
-  // Contain scaling: fit design into media without clipping
-  const scale = Math.min(media.w / designSize.width, media.h / designSize.height)
-
-  // Convert mm to canvas dots (accounting for scaling)
-  const x = mmToDots(designMm.x * scale)
-  const y = mmToDots(designMm.y * scale)
-  const w = mmToDots(designMm.w * scale)
-  const h = mmToDots(designMm.h * scale)
-
-  return { x, y, w, h }
-}
-
-/**
  * Parse a coordinate value (number in mm or string like "50%" of media width/height).
  */
 function parseCoord(value: number | string, mediaSize: number): number {
@@ -128,10 +107,14 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
 }
 
 /**
- * Render a template + draft values onto `canvas` as a 1-bit-ready black/white bitmap.
- * The canvas is always the MEDIA's physical size. The template's designSize is scaled
- * to fit the media using "contain" (aspect ratio preserved, centered). `orientation`
- * decides whether the design is upright or rotated 90° within the label.
+ * Render a template + draft values onto `canvas` as a 1-bit bitmap.
+ *
+ * Architecture:
+ * 1. Effective media = media with landscape swapping dimensions upfront
+ * 2. All coordinates work with effective media (mm or % of it)
+ * 3. Template fills effective media (responsive) or scales via contain (fixed)
+ * 4. Elements position in that space, auto-fit text to rectangles
+ * 5. Canvas renders normally (no rotation transforms)
  */
 export function renderLabel(
   canvas: HTMLCanvasElement,
@@ -140,109 +123,97 @@ export function renderLabel(
   media: Media,
   orientation: Orientation = "portrait",
 ): void {
+  // Step 1: Effective media dimensions (landscape swaps width/height)
   const landscape = orientation === "landscape"
+  const effectiveMedia = {
+    w: landscape ? media.size.h : media.size.w,
+    h: landscape ? media.size.w : media.size.h,
+  }
 
-  // In landscape, media dimensions are swapped (54×70 → 70×54)
-  const mediaW = landscape ? media.size.h : media.size.w
-  const mediaH = landscape ? media.size.w : media.size.h
-
-  const Wd = mmToDots(mediaW)
-  const Hd = mmToDots(mediaH)
+  // Step 2: Set canvas to effective media size (in dots)
+  const Wd = mmToDots(effectiveMedia.w)
+  const Hd = mmToDots(effectiveMedia.h)
   canvas.width = Wd
   canvas.height = Hd
 
-  const ctx = canvas.getContext("2d")
-  if (!ctx) throw new Error("no 2d context")
-
+  const ctx = canvas.getContext("2d")!
   ctx.fillStyle = "white"
   ctx.fillRect(0, 0, Wd, Hd)
   ctx.fillStyle = "black"
 
-  // Use designSize if provided, otherwise template is responsive (fills media)
+  // Step 3: Design space (what the template fills)
   const isResponsive = !template.designSize
+  const designSpace = isResponsive
+    ? effectiveMedia
+    : {
+        w: template.designSize!.width,
+        h: template.designSize!.height,
+      }
 
-  const designSize = template.designSize || { width: mediaW, height: mediaH }
-  const designW = isResponsive ? mediaW : designSize.width
-  const designH = isResponsive ? mediaH : designSize.height
+  // Step 4: Scale (how much to shrink fixed templates to fit media)
+  const scale = isResponsive ? 1 : Math.min(effectiveMedia.w / designSpace.w, effectiveMedia.h / designSpace.h)
 
-  // Contain scaling: fit design into media
-  const scale = isResponsive ? 1 : Math.min(mediaW / designW, mediaH / designH)
-  const scaledW = designW * scale
-  const scaledH = designH * scale
-
-  // Center the design on the media (in mm)
+  // Step 5: Offset to center design on media
   const offsetMm = {
-    x: (mediaW - scaledW) / 2,
-    y: (mediaH - scaledH) / 2,
+    x: (effectiveMedia.w - designSpace.w * scale) / 2,
+    y: (effectiveMedia.h - designSpace.h * scale) / 2,
   }
 
-  // Just translate to the design offset (no rotation needed)
+  // Step 6: Render elements
   ctx.save()
   ctx.translate(mmToDots(offsetMm.x), mmToDots(offsetMm.y))
 
-  // For each element, auto-fit text and render it (in design space, pre-scaled)
   for (const element of template.elements) {
     if (element.type !== "text") continue
 
-    // Get the text to render
     const text = element.field ? fieldValues[element.field] ?? "" : element.text ?? ""
     if (!text) continue
 
-    // Parse element coordinates (supports both mm and percentage)
-    // For responsive templates in landscape, percentages are still based on original media
+    // Parse element rect (supports "5%" or "5" mm)
     const elemMm = {
-      x: parseCoord(element.rect.x, landscape && isResponsive ? media.size.h : media.size.w),
-      y: parseCoord(element.rect.y, landscape && isResponsive ? media.size.w : media.size.h),
-      w: parseCoord(element.rect.width, landscape && isResponsive ? media.size.h : media.size.w),
-      h: parseCoord(element.rect.height, landscape && isResponsive ? media.size.w : media.size.h),
+      x: parseCoord(element.rect.x, effectiveMedia.w),
+      y: parseCoord(element.rect.y, effectiveMedia.h),
+      w: parseCoord(element.rect.width, effectiveMedia.w),
+      h: parseCoord(element.rect.height, effectiveMedia.h),
     }
 
-    // Map element rect from design space to canvas dots (accounting for contain scaling)
-    const rect = designToCanvasDots(
-      elemMm,
-      template.designSize || { width: mediaW, height: mediaH },
-      { w: mediaW, h: mediaH },
-    )
+    // Apply scale and convert to canvas dots
+    const boxX = mmToDots(elemMm.x * scale)
+    const boxY = mmToDots(elemMm.y * scale)
+    const boxW = mmToDots(elemMm.w * scale)
+    const boxH = mmToDots(elemMm.h * scale)
 
-    const boxX = rect.x
-    const boxY = rect.y
-    const boxW = rect.w
-    const boxH = rect.h
-
-    // Binary search for the largest font size that fits
-    let fontSize = mmToDots(element.font.maxSize)
-    let minFontSize = mmToDots(element.font.minSize)
+    // Auto-fit: binary search for largest font that fits
+    const maxFontSize = mmToDots(element.font.maxSize)
+    const minFontSize = mmToDots(element.font.minSize)
+    let fontSize = maxFontSize
 
     while (fontSize >= minFontSize) {
-      const fontStr = `${element.font.weight === "bold" ? "bold " : ""}${fontSize}px sans-serif`
-      ctx.font = fontStr
-
+      ctx.font = `${element.font.weight === "bold" ? "bold " : ""}${fontSize}px sans-serif`
       if (textFits(ctx, text, boxW, boxH, element.wrap ?? false, element.maxLines)) {
         break
       }
       fontSize -= 1
     }
 
-    if (fontSize < minFontSize) continue // Give up if we can't fit even at min size
+    if (fontSize < minFontSize) continue
 
-    // Render the text
-    const fontStr = `${element.font.weight === "bold" ? "bold " : ""}${fontSize}px sans-serif`
-    ctx.font = fontStr
+    // Render text with alignment
+    ctx.font = `${element.font.weight === "bold" ? "bold " : ""}${fontSize}px sans-serif`
     ctx.textBaseline = "top"
 
     const align = element.align ?? "center"
     const valign = element.valign ?? "center"
     ctx.textAlign = align
 
-    // Horizontal position
+    // Horizontal alignment
     let textX = boxX
     if (align === "center") textX += boxW / 2
     else if (align === "right") textX += boxW
 
-    // Vertical position (estimate line height)
+    // Vertical alignment
     const metrics = ctx.measureText("M")
     const lineHeight = Math.ceil(metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent)
-
     const lines = (element.wrap ?? false) ? wrapText(ctx, text, boxW) : [text]
     const totalHeight = lines.length * lineHeight
 
@@ -250,7 +221,7 @@ export function renderLabel(
     if (valign === "center") textY += Math.max(0, (boxH - totalHeight) / 2)
     else if (valign === "bottom") textY += Math.max(0, boxH - totalHeight)
 
-    // Render each line
+    // Draw
     lines.forEach((line, i) => {
       ctx.fillText(line, textX, textY + i * lineHeight)
     })
