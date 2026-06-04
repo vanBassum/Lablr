@@ -6,18 +6,22 @@ import { load } from "js-yaml"
 
 const TEMPLATES = new URL("../public/config/templates/", import.meta.url)
 
-const ids = JSON.parse(await readFile(new URL("index.json", TEMPLATES), "utf8"))
-
-const templates = []
-for (const id of ids) {
-  const t = load(await readFile(new URL(`${id}.yaml`, TEMPLATES), "utf8"))
-  const fields = Object.entries(t.fields ?? {}).map(([key, field]) => ({ key, label: field.label }))
-  templates.push({
-    id: t.id,
-    name: t.name,
-    designSize: t.designSize,
-    fields,
-  })
+let templates = []
+try {
+  const ids = JSON.parse(await readFile(new URL("index.json", TEMPLATES), "utf8"))
+  for (const id of ids) {
+    const t = load(await readFile(new URL(`${id}.yaml`, TEMPLATES), "utf8"))
+    const fields = Object.entries(t.fields ?? {}).map(([key, field]) => ({ key, label: field.label }))
+    templates.push({
+      id: t.id,
+      name: t.name,
+      designSize: t.designSize,
+      fields,
+    })
+  }
+} catch (e) {
+  // Config directory not yet created (e.g., during redesign)
+  templates = []
 }
 
 const catalog = {
@@ -45,16 +49,20 @@ const list = templates
 
 // Example from the electronics template if present, else the first one.
 const ex = templates.find((t) => t.id === "smd-basic") ?? templates[0]
-const exValues =
-  ex.id === "smd-basic"
-    ? { name: "TIP31", subtitle: "NPN power transistor", package: "TO-220" }
-    : Object.fromEntries(ex.fields.map((f) => [f.key, "value"]))
-const exQuery = Object.entries(exValues)
-  .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-  .join("&")
-const exUrl = `${BASE}#/draft?t=${ex.id}&${exQuery}`
+let exUrl = ""
+if (ex) {
+  const exValues =
+    ex.id === "smd-basic"
+      ? { name: "TIP31", subtitle: "NPN power transistor", package: "TO-220" }
+      : Object.fromEntries(ex.fields.map((f) => [f.key, "value"]))
+  const exQuery = Object.entries(exValues)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join("&")
+  exUrl = `${BASE}#/draft?t=${ex.id}&${exQuery}`
+}
 
-const llms = `# Lablr — label maker
+const llms = templates.length > 0
+  ? `# Lablr — label maker
 
 When the user asks for a label, build a URL they can open on their phone to
 preview and print it. Reply with that URL.
@@ -72,6 +80,10 @@ ${list}
 ## Example
 "a TIP31 NPN power transistor in a TO-220 package" →
 ${exUrl}
+`
+  : `# Lablr — label maker (templates in redesign)
+
+Configuration is being redesigned. Check back soon.
 `
 
 await writeFile(new URL("../public/llms.txt", import.meta.url), llms)

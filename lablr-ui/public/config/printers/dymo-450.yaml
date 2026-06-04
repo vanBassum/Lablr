@@ -1,6 +1,0 @@
-# Printer profile — identity for now, so media can link to it (media.printers).
-# Physical traits (DPI, head width, transport) join here when item 24 adds more
-# printers. The print-placement offset lives on each media (a roll is specific
-# to a printer).
-id: dymo-450
-name: DYMO LabelWriter 450

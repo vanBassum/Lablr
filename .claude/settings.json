@@ -8,7 +8,8 @@
       "Bash(curl -fsSL https://vanbassum.github.io/Lablr/catalog.json)",
       "Bash(curl -fsSL https://vanbassum.github.io/Lablr/)",
       "Bash(pnpm --silent dev)",
-      "PowerShell(Start-Process \"http://localhost:5173/\")"
+      "PowerShell(Start-Process \"http://localhost:5173/\")",
+      "Bash(npm run *)"
     ]
   }
 }

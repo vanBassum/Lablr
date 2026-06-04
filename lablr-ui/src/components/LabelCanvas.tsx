@@ -1,39 +1,25 @@
-import { useEffect, useRef, type RefObject } from "react"
-import { renderLabel } from "@/label/render"
-import type { Media, Orientation, Template } from "@/label/types"
+import { useRef, type RefObject } from "react"
 
 /**
- * A white-framed label preview, scaled so its longest edge is `maxEdgePx`.
- * Pass `canvasRef` when the caller needs the canvas (e.g. to print it).
+ * A white-framed label preview canvas.
+ * (Render pipeline to be designed)
  */
 export function LabelCanvas({
-  template,
-  fields,
-  media,
-  maxEdgePx,
-  orientation = "portrait",
+  width = 300,
+  height = 400,
   canvasRef,
 }: {
-  template: Template
-  fields: Record<string, string>
-  media: Media
-  maxEdgePx: number
-  orientation?: Orientation
+  width?: number
+  height?: number
   canvasRef?: RefObject<HTMLCanvasElement | null>
 }) {
   const internal = useRef<HTMLCanvasElement>(null)
   const ref = canvasRef ?? internal
 
-  useEffect(() => {
-    if (ref.current) renderLabel(ref.current, template, fields, media, orientation)
-  }, [template, fields, media, orientation, ref])
-
-  const scale = Math.min(maxEdgePx / media.size.w, maxEdgePx / media.size.h)
-
   return (
     <div
       className="flex items-center justify-center rounded-md bg-white p-1 shadow-sm ring-1 ring-black/10"
-      style={{ width: media.size.w * scale, height: media.size.h * scale }}
+      style={{ width, height }}
     >
       <canvas
         ref={ref}
