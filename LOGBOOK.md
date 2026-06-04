@@ -399,10 +399,11 @@ Decided the AI flow needs **no backend and no MCP server** — those fight "PC o
 
 So: **Draft = `{ preset, fields }`.** The print page still **overrides** template/media/orientation (the loaded-roll escape hatch) — presets give the default, the gear deviates. (CLAUDE.md "The model" updated; if doubt returns, re-read it + this entry.)
 
-**⚠ Handoff state — the app is currently BROKEN, mid-migration (uncommitted working tree):**
+**⚠ Handoff state — BROKEN build, mid-migration (already committed):**
 
-- The **config is migrated to the new template schema** (items 38–44) *on disk but uncommitted*: templates now use `designSize` + `fields: { key: { required, label } }` + rectangular `elements` (rect/align/valign/font{maxSize,minSize,weight}/wrap/maxLines/fit); drafts use `preset:` + `fields:`.
-- The **code still speaks the OLD schema** — types, `load.ts`, `render.ts` (stack engine), the catalog/llms generator (`build-catalog.mjs` reads `fields` as an array, will throw on the new object). So **nothing renders/builds against the on-disk config**. The *committed* state is the old (working) schema, so the live Pages site + deploy stay green — don't commit the WIP until the new renderer builds.
+- The **new template schema is committed** (commit `6b96f27`): templates use `designSize` + `fields: { key: { required, label } }` + rectangular `elements` (rect/align/valign/font{maxSize,minSize,weight}/wrap/maxLines/fit); drafts use `preset:` + `fields:`.
+- The **code still speaks the OLD schema** — `types.ts`, `load.ts`, `render.ts` (stack engine), and `scripts/build-catalog.mjs` (reads `fields` as an **array**, so `.map` throws on the new object). Result: **`pnpm build` fails → the GitHub Pages deploy has been RED since `6b96f27`.** The **live site is frozen at the last good deploy** (old schema, still works), but `main` does not build.
+- **Fix forward, do NOT revert** (keep the migration): finish the new-schema renderer + update `build-catalog.mjs`/`llms.txt` for `fields`-as-object, then the deploy goes green again. Until then, `main` is red.
 
 **Pick-up plan for the next session (in order):**
 1. **Finish the new-schema renderer** — rect `elements` + **auto-fit (shrink)** + align/valign + wrap/maxLines; map `designSize → media` via **contain** (uniform scale-to-fit, decided). Update `types.ts`, `load.ts` validation, `render.ts`, and `build-catalog.mjs` (+ `llms.txt`) for `fields`-as-object.
