@@ -100,6 +100,20 @@ export function LabelApp() {
           />
         ))}
       </div>
+
+      <footer className="text-muted-foreground mt-8 text-center text-xs">
+        <a
+          href={`${import.meta.env.BASE_URL}llms.txt`}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2"
+        >
+          Make a label with ChatGPT →
+        </a>
+        <p className="mt-1">
+          Paste this site's link in a chat and ask for any part.
+        </p>
+      </footer>
     </main>
   )
 }
