@@ -388,3 +388,25 @@ Decided the AI flow needs **no backend and no MCP server** — those fight "PC o
 **Deferred (start simple):** inline custom templates per-draft (the draft model will allow `template` as an object later) and a draft-store backend for short links — only if URL/paste delivery proves limiting. Auto-fit text (item 35) still pending and will help AI-generated values of varying length.
 
 **Refinement — instructions live on the site (no Custom GPT needed):** instead of configuring a per-user Custom GPT, the build also generates **`llms.txt`** — self-contained instructions (protocol + live template list + a TIP31 example) — and `index.html` carries a `<noscript>` pointer to it. So in *any* browsing chat you paste the site link (or llms.txt), ask for a part, and it reads the instructions + templates and returns a `#/draft` URL. Zero per-user setup, and it stays current because llms.txt is generated from config on every deploy.
+
+---
+
+## 2026-06-04 — Presets SETTLED (stop relitigating) + session handoff
+
+**Presets are kept. This is final — we oscillated ~3× (added → dropped → re-added → considered dropping → kept).** The reason, recorded so it can be *pointed at* instead of re-debated:
+
+> A preset is a named **(template + media + orientation)** **use case** — "Aida box", "Chemical vial", "Chemical bucket". It exists for **consistency**: the same thing always prints the same way (a transistor for the Aida box always uses that template + that roll), and it's how the user/AI naturally express intent ("a label for my Aida box"), not "template X on media Y". Dropping presets loses the use-case naming and makes the AI guess the media.
+
+So: **Draft = `{ preset, fields }`.** The print page still **overrides** template/media/orientation (the loaded-roll escape hatch) — presets give the default, the gear deviates. (CLAUDE.md "The model" updated; if doubt returns, re-read it + this entry.)
+
+**⚠ Handoff state — the app is currently BROKEN, mid-migration (uncommitted working tree):**
+
+- The **config is migrated to the new template schema** (items 38–44) *on disk but uncommitted*: templates now use `designSize` + `fields: { key: { required, label } }` + rectangular `elements` (rect/align/valign/font{maxSize,minSize,weight}/wrap/maxLines/fit); drafts use `preset:` + `fields:`.
+- The **code still speaks the OLD schema** — types, `load.ts`, `render.ts` (stack engine), the catalog/llms generator (`build-catalog.mjs` reads `fields` as an array, will throw on the new object). So **nothing renders/builds against the on-disk config**. The *committed* state is the old (working) schema, so the live Pages site + deploy stay green — don't commit the WIP until the new renderer builds.
+
+**Pick-up plan for the next session (in order):**
+1. **Finish the new-schema renderer** — rect `elements` + **auto-fit (shrink)** + align/valign + wrap/maxLines; map `designSize → media` via **contain** (uniform scale-to-fit, decided). Update `types.ts`, `load.ts` validation, `render.ts`, and `build-catalog.mjs` (+ `llms.txt`) for `fields`-as-object.
+2. **Wire the selection model** — draft `{ preset, fields }` (item 36); keep presets; print-page **gear overrides** template/media/orientation (item 46).
+3. **MCP server on the homelab** (item 47) — `create_label(preset, fields)` → validate → `#/draft` link.
+
+Everything decided lives in CLAUDE.md (active model) + ROADMAP.md (phased, stable IDs). This was a long session; continuing fresh is fine — read those two files + this entry.
