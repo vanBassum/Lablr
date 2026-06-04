@@ -1,9 +1,8 @@
 # Large chemical label — e.g. a bucket. Same field schema as chemical-small,
 # different layout for larger media. Proves the same draft can render to
-# multiple outputs via different presets (Vial vs Bucket).
+# multiple outputs via different presets (Vial vs Bucket). RESPONSIVE: scales to any media.
 id: chemical-large
 name: Chemical — large (bucket)
-designSize: { width: 108, height: 140 } # mm — canvas during design
 
 fields:
   name:
@@ -19,7 +18,7 @@ fields:
 elements:
   - type: text
     field: name
-    rect: { x: 4, y: 8, width: 100, height: 20 }
+    rect: { x: "5%", y: "5%", width: "90%", height: "15%" }
     align: center
     valign: center
     font:
@@ -32,7 +31,7 @@ elements:
 
   - type: text
     field: formula
-    rect: { x: 4, y: 32, width: 100, height: 50 }
+    rect: { x: "5%", y: "24%", width: "90%", height: "36%" }
     align: center
     valign: center
     font:
@@ -45,7 +44,7 @@ elements:
 
   - type: text
     field: hazard
-    rect: { x: 4, y: 85, width: 100, height: 20 }
+    rect: { x: "5%", y: "61%", width: "90%", height: "16%" }
     align: center
     valign: center
     font:

@@ -1,7 +1,6 @@
-# Small chemical label — e.g. a vial.
+# Small chemical label — e.g. a vial. RESPONSIVE: scales to any media size.
 id: chemical-small
 name: Chemical — small (vial)
-designSize: { width: 50, height: 20 } # mm — canvas during design
 
 fields:
   name:
@@ -17,7 +16,7 @@ fields:
 elements:
   - type: text
     field: name
-    rect: { x: 1, y: 2, width: 48, height: 6 }
+    rect: { x: "5%", y: "8%", width: "90%", height: "32%" }
     align: center
     valign: center
     font:
@@ -30,7 +29,7 @@ elements:
 
   - type: text
     field: formula
-    rect: { x: 1, y: 9, width: 48, height: 6 }
+    rect: { x: "5%", y: "45%", width: "90%", height: "30%" }
     align: center
     valign: center
     font:
@@ -42,7 +41,7 @@ elements:
 
   - type: text
     field: hazard
-    rect: { x: 1, y: 16, width: 48, height: 4 }
+    rect: { x: "5%", y: "80%", width: "90%", height: "18%" }
     align: center
     valign: center
     font:

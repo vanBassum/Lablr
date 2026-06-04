@@ -1,8 +1,7 @@
 # Storage box label — deliberately different fields + layout from smd-basic,
-# to prove the template (not the draft) decides what a label is.
+# to prove the template (not the draft) decides what a label is. RESPONSIVE: scales to any media.
 id: storage-box
 name: Storage box
-designSize: { width: 50, height: 20 } # mm — canvas during design
 
 fields:
   code:
@@ -15,7 +14,7 @@ fields:
 elements:
   - type: text
     field: code
-    rect: { x: 1, y: 1, width: 48, height: 10 }
+    rect: { x: "5%", y: "8%", width: "90%", height: "48%" }
     align: center
     valign: center
     font:
@@ -27,7 +26,7 @@ elements:
 
   - type: text
     field: contents
-    rect: { x: 1, y: 12, width: 48, height: 8 }
+    rect: { x: "5%", y: "60%", width: "90%", height: "32%" }
     align: center
     valign: center
     font:
