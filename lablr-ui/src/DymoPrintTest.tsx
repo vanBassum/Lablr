@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { mmToDots, openDymo, printCanvas, MAX_BYTES_PER_LINE } from "@/dymo"
+import { mmToDots, openDymo, printCanvas } from "@/dymo"
 import { renderLabel } from "@/label/render"
 import {
   loadDrafts,
@@ -11,7 +11,7 @@ import {
 } from "@/label/templates"
 import type { Draft, Media, Template } from "@/label/types"
 
-const HEAD_DOTS = MAX_BYTES_PER_LINE * 8
+const PREVIEW_PX_PER_MM = 8 // on-screen scale; the canvas itself is at printer dots
 
 const draftName = (d: Draft) => d.label ?? Object.values(d.values).join(" · ")
 
@@ -41,7 +41,6 @@ export function DymoPrintTest() {
   }, [])
 
   const draft = drafts?.[draftIndex]
-  // Templates that can render this draft (draft supplies all their fields).
   const compatible =
     templates && draft ? templates.filter((t) => templateAccepts(t, draft)) : []
   const template = compatible.find((t) => t.id === templateId) ?? compatible[0]
@@ -50,22 +49,25 @@ export function DymoPrintTest() {
 
   useEffect(() => {
     if (canvasRef.current && template && draft && selectedMedia) {
-      renderLabel(canvasRef.current, template, draft.values, selectedMedia, {
-        offsetX,
-        offsetY,
-      })
+      renderLabel(canvasRef.current, template, draft.values, selectedMedia)
     }
-  }, [template, draft, selectedMedia, offsetX, offsetY])
+  }, [template, draft, selectedMedia])
 
   async function handlePrint() {
     const canvas = canvasRef.current
-    if (!canvas || !draft) return
+    if (!canvas || !draft || !selectedMedia) return
     setBusy(true)
     setStatus("Opening DYMO…")
     try {
+      // Head offset = media calibration + manual nudge. X is byte-granular (ESC B).
+      const totalX = mmToDots(selectedMedia.offset?.x ?? 0) + offsetX
+      const totalY = mmToDots(selectedMedia.offset?.y ?? 0) + offsetY
       const device = await openDymo()
       setStatus("Sending raster…")
-      await printCanvas(device, canvas)
+      await printCanvas(device, canvas, {
+        dotTabBytes: Math.round(Math.max(0, totalX) / 8),
+        topBlankLines: Math.round(Math.max(0, totalY)),
+      })
       await device.releaseInterface(0)
       await device.close()
       setStatus(`✓ Printed "${draftName(draft)}".`)
@@ -80,8 +82,6 @@ export function DymoPrintTest() {
   if (!templates || !drafts || !media) return <p>Loading config…</p>
   if (!draft) return <p>No drafts found in config.</p>
   if (!selectedMedia) return <p>No media found in config.</p>
-
-  const labelH = mmToDots(selectedMedia.size.h)
 
   return (
     <div className="flex flex-col gap-3">
@@ -137,20 +137,28 @@ export function DymoPrintTest() {
 
       {template ? (
         <>
-          <canvas
-            ref={canvasRef}
-            className="border"
+          {/* Wrapper sized to the physical label so the preview matches its shape. */}
+          <div
+            className="border bg-white"
             style={{
-              width: 360,
-              height: (360 * labelH) / HEAD_DOTS,
-              imageRendering: "pixelated",
-              background: "white",
+              width: selectedMedia.size.w * PREVIEW_PX_PER_MM,
+              height: selectedMedia.size.h * PREVIEW_PX_PER_MM,
             }}
-          />
+          >
+            <canvas
+              ref={canvasRef}
+              style={{
+                width: "100%",
+                height: "100%",
+                imageRendering: "pixelated",
+                display: "block",
+              }}
+            />
+          </div>
           {fits ? (
             <p className="text-muted-foreground text-xs">
-              {selectedMedia.size.w}×{selectedMedia.size.h}mm label on the{" "}
-              {HEAD_DOTS}-dot head. This canvas is the exact print payload.
+              {selectedMedia.size.w}×{selectedMedia.size.h}mm label, shown to scale.
+              This canvas is the exact print payload.
             </p>
           ) : (
             <p className="text-xs text-red-600">
@@ -194,7 +202,7 @@ export function DymoPrintTest() {
 
       <pre className="bg-muted rounded p-3 font-mono text-xs whitespace-pre-wrap">
         {status ||
-          "Draft = data · Template = layout · Media = physical label. Calibrate offset in the media YAML; nudge here to find the value."}
+          "Draft = data · Template = layout · Media = physical label. Offset positions the label on the head (calibrate in the media YAML; nudge here to find it)."}
       </pre>
     </div>
   )

@@ -83,27 +83,51 @@ export function packToRaster(
   return { bytesPerLine, lines }
 }
 
-/** Build the full command stream for one label from packed raster lines. */
+/** Where to place the label bitmap on the print head (physical calibration). */
+export interface HeadOffset {
+  /** Left margin in whole bytes (ESC B; 8-dot granularity). */
+  dotTabBytes?: number
+  /** Blank raster lines fed before the content (vertical offset, per-dot). */
+  topBlankLines?: number
+}
+
+/**
+ * Build the full command stream for one label from packed raster lines. The
+ * raster IS the label bitmap; the head offset positions it via printer commands
+ * (ESC B dot-tab + leading blank lines), so the bitmap stays byte-identical to
+ * the preview.
+ */
 export function buildJob(
   lines: Uint8Array,
   bytesPerLine: number,
   height: number,
+  offset: HeadOffset = {},
 ): Uint8Array {
   if (bytesPerLine > MAX_BYTES_PER_LINE) {
     throw new Error(`bytesPerLine ${bytesPerLine} exceeds head max ${MAX_BYTES_PER_LINE}`)
   }
+  const dotTabBytes = Math.max(0, offset.dotTabBytes ?? 0)
+  const topBlankLines = Math.max(0, offset.topBlankLines ?? 0)
   const out: number[] = []
 
   // Reset: flush any partial command, then ESC @.
   for (let i = 0; i < 100; i++) out.push(ESC)
   out.push(ESC, 0x40)
 
-  // ESC L hi lo — label length in dots.
-  out.push(ESC, 0x4c, (height >> 8) & 0xff, height & 0xff)
+  // ESC L hi lo — total label length in dots (leading blank + content).
+  const totalH = topBlankLines + height
+  out.push(ESC, 0x4c, (totalH >> 8) & 0xff, totalH & 0xff)
+  // ESC B n — dot tab (left margin), in whole bytes.
+  if (dotTabBytes > 0) out.push(ESC, 0x42, dotTabBytes)
   // ESC D n — bytes per line.
   out.push(ESC, 0x44, bytesPerLine)
 
-  // One SYN + data per raster line. (No blank-line skipping yet — simplest first.)
+  // Leading blank lines (vertical offset).
+  for (let i = 0; i < topBlankLines; i++) {
+    out.push(SYN)
+    for (let b = 0; b < bytesPerLine; b++) out.push(0)
+  }
+  // One SYN + data per content line.
   for (let y = 0; y < height; y++) {
     out.push(SYN)
     const start = y * bytesPerLine
@@ -115,17 +139,18 @@ export function buildJob(
   return Uint8Array.from(out)
 }
 
-/** Render a canvas, pack it, and print it on an opened DYMO. ep#2 is bulk OUT. */
+/** Pack a label-sized canvas and print it on an opened DYMO. ep#2 is bulk OUT. */
 export async function printCanvas(
   device: UsbDevice,
   canvas: HTMLCanvasElement,
+  offset: HeadOffset = {},
   threshold = 128,
 ): Promise<void> {
   const ctx = canvas.getContext("2d")
   if (!ctx) throw new Error("no 2d context")
   const image = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const { bytesPerLine, lines } = packToRaster(image, threshold)
-  const job = buildJob(lines, bytesPerLine, canvas.height)
+  const job = buildJob(lines, bytesPerLine, canvas.height, offset)
   const result = await device.transferOut(2, job)
   if (result.status !== "ok") {
     throw new Error(`transferOut status: ${result.status}`)

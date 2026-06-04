@@ -194,3 +194,13 @@ Introduced **Media** — the physical label profile — as runtime YAML config (
 **UI:** added a Media dropdown (Draft · Template · Media). `chemical-large` (50×30) on the 25mm media now shows a clip warning — concrete proof that media constrains what prints. The offset sliders are reframed as a *nudge* on top of the media's calibrated offset (a calibration aid; the real value lives in the media YAML).
 
 **This is the second of the three compatibility relations presets need:** draft↔template (fields) and template↔media (size). Presets (items 13–14) will resolve draft → (template + media + printer) using both.
+
+---
+
+## 2026-06-04 — Preview matches label size; offset moved to printer commands
+
+The preview canvas was the full 672-dot head width (a wide strip) with the offset shifting content inside it. Changed so **the bitmap is the label itself** — canvas is sized to the media (e.g. 296×296 dots for 25mm) and shown on screen at the label's real aspect ratio.
+
+**Consequence — cleaner offset model:** the head-positioning offset is no longer baked into the bitmap. It's now applied as **printer commands** (`HeadOffset` in `dymo.ts`): X via **ESC B** dot-tab (whole bytes, 8-dot granularity), Y via **leading blank raster lines**. So the SYN bitmap sent to the printer is byte-identical to the previewed canvas — this *strengthens* preview = print (the label's pixels are now exactly equal; positioning is separate). The media's `offset` (mm) + the UI nudge are converted to dot-tab bytes + blank lines at print time. Note: ESC B byte-granularity makes X calibration coarse (~0.68mm steps); fine centering is handled by the center-origin layout, so this is fine for landing the label.
+
+`renderLabel` no longer takes offsets; bytes-per-line now follows the label width (37 for 25mm) instead of always 84.
