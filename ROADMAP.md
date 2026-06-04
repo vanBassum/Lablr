@@ -3,8 +3,8 @@
 > **Item numbers are stable IDs.** The logbook refers to items by number (e.g. "roadmap item 1"), so never renumber. Add new items with the next free number; don't reuse numbers of removed items.
 
 1. [x] Define the end-to-end workflow from "I need a label" to "label printed"
-2. [ ] Choose the first printer target (likely Niimbot)
-3. [ ] Decide how printing works (Web Bluetooth, local bridge, etc.)
+2. [x] Choose the first printer target — prototype: Dymo LabelWriter 450 (USB); production: Niimbot (Bluetooth)
+3. [x] Decide how printing works — one printer-transport interface, first impl WebUSB from desktop Chrome; Web Bluetooth added later
 4. [ ] Prove a label can be printed to the target printer
 5. [ ] Define the draft model (the data required to print a label)
 6. [ ] Create a minimal label editor

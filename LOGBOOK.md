@@ -48,3 +48,20 @@ talk to ChatGPT → it POSTs a draft to the server → server returns a draft li
 - Still fully frontend-first: ChatGPT only produces draft *data* + a URL; the phone renders/previews/prints.
 
 **Implication for later:** the server must mint a draft ID and the PWA needs deep-link routing (`/draft/:id`). Both small.
+
+---
+
+## 2026-06-04 — First printer + transport locked (roadmap items 2 & 3)
+
+**Decision:** prototype against a **Dymo LabelWriter 450** already on hand, driven over **WebUSB from desktop Chrome on the dev PC**. Niimbot (Bluetooth) remains the production target.
+
+**Why the Dymo first:**
+- Already owned — fastest way to prove the rendering→print pipeline (roadmap items 4–10) against real hardware.
+- The **450** is the freely-usable model: no RFID label lock (that's the 550 — avoid), third-party rolls fine, open/documented raster protocol, lots of OSS prior art.
+- Direct thermal (fades) and 300 DPI — fine for a prototype. DPI is already a media/printer-profile property, so this difference from the Niimbot is handled by construction.
+
+**Why WebUSB-from-PC first (not BLE, not OTG):**
+- The 450 is **USB only** — no Bluetooth at all, so the Web Bluetooth path can't apply to it.
+- Printing from desktop Chrome over WebUSB needs **no USB-OTG and no BLE**, removing every transport unknown for the prototype. (Driving a Dymo over WebUSB through Android OTG is plausible but unverified — deferred, not on the critical path.)
+
+**Consequence (reverses the earlier "Web Bluetooth only" framing):** transport is no longer Bluetooth-only. It sits behind a single `Printer` interface with swappable implementations — **first impl WebUSB (desktop), second impl Web Bluetooth (Niimbot on Android)**. This abstraction is needed anyway for multiple printers (item 24); the Dymo just forces it early. The bitmap pipeline is identical across transports — only byte-delivery differs, so "preview = print" is unaffected. CLAUDE.md "Platform & transport" updated accordingly.

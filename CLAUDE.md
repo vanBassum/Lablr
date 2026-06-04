@@ -52,7 +52,7 @@ Labels compose from three decoupled concepts. Users pick a **preset**, not the p
 - **Preset** — a user-facing choice that resolves to media + template + printer.
 
 ### Platform & transport
-Target device is **Android**; printing is over **Web Bluetooth** (Chrome on Android). The phone is both the renderer and the printing device.
+The renderer and printer live on the **same device** — the production target is an **Android phone** (Chrome supports PWA install + Web Bluetooth). Transport is **not Bluetooth-only**: it lives behind a single `Printer` interface with swappable implementations. The **first implementation is WebUSB from desktop Chrome**, driving a USB Dymo LabelWriter 450 — chosen to prove the pipeline with no Bluetooth/OTG unknowns. **Web Bluetooth** (for the Niimbot, on Android) is a second implementation added later. The bitmap pipeline is identical across transports; only byte-delivery differs.
 
 ### End-to-end workflow
 ```
