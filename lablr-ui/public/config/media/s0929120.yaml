@@ -1,0 +1,12 @@
+# Physical media — the actual roll loaded in the printer (roadmap item 12).
+id: s0929120
+name: 25mm square (white, removable)
+sku: S0929120
+material: direct-thermal
+size: { w: 25, h: 25 } # mm
+
+# Where this label sits on the print head, i.e. how far to shift the image so
+# it lands on the label. This is physical calibration for the Dymo 450 (the
+# deferred item-4 offset). Measured once, stored here; 0 until calibrated.
+# (When multiple printers exist, this becomes a printer×media calibration.)
+offset: { x: 0, y: 0 } # mm

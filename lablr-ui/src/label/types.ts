@@ -57,3 +57,17 @@ export interface Draft {
   label?: string // optional display name
   values: Record<string, string>
 }
+
+/**
+ * A physical label (the roll loaded in the printer). Owns size, SKU, material,
+ * and the calibrated offset of the label on the print head. DPI is NOT here —
+ * that's the printer's head resolution (see dymo.ts), passed into mm→dots.
+ */
+export interface Media {
+  id: string
+  name: string
+  sku?: string
+  material?: string
+  size: { w: number; h: number } // mm
+  offset?: { x: number; y: number } // mm — where the label sits on the head
+}

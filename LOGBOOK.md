@@ -178,3 +178,19 @@ Templates moved from `src/label/templates/*.yaml` (imported via Vite `?raw`, **b
 **Config restructure:** sample drafts moved out of templates into a shared `public/config/drafts.json` (so a draft isn't owned by a template). Added `chemical-large` (50×30mm) + `chemical-small` (25×25mm) templates; the sodium-chloride/acetone drafts fit both, proving the bucket/vial scenario. `Template.samples` removed.
 
 **Forward link:** this compatibility check is exactly what **presets** (items 13–14) will build on — a preset picks a (template + media + printer) for a draft, and only compatible templates are valid choices.
+
+---
+
+## 2026-06-04 — Media definitions; offset gets a home (item 12)
+
+Introduced **Media** — the physical label profile — as runtime YAML config (`public/config/media/` + manifest, same pattern as templates). First entry: `s0929120.yaml` (25×25mm, SKU S0929120, direct-thermal).
+
+**Design choices:**
+
+- **Media owns:** physical `size` (mm), `sku`, `material`, and the calibrated **`offset`** (mm) — where the label sits on the print head. This is the **home for the deferred item-4 alignment offset.** Currently `{0,0}` (uncalibrated); editing the YAML + reloading re-calibrates. Noted that with multiple printers it becomes a printer×media calibration.
+- **DPI is NOT on the media** — it's the print head's resolution, so it stays in the printer module (`dymo.ts`, `mmToDots`). The renderer receives mm and converts; it never hardcodes DPI itself (honors CLAUDE.md's invariant). Printer profiles are item 24.
+- **Render bounds = media size**, not template size. The template's `size` is now a *design hint*; layout (mm, center-origin) is centered within the actual media. A template "fits" a media when `template.size ≤ media.size` (`templateFitsMedia`) — otherwise the UI warns it will clip.
+
+**UI:** added a Media dropdown (Draft · Template · Media). `chemical-large` (50×30) on the 25mm media now shows a clip warning — concrete proof that media constrains what prints. The offset sliders are reframed as a *nudge* on top of the media's calibrated offset (a calibration aid; the real value lives in the media YAML).
+
+**This is the second of the three compatibility relations presets need:** draft↔template (fields) and template↔media (size). Presets (items 13–14) will resolve draft → (template + media + printer) using both.

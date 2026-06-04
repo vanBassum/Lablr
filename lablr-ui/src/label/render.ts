@@ -1,11 +1,11 @@
 import { mmToDots, MAX_BYTES_PER_LINE } from "@/dymo"
-import type { LayoutNode, Template, TextNode } from "./types"
+import type { LayoutNode, Media, Template, TextNode } from "./types"
 
 const HEAD_DOTS = MAX_BYTES_PER_LINE * 8 // 672 — full print-head width
 type Align = "left" | "center" | "right"
 
 export interface RenderOptions {
-  /** Label position on the head, in dots. Lives in the canvas so preview = print. */
+  /** Extra nudge on top of the media's calibrated offset, in dots (for calibration). */
   offsetX?: number
   offsetY?: number
 }
@@ -59,19 +59,21 @@ function draw(
 
 /**
  * Render a template + draft values onto `canvas` as a 1-bit-ready black/white
- * bitmap. Layout is authored in mm with a center origin; this maps mm→dots and
- * centers the content block on the label. The canvas is sized to the full head
- * width × label height, and IS both the preview and the print payload — there
- * is no second renderer.
+ * bitmap. The label bounds come from the MEDIA (the physical label); layout is
+ * authored in mm with a center origin and centered within those bounds. The
+ * media's calibrated offset (plus an optional nudge) positions the label on the
+ * print head. The canvas is sized to the full head width × media height, and IS
+ * both the preview and the print payload — there is no second renderer.
  */
 export function renderLabel(
   canvas: HTMLCanvasElement,
   template: Template,
   values: Record<string, string>,
+  media: Media,
   opts: RenderOptions = {},
 ): void {
-  const labelW = mmToDots(template.size.w)
-  const labelH = mmToDots(template.size.h)
+  const labelW = mmToDots(media.size.w)
+  const labelH = mmToDots(media.size.h)
   canvas.width = HEAD_DOTS
   canvas.height = labelH
 
@@ -82,8 +84,11 @@ export function renderLabel(
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   ctx.fillStyle = "black"
 
+  const baseX = mmToDots(media.offset?.x ?? 0)
+  const baseY = mmToDots(media.offset?.y ?? 0)
+
   ctx.save()
-  ctx.translate(opts.offsetX ?? 0, opts.offsetY ?? 0)
+  ctx.translate(baseX + (opts.offsetX ?? 0), baseY + (opts.offsetY ?? 0))
   const total = measure(template.layout)
   const startY = Math.max(0, (labelH - total) / 2)
   draw(ctx, template.layout, values, 0, startY, labelW, "center")

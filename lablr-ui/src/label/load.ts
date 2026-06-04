@@ -1,5 +1,5 @@
 import { load } from "js-yaml"
-import type { Template } from "./types"
+import type { Media, Template } from "./types"
 
 /** Parse a YAML template string into a Template, with light structural checks. */
 export function parseTemplate(yamlText: string): Template {
@@ -17,4 +17,16 @@ export function parseTemplate(yamlText: string): Template {
     throw new Error(`template ${t.id}: missing layout`)
   }
   return t
+}
+
+/** Parse a YAML media string into a Media, with light structural checks. */
+export function parseMedia(yamlText: string): Media {
+  const m = load(yamlText) as Media | undefined
+  if (!m || typeof m.id !== "string") {
+    throw new Error("media: missing string `id`")
+  }
+  if (!m.size || typeof m.size.w !== "number" || typeof m.size.h !== "number") {
+    throw new Error(`media ${m.id}: missing size { w, h } in mm`)
+  }
+  return m
 }
