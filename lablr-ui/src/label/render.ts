@@ -156,23 +156,28 @@ export function renderLabel(
 
   // Use designSize if provided, otherwise template is responsive (fills media)
   const isResponsive = !template.designSize
-  const designSize = template.designSize || { width: media.size.w, height: media.size.h }
-  const designW = landscape ? designSize.height : designSize.width
-  const designH = landscape ? designSize.width : designSize.height
+
+  // For responsive templates in landscape, swap media dimensions instead of rotating
+  const mediaForLayout = isResponsive && landscape
+    ? { w: media.size.h, h: media.size.w }
+    : media.size
+
+  const designSize = template.designSize || { width: mediaForLayout.w, height: mediaForLayout.h }
+  const designW = landscape && !isResponsive ? designSize.height : designSize.width
+  const designH = landscape && !isResponsive ? designSize.width : designSize.height
 
   // Contain scaling: fit design into media
-  const scale = isResponsive ? 1 : Math.min(media.size.w / designW, media.size.h / designH)
+  const scale = isResponsive ? 1 : Math.min(mediaForLayout.w / designW, mediaForLayout.h / designH)
   const scaledW = designW * scale
   const scaledH = designH * scale
 
   // Center the design on the media (in mm)
   const offsetMm = {
-    x: (media.size.w - scaledW) / 2,
-    y: (media.size.h - scaledH) / 2,
+    x: (mediaForLayout.w - scaledW) / 2,
+    y: (mediaForLayout.h - scaledH) / 2,
   }
 
-  // Apply canvas transforms for rotation
-  // Note: responsive templates ignore landscape since they fill any media aspect ratio
+  // Apply canvas transforms for rotation (only for fixed-size templates)
   ctx.save()
   if (landscape && !isResponsive) {
     const offsetDots = { x: mmToDots(offsetMm.x), y: mmToDots(offsetMm.y) }
