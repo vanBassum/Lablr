@@ -247,3 +247,17 @@ Reworked the UX into the flow the user described:
 - **Detail/print** (`DraftDetail`): back button + large preview + a sticky bottom bar with a big **Print** button and a **gear** (Settings2) next to it. The gear opens a **Drawer** (vaul bottom sheet) holding Template + Media selects, with offset-nudge + WebUSB diagnostics under an Advanced disclosure.
 
 `LabelCanvas` is a shared preview component (white frame, scaled to longest edge `maxEdgePx`); it takes an optional `canvasRef` so the detail view can read the canvas to print it. Shared `draftName` + `pickTemplate`/`pickMedia` resolvers in `label/templates.ts` keep cards and detail consistent. Replaced the single `PrintScreen` with `LabelApp`/`DraftDetail`/`LabelCanvas`. Added shadcn `drawer` (vaul).
+
+---
+
+## 2026-06-04 — Presets reintroduced (refined) for multi-output drafts (item 13)
+
+**This re-reverses the earlier "presets dropped" decision** — but for a reason the original analysis didn't cover. We dropped presets assuming each draft has **one** output (AI picks the template). The user surfaced a real **multi-output** need: acetone wants a *big bucket* label **and** a *small vial* label — one piece of data, several deliberate presentations. That's precisely what presets are for.
+
+**Refined definition:** a **preset = a named, reusable (template + media) output format** (`presets.json`): `Vial` = chemical-small + s0929120; `Bucket` = chemical-large + dymo-99014. Key properties:
+
+- **Reusable, not per-draft.** Defined once; a draft **auto-offers every preset whose template fits its data** (`compatiblePresets`, same `fields ⊆ values` check). So every chemical draft gets Vial + Bucket with zero duplication. (Chosen over the alternative of listing template/media pairs inside each draft, which repeats them.)
+- **Scoped to (template + media), not printer.** Printer is still whatever's connected.
+- **Media physicality stands:** a preset names a media, but you can only physically print the one whose roll is loaded. Preview works for any; a "roll not loaded" warning is a later nicety.
+
+**UI:** the detail screen shows compatible presets as **chips** (the big/small choice) above Print — elevated from the gear to the main screen. The gear now holds **calibration & diagnostics** (offset nudge + WebUSB probe) rather than template/media selects, since presets are the curated template+media choice. Added media `dymo-99014` (54×101mm) and resized `chemical-large` to fill it so "Bucket" is a real output. CLAUDE.md model section updated to Draft / Template / Media / Preset / Printer.

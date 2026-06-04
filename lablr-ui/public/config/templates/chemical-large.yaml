@@ -1,8 +1,8 @@
 # Large chemical label — e.g. a bucket. Same draft data as the small one,
-# different physical size + layout. Proves draft ⟂ template.
+# bigger media + layout. Proves draft ⟂ template (one draft, many outputs).
 id: chemical-large
 name: Chemical — large (bucket)
-size: { w: 50, h: 30 } # mm
+size: { w: 54, h: 101 } # mm — fills the 54×101 roll
 
 fields:
   - { key: name, label: Name }
@@ -13,8 +13,8 @@ layout:
   type: stack
   direction: vertical
   align: center
-  gap: 2
+  gap: 8
   children:
-    - { type: text, field: name, size: 7, weight: bold }
-    - { type: text, field: formula, size: 5 }
-    - { type: text, field: hazard, size: 3 }
+    - { type: text, field: name, size: 6, weight: bold }
+    - { type: text, field: formula, size: 16, weight: bold }
+    - { type: text, field: hazard, size: 4 }

@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react"
 import {
+  defaultPreset,
   draftName,
   loadDrafts,
   loadMedia,
+  loadPresets,
   loadTemplates,
   pickMedia,
   pickTemplate,
 } from "@/label/templates"
-import type { Draft, Media, Template } from "@/label/types"
+import type { Draft, Media, Preset, Template } from "@/label/types"
 import { LabelCanvas } from "@/components/LabelCanvas"
 import { DraftDetail } from "@/components/DraftDetail"
 
@@ -15,22 +17,24 @@ export function LabelApp() {
   const [templates, setTemplates] = useState<Template[] | null>(null)
   const [drafts, setDrafts] = useState<Draft[] | null>(null)
   const [media, setMedia] = useState<Media[] | null>(null)
+  const [presets, setPresets] = useState<Preset[] | null>(null)
   const [loadError, setLoadError] = useState("")
   const [selected, setSelected] = useState<number | null>(null)
 
   useEffect(() => {
-    Promise.all([loadTemplates(), loadDrafts(), loadMedia()])
-      .then(([t, d, m]) => {
+    Promise.all([loadTemplates(), loadDrafts(), loadMedia(), loadPresets()])
+      .then(([t, d, m, p]) => {
         setTemplates(t)
         setDrafts(d)
         setMedia(m)
+        setPresets(p)
       })
       .catch((e) => setLoadError((e as Error).message))
   }, [])
 
   if (loadError)
     return <p className="text-destructive p-4 text-sm">Failed to load config: {loadError}</p>
-  if (!templates || !drafts || !media)
+  if (!templates || !drafts || !media || !presets)
     return <p className="text-muted-foreground p-4 text-sm">Loading…</p>
 
   if (selected !== null && drafts[selected]) {
@@ -39,6 +43,7 @@ export function LabelApp() {
         draft={drafts[selected]}
         templates={templates}
         media={media}
+        presets={presets}
         onBack={() => setSelected(null)}
       />
     )
@@ -54,6 +59,7 @@ export function LabelApp() {
             draft={d}
             templates={templates}
             media={media}
+            presets={presets}
             onClick={() => setSelected(i)}
           />
         ))}
@@ -66,15 +72,21 @@ function DraftCard({
   draft,
   templates,
   media,
+  presets,
   onClick,
 }: {
   draft: Draft
   templates: Template[]
   media: Media[]
+  presets: Preset[]
   onClick: () => void
 }) {
-  const template = pickTemplate(draft, templates)
-  const m = pickMedia(template, media)
+  // Preview the draft's default preset (else best-fit template + media).
+  const preset = defaultPreset(draft, presets, templates)
+  const template =
+    (preset && templates.find((t) => t.id === preset.template)) ??
+    pickTemplate(draft, templates)
+  const m = (preset && media.find((x) => x.id === preset.media)) ?? pickMedia(template, media)
 
   return (
     <button
@@ -83,7 +95,7 @@ function DraftCard({
     >
       <div className="flex h-28 items-center justify-center">
         {template && m ? (
-          <LabelCanvas template={template} values={draft.values} media={m} maxEdgePx={120} />
+          <LabelCanvas template={template} values={draft.values} media={m} maxEdgePx={110} />
         ) : (
           <span className="text-muted-foreground text-xs">no template</span>
         )}

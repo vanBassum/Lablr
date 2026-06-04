@@ -1,5 +1,5 @@
 import { parseMedia, parseTemplate } from "./load"
-import type { Draft, Media, Template } from "./types"
+import type { Draft, Media, Preset, Template } from "./types"
 
 // Config is fetched at runtime from /config (the public folder), NOT bundled —
 // so templates/drafts can be edited or added without rebuilding, matching the
@@ -25,6 +25,11 @@ export async function loadTemplates(): Promise<Template[]> {
 /** Load the shared draft fixtures (data only — not bound to any template). */
 export async function loadDrafts(): Promise<Draft[]> {
   return JSON.parse(await fetchText(`${CONFIG_BASE}drafts.json`)) as Draft[]
+}
+
+/** Load presets — reusable (template + media) output formats. */
+export async function loadPresets(): Promise<Preset[]> {
+  return JSON.parse(await fetchText(`${CONFIG_BASE}presets.json`)) as Preset[]
 }
 
 /** Read the media manifest, then fetch and parse each physical-label profile. */
@@ -64,4 +69,26 @@ export function pickMedia(
 ): Media | undefined {
   if (!template) return media[0]
   return media.find((m) => templateFitsMedia(template, m)) ?? media[0]
+}
+
+/** Presets whose template can render this draft's data. */
+export function compatiblePresets(
+  draft: Draft,
+  presets: Preset[],
+  templates: Template[],
+): Preset[] {
+  return presets.filter((p) => {
+    const t = templates.find((x) => x.id === p.template)
+    return t ? templateAccepts(t, draft) : false
+  })
+}
+
+/** Default preset for a draft: the one using its suggested template, else the first. */
+export function defaultPreset(
+  draft: Draft,
+  presets: Preset[],
+  templates: Template[],
+): Preset | undefined {
+  const compatible = compatiblePresets(draft, presets, templates)
+  return compatible.find((p) => p.template === draft.template) ?? compatible[0]
 }

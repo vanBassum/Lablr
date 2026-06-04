@@ -73,3 +73,15 @@ export interface Media {
   size: { w: number; h: number } // mm
   offset?: { x: number; y: number } // mm — where the label sits on the head
 }
+
+/**
+ * A named, reusable output format = template + media. A draft offers every
+ * preset whose template fits its fields (so one chemical → "Vial" and
+ * "Bucket"). Presets are shared across drafts, defined once.
+ */
+export interface Preset {
+  id: string
+  name: string
+  template: string // template id
+  media: string // media id
+}

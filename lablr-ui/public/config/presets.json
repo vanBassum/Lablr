@@ -1,0 +1,6 @@
+[
+  { "id": "chemical-vial", "name": "Vial", "template": "chemical-small", "media": "s0929120" },
+  { "id": "chemical-bucket", "name": "Bucket", "template": "chemical-large", "media": "dymo-99014" },
+  { "id": "smd", "name": "SMD label", "template": "smd-basic", "media": "s0929120" },
+  { "id": "storage", "name": "Storage box", "template": "storage-box", "media": "s0929120" }
+]

@@ -1,0 +1,8 @@
+# A larger physical roll, so "bucket" presets are real. Fits within the 450's
+# ~56mm-wide head (54mm printable).
+id: dymo-99014
+name: 54×101mm shipping
+sku: "99014"
+material: direct-thermal
+size: { w: 54, h: 101 } # mm
+offset: { x: 0, y: 0 } # mm — calibrate per printer

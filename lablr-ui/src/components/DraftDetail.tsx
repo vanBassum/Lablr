@@ -2,25 +2,19 @@ import { useRef, useState, type ReactNode } from "react"
 import { ChevronDown, ChevronLeft, Loader2, Printer, Settings2 } from "lucide-react"
 import { mmToDots, openDymo, printCanvas } from "@/dymo"
 import {
+  compatiblePresets,
+  defaultPreset,
   draftName,
   pickMedia,
   pickTemplate,
-  templateAccepts,
   templateFitsMedia,
 } from "@/label/templates"
-import type { Draft, Media, Template } from "@/label/types"
+import type { Draft, Media, Preset, Template } from "@/label/types"
 import { LabelCanvas } from "@/components/LabelCanvas"
 import { WebUsbProbe } from "@/WebUsbProbe"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Drawer,
   DrawerContent,
@@ -33,27 +27,32 @@ export function DraftDetail({
   draft,
   templates,
   media,
+  presets,
   onBack,
 }: {
   draft: Draft
   templates: Template[]
   media: Media[]
+  presets: Preset[]
   onBack: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const suggested = pickTemplate(draft, templates)
-  const [templateOverride, setTemplateOverride] = useState<string | null>(null)
-  const [mediaId, setMediaId] = useState(() => pickMedia(suggested, media)?.id ?? "")
+  const options = compatiblePresets(draft, presets, templates)
+  const [presetId, setPresetId] = useState(
+    () => defaultPreset(draft, presets, templates)?.id ?? "",
+  )
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
   const [advanced, setAdvanced] = useState(false)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null)
 
-  const compatible = templates.filter((t) => templateAccepts(t, draft))
+  const preset = options.find((p) => p.id === presetId) ?? options[0]
   const template =
-    compatible.find((t) => t.id === (templateOverride ?? suggested?.id)) ?? suggested
-  const selectedMedia = media.find((m) => m.id === mediaId) ?? media[0]
+    (preset && templates.find((t) => t.id === preset.template)) ??
+    pickTemplate(draft, templates)
+  const selectedMedia =
+    (preset && media.find((m) => m.id === preset.media)) ?? pickMedia(template, media)
   const fits = template && selectedMedia ? templateFitsMedia(template, selectedMedia) : true
 
   async function handlePrint() {
@@ -115,6 +114,22 @@ export function DraftDetail({
               ))}
           </div>
         )}
+
+        {/* Output options (presets) — the big/small choice. */}
+        {options.length > 1 && (
+          <div className="flex flex-wrap justify-center gap-2">
+            {options.map((p) => (
+              <Button
+                key={p.id}
+                size="sm"
+                variant={p.id === preset?.id ? "default" : "outline"}
+                onClick={() => setPresetId(p.id)}
+              >
+                {p.name}
+              </Button>
+            ))}
+          </div>
+        )}
       </main>
 
       {/* Sticky action bar: Print + gear */}
@@ -138,49 +153,26 @@ export function DraftDetail({
 
           <Drawer>
             <DrawerTrigger asChild>
-              <Button variant="outline" size="icon" className="size-12" aria-label="Options">
+              <Button variant="outline" size="icon" className="size-12" aria-label="Advanced">
                 <Settings2 />
               </Button>
             </DrawerTrigger>
             <DrawerContent>
               <DrawerHeader>
-                <DrawerTitle>Label options</DrawerTitle>
+                <DrawerTitle>Calibration & diagnostics</DrawerTitle>
               </DrawerHeader>
               <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 pb-8">
-                <Field label="Template">
-                  <Select
-                    value={template?.id ?? ""}
-                    onValueChange={setTemplateOverride}
-                    disabled={compatible.length === 0}
-                  >
-                    <SelectTrigger className="h-11 w-full">
-                      <SelectValue placeholder="No fitting template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {compatible.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name} · {t.size.w}×{t.size.h}mm
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                <Field label="Label (loaded media)">
-                  <Select value={selectedMedia?.id ?? ""} onValueChange={setMediaId}>
-                    <SelectTrigger className="h-11 w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {media.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.name} · {m.size.w}×{m.size.h}mm
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-
+                <div className="flex flex-wrap items-end gap-4">
+                  <Field label="Offset nudge X (dots)">
+                    <NumberInput value={offsetX} onChange={setOffsetX} />
+                  </Field>
+                  <Field label="Offset nudge Y (dots)">
+                    <NumberInput value={offsetY} onChange={setOffsetY} />
+                  </Field>
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  Calibrate the label position in the media YAML; nudge here to find it.
+                </p>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -190,24 +182,9 @@ export function DraftDetail({
                   <ChevronDown
                     className={advanced ? "rotate-180 transition-transform" : "transition-transform"}
                   />
-                  Advanced
+                  WebUSB diagnostics
                 </Button>
-                {advanced && (
-                  <div className="flex flex-col gap-4 rounded-lg border p-4">
-                    <div className="flex flex-wrap items-end gap-4">
-                      <Field label="Offset nudge X (dots)">
-                        <NumberInput value={offsetX} onChange={setOffsetX} />
-                      </Field>
-                      <Field label="Offset nudge Y (dots)">
-                        <NumberInput value={offsetY} onChange={setOffsetY} />
-                      </Field>
-                    </div>
-                    <p className="text-muted-foreground text-xs">
-                      Calibrate the label position in the media YAML; nudge here to find it.
-                    </p>
-                    <WebUsbProbe />
-                  </div>
-                )}
+                {advanced && <WebUsbProbe />}
               </div>
             </DrawerContent>
           </Drawer>
