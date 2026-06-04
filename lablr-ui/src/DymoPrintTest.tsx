@@ -47,6 +47,18 @@ export function DymoPrintTest() {
   const selectedMedia = media?.find((m) => m.id === mediaId) ?? media?.[0]
   const fits = template && selectedMedia ? templateFitsMedia(template, selectedMedia) : true
 
+  // When the draft changes, default to its suggested template (if it fits the
+  // draft), otherwise the first compatible one. Still freely overridable.
+  useEffect(() => {
+    if (!templates || !draft) return
+    const comp = templates.filter((t) => templateAccepts(t, draft))
+    setTemplateId(
+      draft.template && comp.some((t) => t.id === draft.template)
+        ? draft.template
+        : (comp[0]?.id ?? ""),
+    )
+  }, [draft, templates])
+
   useEffect(() => {
     if (canvasRef.current && template && draft && selectedMedia) {
       renderLabel(canvasRef.current, template, draft.values, selectedMedia)

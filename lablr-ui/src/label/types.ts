@@ -55,6 +55,8 @@ export interface Template {
  */
 export interface Draft {
   label?: string // optional display name
+  /** Optional template the AI suggests for this data — a hint, freely overridable. */
+  template?: string
   values: Record<string, string>
 }
 

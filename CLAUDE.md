@@ -45,11 +45,14 @@ DPI is a property of the **media/printer profile**, passed into the mm→dots st
 ### Templates — declarative layout first
 v1 templates are a small **declarative layout** the canvas renderer interprets directly (stacks, text fields, font size/weight/align; barcode/QR later). Claude- and human-editable. **HTML/CSS templates are deferred** to a possible later alternative renderer — decoupled on purpose.
 
-### The model — Media / Template / Preset
-Labels compose from three decoupled concepts. Users pick a **preset**, not the parts:
-- **Media** — the physical roll (size, material, DPI, SKU).
-- **Template** — the layout and fields.
-- **Preset** — a user-facing choice that resolves to media + template + printer.
+### The model — Draft / Template / Media / Printer
+Labels compose from decoupled concepts:
+- **Draft** — the data (field values) + an **optional, overridable suggested template**. Created by the AI; *not* bound to a template (the same draft prints big or small).
+- **Template** — declarative layout + field schema + design size. Owns which fields exist; a template can render any draft that supplies its fields.
+- **Media** — the physical roll (size, material, SKU) + calibrated head offset. *What's loaded* determines the media at print time — it is physical runtime state, never baked into a draft.
+- **Printer** — whatever's connected (DPI lives here).
+
+**Presets were considered and dropped.** In an AI-driven flow the AI picks the template directly, and media/printer are physical runtime facts the AI can't know when it mints a draft — so a named template+media+printer bundle adds indirection without value. The draft's suggested template + the loaded media + the connected printer resolve the presentation. (See LOGBOOK.)
 
 ### Platform & transport
 The renderer and printer live on the **same device** — the production target is an **Android phone** (Chrome supports PWA install + Web Bluetooth). Transport is **not Bluetooth-only**: it lives behind a single `Printer` interface with swappable implementations. The **first implementation is WebUSB from desktop Chrome**, driving a USB Dymo LabelWriter 450 — chosen to prove the pipeline with no Bluetooth/OTG unknowns. **Web Bluetooth** (for the Niimbot, on Android) is a second implementation added later. The bitmap pipeline is identical across transports; only byte-delivery differs.

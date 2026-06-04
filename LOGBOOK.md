@@ -204,3 +204,23 @@ The preview canvas was the full 672-dot head width (a wide strip) with the offse
 **Consequence — cleaner offset model:** the head-positioning offset is no longer baked into the bitmap. It's now applied as **printer commands** (`HeadOffset` in `dymo.ts`): X via **ESC B** dot-tab (whole bytes, 8-dot granularity), Y via **leading blank raster lines**. So the SYN bitmap sent to the printer is byte-identical to the previewed canvas — this *strengthens* preview = print (the label's pixels are now exactly equal; positioning is separate). The media's `offset` (mm) + the UI nudge are converted to dot-tab bytes + blank lines at print time. Note: ESC B byte-granularity makes X calibration coarse (~0.68mm steps); fine centering is handled by the center-origin layout, so this is fine for landing the label.
 
 `renderLabel` no longer takes offsets; bytes-per-line now follows the label width (37 for 25mm) instead of always 84.
+
+---
+
+## 2026-06-04 — Presets dropped; the draft suggests a template (items 13–14)
+
+**Question raised:** do we want presets at all, or should the draft carry template + media (overridable)?
+
+**Decision: drop presets; the draft carries an optional, overridable *suggested template* — not media.** Reasoning:
+
+- Presets exist mainly so a *human* picks one thing instead of three. But we already dropped the manual editor (item 6) — **the AI creates drafts**, and the AI can pick a template directly. So presets' main value evaporates in an AI-driven flow.
+- **Media is physical runtime state** (which roll is loaded), which ChatGPT cannot know when it mints a draft + link. So media must NOT be baked into a draft. The template (a presentation choice) *can* be suggested.
+- So: `Draft` gains optional `template?` (a hint). Media is whatever's loaded (auto-picked when one fits); printer is whatever's connected. This gives one-tap printing (open link → suggested template + loaded media → preview → print) while preserving data ⟂ presentation — the suggestion is freely overridable (sodium chloride still prints big or small).
+
+This **reverses CLAUDE.md's "users pick a preset" model**; CLAUDE.md "The model" section updated to Draft / Template / Media / Printer. Items 13 (presets) dropped, 14 reframed to draft→presentation resolution (done). Sample drafts now carry a `template` suggestion; the UI defaults to it on draft change.
+
+---
+
+## 2026-06-04 — Dev server exposed on LAN for phone testing
+
+`dev` script now runs `vite --host` so the PWA is reachable from the phone (the production target) at `http://<pc-lan-ip>:5173` for UI/preview/ergonomics testing. **Caveat:** WebUSB needs a secure context (localhost or HTTPS), so the phone over plain-HTTP LAN can view/preview but **cannot print** — printing to the USB Dymo stays on the PC. (Phone printing is the later Bluetooth-Niimbot / HTTPS path.)

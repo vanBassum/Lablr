@@ -14,8 +14,8 @@
 10. [x] Create the first printable label (e.g. BC547) — BC547 sample draft prints
 11. [x] Introduce reusable templates — declarative **YAML** format (mm units, center-origin), loaded by id; adding a template = adding a YAML file. Layout is renderer-interpreted (not HTML/CSS — that stays deferred, item 18).
 12. [x] Introduce physical media definitions (size, material, manufacturer SKU) — YAML media profiles in `public/config/media/` (first: S0929120). Render bounds come from the media; media also homes the calibrated head **offset** (the deferred item-4 value). DPI stays in the printer module.
-13. [ ] Introduce presets (Aidetek Small, Chemical Bottle Small, Storage Bin Large)
-14. [ ] Automatically resolve preset → template + media + printer
+13. [ ] ~~Introduce presets~~ — **dropped**. AI-driven flow makes named template+media+printer bundles redundant. A draft instead carries an optional **suggested template**; media/printer are physical runtime. (Number kept per stable-ID rule.)
+14. [x] Resolve draft → presentation — draft's suggested template (overridable) + loaded media + connected printer. No preset indirection.
 15. [ ] Add label history
 16. [ ] Add duplicate/reprint functionality
 17. [ ] Add search in history
