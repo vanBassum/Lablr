@@ -1,4 +1,4 @@
-# First template (roadmap item 9), now declared in YAML.
+# First template (roadmap item 9), declared in YAML.
 # All numbers are millimetres; layout is centered on the label center (0,0).
 id: smd-basic
 name: SMD / through-hole part

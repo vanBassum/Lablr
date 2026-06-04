@@ -1,16 +1,29 @@
-import smdBasicYaml from "./templates/smd-basic.yaml?raw"
 import { parseTemplate } from "./load"
 import type { Draft, Template } from "./types"
 
-// Config-as-code in the PWA for now; templates move to the label-config repo
-// later (roadmap item 20), loaded the same way (parse YAML → Template).
-export const templates: Template[] = [parseTemplate(smdBasicYaml)]
+// Config is fetched at runtime from /config (the public folder), NOT bundled —
+// so templates can be edited/added without rebuilding, matching the decoupled
+// config direction (roadmap items 19–20). public/ is the interim host before
+// this becomes a served label-config repo.
+const CONFIG_BASE = `${import.meta.env.BASE_URL}config/templates/`
 
-export function templateById(id: string): Template | undefined {
-  return templates.find((t) => t.id === id)
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${url}: ${res.status} ${res.statusText}`)
+  return res.text()
+}
+
+/** Read the manifest, then fetch and parse each listed template. */
+export async function loadTemplates(): Promise<Template[]> {
+  const ids = JSON.parse(await fetchText(`${CONFIG_BASE}index.json`)) as string[]
+  return Promise.all(
+    ids.map(async (id) => parseTemplate(await fetchText(`${CONFIG_BASE}${id}.yaml`))),
+  )
 }
 
 /** Drafts derived from each template's bundled sample fixtures. */
-export const sampleDrafts: Draft[] = templates.flatMap((t) =>
-  (t.samples ?? []).map((values) => ({ templateId: t.id, values })),
-)
+export function draftsFrom(templates: Template[]): Draft[] {
+  return templates.flatMap((t) =>
+    (t.samples ?? []).map((values) => ({ templateId: t.id, values })),
+  )
+}

@@ -139,3 +139,15 @@ Moved templates from inline TS to a declarative **YAML** format (parsed with `js
 **Format shape:** `{ id, name, size:{w,h}mm, fields:[{key,label}], layout: <stack|text tree>, samples:[...] }`. A `text` node binds to a field via `field` or holds a literal via `text`; `size` = cap height in mm; stacks cascade `align` to children. v1 renderer handles vertical stacks + text; horizontal stacks and barcode/QR are later.
 
 **Guiding-principle check:** YAML + mm + center are the no-regret foundations; offset and scale were deliberately kept *out* to avoid baking physical/speculative concerns into the design layer.
+
+---
+
+## 2026-06-04 — Config moved to public/, fetched at runtime (not bundled)
+
+Templates moved from `src/label/templates/*.yaml` (imported via Vite `?raw`, **baked into the JS bundle**) to **`public/config/templates/`**, fetched at runtime with `fetch()`.
+
+**Why:** the `?raw` import contradicted the decoupled-config direction (CLAUDE.md `/label-config`; roadmap items 19–20) — editing a label would have required a rebuild + redeploy. Runtime-fetched config means **edit/add a template → just reload, no rebuild**, and the load mechanism (fetch YAML → parse) is now identical to the future served label-config repo. `public/` is the interim host.
+
+**Mechanism:** a static folder can't be directory-listed, so a tiny **manifest** `public/config/templates/index.json` (`["smd-basic"]`) lists template ids; the loader reads the manifest, then fetches+parses each `<id>.yaml`. Adding a template = drop the file + add its id to the manifest. Loading is async, so the UI has loading/error states. Paths use `import.meta.env.BASE_URL` to survive a sub-path deploy behind Traefik.
+
+**Not yet:** this is runtime *loading*, not git-based config (item 20) or live HMR reload (item 19 — a manual refresh re-fetches, which is enough for now).

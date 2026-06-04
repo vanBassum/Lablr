@@ -2,30 +2,44 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { mmToDots, openDymo, printCanvas, MAX_BYTES_PER_LINE } from "@/dymo"
 import { renderLabel } from "@/label/render"
-import { sampleDrafts, templateById } from "@/label/templates"
+import { draftsFrom, loadTemplates } from "@/label/templates"
+import type { Draft, Template } from "@/label/types"
 
 const HEAD_DOTS = MAX_BYTES_PER_LINE * 8
 
 export function DymoPrintTest() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [templates, setTemplates] = useState<Template[] | null>(null)
+  const [drafts, setDrafts] = useState<Draft[]>([])
+  const [loadError, setLoadError] = useState("")
   const [draftIndex, setDraftIndex] = useState(0)
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
   const [status, setStatus] = useState("")
   const [busy, setBusy] = useState(false)
 
-  const draft = sampleDrafts[draftIndex]
-  const template = templateById(draft.templateId)
+  useEffect(() => {
+    loadTemplates()
+      .then((t) => {
+        setTemplates(t)
+        setDrafts(draftsFrom(t))
+      })
+      .catch((e) => setLoadError((e as Error).message))
+  }, [])
+
+  const draft = drafts[draftIndex]
+  const template =
+    templates && draft ? templates.find((t) => t.id === draft.templateId) : undefined
 
   useEffect(() => {
-    if (canvasRef.current && template) {
+    if (canvasRef.current && template && draft) {
       renderLabel(canvasRef.current, template, draft.values, { offsetX, offsetY })
     }
   }, [template, draft, offsetX, offsetY])
 
   async function handlePrint() {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas || !draft) return
     setBusy(true)
     setStatus("Opening DYMO…")
     try {
@@ -42,7 +56,9 @@ export function DymoPrintTest() {
     }
   }
 
-  if (!template) return <p>Unknown template: {draft.templateId}</p>
+  if (loadError) return <p>Failed to load templates: {loadError}</p>
+  if (!templates) return <p>Loading templates…</p>
+  if (!template || !draft) return <p>No templates found in config.</p>
 
   const labelH = mmToDots(template.size.h)
 
@@ -57,7 +73,7 @@ export function DymoPrintTest() {
           onChange={(e) => setDraftIndex(Number(e.target.value))}
           className="bg-background w-64 rounded border px-2 py-1"
         >
-          {sampleDrafts.map((d, i) => (
+          {drafts.map((d, i) => (
             <option key={i} value={i}>
               {d.values.name} — {d.values.subtitle}
             </option>
