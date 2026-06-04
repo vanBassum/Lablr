@@ -65,3 +65,22 @@ talk to ChatGPT → it POSTs a draft to the server → server returns a draft li
 - Printing from desktop Chrome over WebUSB needs **no USB-OTG and no BLE**, removing every transport unknown for the prototype. (Driving a Dymo over WebUSB through Android OTG is plausible but unverified — deferred, not on the critical path.)
 
 **Consequence (reverses the earlier "Web Bluetooth only" framing):** transport is no longer Bluetooth-only. It sits behind a single `Printer` interface with swappable implementations — **first impl WebUSB (desktop), second impl Web Bluetooth (Niimbot on Android)**. This abstraction is needed anyway for multiple printers (item 24); the Dymo just forces it early. The bitmap pipeline is identical across transports — only byte-delivery differs, so "preview = print" is unaffected. CLAUDE.md "Platform & transport" updated accordingly.
+
+---
+
+## 2026-06-04 — WebUSB connection to Dymo 450 proven (roadmap item 4, connection half)
+
+Built a minimal WebUSB probe page in the PWA and confirmed desktop Chrome can take **raw ownership** of the LabelWriter 450.
+
+**Device facts (read off the live device):**
+- `vendorId=0x0922` (DYMO), `productId=0x0020` (LabelWriter 450).
+- Interface 0, USB printer class (class 7, sub 1, proto 2, bidirectional).
+- Endpoints: **ep#2 bulk OUT** (push raster here) and **ep#2 bulk IN** (read status), 64-byte packets.
+
+**The Windows gotcha, confirmed and solved:** out of the box, `device.open()` returned **"Access denied"** — Windows' inbox printer driver (`usbprint.sys`) owns the device, and Chrome can't open a device another kernel driver holds. Fix: **Zadig → bind WinUSB to the 450**. After that, `open()` + `claimInterface(0)` both succeed.
+
+**Implications:**
+- WinUSB rebinding means the 450 no longer prints via normal Windows/DYMO software while bound — fine, the prototype only wants raw WebUSB. Reversible via Device Manager → uninstall device.
+- This friction is **desktop-Windows-specific**. It reinforces that desktop WebUSB is a *dev convenience*, not the production path (Android/Niimbot over Bluetooth). The Android-OTG-WebUSB question (does it need the same rebinding?) stays deferred.
+
+**Next (item 4, print half):** format raster bytes per the LabelWriter command language and push to ep#2 OUT. Must verify the exact command set against a reliable source (CUPS `rastertolabel` / DYMO LW Technical Reference) before sending — don't guess at hardware.
