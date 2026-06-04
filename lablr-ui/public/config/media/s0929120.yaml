@@ -5,9 +5,9 @@ sku: S0929120
 material: direct-thermal
 size: { w: 25, h: 25 } # mm
 
-# Where this label sits on the print head, i.e. how far to shift the image so
-# it lands on the label. This is physical calibration for the Dymo 450 (the
-# deferred item-4 offset). Measured once, stored here; 0 until calibrated.
-# (When multiple printers exist, this becomes a printer×media calibration.)
-offset: { x: 0, y: 0 } # mm
+# Calibrated shift so the image lands on the label (Dymo 450). Measured on this
+# 25mm roll: ≈ -6 × -20 dots. X is per-roll; Y (~-1.7mm, printer prints low) is
+# likely shared across rolls — once the 54×70 and chem-resistant are checked,
+# the common Y moves to the printer profile.
+offset: { x: -0.5, y: -1.7 } # mm
 printers: [dymo-450]
