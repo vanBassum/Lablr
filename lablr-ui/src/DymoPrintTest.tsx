@@ -1,71 +1,27 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { mmToDots, openDymo, printCanvas, MAX_BYTES_PER_LINE } from "@/dymo"
+import { renderLabel } from "@/label/render"
+import { sampleDrafts, templateById } from "@/label/templates"
 
-const LABEL_MM = 25
-const LABEL_DOTS = mmToDots(LABEL_MM) // ~296 dots of content @ 300 DPI
-const HEAD_DOTS = MAX_BYTES_PER_LINE * 8 // 672 — full print-head width
-
-/**
- * Draw the asymmetric diagnostic pattern onto a full-head-width canvas,
- * translated by (offsetX, offsetY) dots. Offset lives in the rendered
- * bitmap, so the preview stays identical to what prints.
- */
-function drawTestPattern(
-  canvas: HTMLCanvasElement,
-  offsetX: number,
-  offsetY: number,
-) {
-  const ctx = canvas.getContext("2d")
-  if (!ctx) return
-  const s = LABEL_DOTS
-
-  ctx.fillStyle = "white"
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-  ctx.save()
-  ctx.translate(offsetX, offsetY)
-  ctx.fillStyle = "black"
-  ctx.strokeStyle = "black"
-
-  // Border — shows whether all four edges land on the label.
-  ctx.lineWidth = 6
-  ctx.strokeRect(3, 3, s - 6, s - 6)
-
-  // Filled triangle, TOP-LEFT — asymmetry marker, prints first (leading edge).
-  ctx.beginPath()
-  ctx.moveTo(3, 3)
-  ctx.lineTo(s / 3, 3)
-  ctx.lineTo(3, s / 3)
-  ctx.closePath()
-  ctx.fill()
-
-  // Diagonal corner-to-corner — catches mirroring.
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(0, 0)
-  ctx.lineTo(s, s)
-  ctx.stroke()
-
-  // Text.
-  ctx.font = "bold 38px sans-serif"
-  ctx.textAlign = "center"
-  ctx.fillText("LABLR", s / 2, s / 2)
-  ctx.font = "22px sans-serif"
-  ctx.fillText(`${LABEL_MM}mm`, s / 2, s / 2 + 30)
-  ctx.restore()
-}
+const HEAD_DOTS = MAX_BYTES_PER_LINE * 8
 
 export function DymoPrintTest() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [draftIndex, setDraftIndex] = useState(0)
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
   const [status, setStatus] = useState("")
   const [busy, setBusy] = useState(false)
 
+  const draft = sampleDrafts[draftIndex]
+  const template = templateById(draft.templateId)
+
   useEffect(() => {
-    if (canvasRef.current) drawTestPattern(canvasRef.current, offsetX, offsetY)
-  }, [offsetX, offsetY])
+    if (canvasRef.current && template) {
+      renderLabel(canvasRef.current, template, draft.values, { offsetX, offsetY })
+    }
+  }, [template, draft, offsetX, offsetY])
 
   async function handlePrint() {
     const canvas = canvasRef.current
@@ -78,7 +34,7 @@ export function DymoPrintTest() {
       await printCanvas(device, canvas)
       await device.releaseInterface(0)
       await device.close()
-      setStatus(`✓ Printed at offset X=${offsetX} Y=${offsetY} dots.`)
+      setStatus(`✓ Printed "${draft.values.name}" (offset X=${offsetX} Y=${offsetY}).`)
     } catch (e) {
       setStatus(`✗ ${(e as Error).message}`)
     } finally {
@@ -86,24 +42,43 @@ export function DymoPrintTest() {
     }
   }
 
+  if (!template) return <p>Unknown template: {draft.templateId}</p>
+
+  const labelH = mmToDots(template.heightMm)
+
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="font-medium">Print + alignment calibration (preview = print)</h2>
+      <h2 className="font-medium">Render a draft → preview = print</h2>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-xs">Test draft ({template.name})</span>
+        <select
+          value={draftIndex}
+          onChange={(e) => setDraftIndex(Number(e.target.value))}
+          className="bg-background w-64 rounded border px-2 py-1"
+        >
+          {sampleDrafts.map((d, i) => (
+            <option key={i} value={i}>
+              {d.values.name} — {d.values.subtitle}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <canvas
         ref={canvasRef}
-        width={HEAD_DOTS}
-        height={LABEL_DOTS}
         className="border"
         style={{
           width: 360,
-          height: (360 * LABEL_DOTS) / HEAD_DOTS,
+          height: (360 * labelH) / HEAD_DOTS,
           imageRendering: "pixelated",
           background: "white",
         }}
       />
       <p className="text-muted-foreground text-xs">
-        Full {HEAD_DOTS}-dot head width shown; the {LABEL_DOTS}-dot ({LABEL_MM}mm)
-        label content is positioned by the offsets below.
+        Full {HEAD_DOTS}-dot head width; the {template.widthMm}×{template.heightMm}mm
+        label content is positioned by the offsets. This canvas is the exact
+        print payload.
       </p>
 
       <div className="flex flex-wrap items-end gap-4">
@@ -128,13 +103,12 @@ export function DymoPrintTest() {
           />
         </label>
         <Button onClick={handlePrint} disabled={busy}>
-          Print test label
+          Print label
         </Button>
       </div>
 
       <pre className="bg-muted rounded p-3 font-mono text-xs whitespace-pre-wrap">
-        {status ||
-          "Nudge X/Y until the border frames the label, then tell me the values."}
+        {status || "Pick a draft and print. Swap drafts to see the template re-render."}
       </pre>
     </div>
   )

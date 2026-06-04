@@ -100,3 +100,25 @@ A physical label came off the Dymo 450: full pipeline **render canvas → on-scr
 **Known issue, deliberately deferred — alignment offset.** Print lands shifted (content too high; top border/triangle clipped). This is **not a renderer bug**: it's the physical position of the label on the 672-dot head + leading-edge start, which is **per-media and per-printer**. It belongs to the Media/Printer profile work (**roadmap items 12–14**), not to v1 plumbing. Decision: do **not** hardcode an offset into the throwaway test; the media model will own this value. A calibration tool (X/Y dot offsets, preview=print preserved) was added to the test page to *measure* the value when needed.
 
 **Guiding-principle check:** perfecting alignment before the media model exists would be premature complexity that doesn't reduce time-to-label. Item 4's goal was "prove a label *can* be printed" — achieved. Move on to the draft model (item 5).
+
+---
+
+## 2026-06-04 — Draft model: the template owns the fields (items 5, 7, 8, 9)
+
+**Caught a framing error in item 5.** "Define the draft model (the data required to print a label)" implied a fixed field schema. But the **template** decides which fields exist and can be overwritten — those fields differ per template (an SMD part label ≠ a chemical bottle label). So there is no single fixed draft schema.
+
+**Resolved to a two-layer model:**
+
+- **Template** owns the field schema *and* the layout. `fields: [{ key, label, type }]` + a declarative `layout` (vertical stack + text nodes for v1; a text node binds to a field by `key` or holds a literal).
+- **Draft** is a generic, stable envelope: `{ templateId, values: Record<key, string> }`. It references the template **by id** and must supply a value for **every** declared field.
+- The renderer resolves `template + values → canvas`, and that one canvas is both the preview and the print payload (preview = print holds by construction).
+
+**Decisions (from the user):**
+
+- Draft references template **by id**, not inline — keeps drafts tiny for the ChatGPT→link handoff and makes templates the single source of truth for fields.
+- **No field defaults** for now; a draft must supply all values. Optional/hidden fields are a possible later refinement, not v1.
+- Templates ship with **sample drafts** as design-time fixtures, so a template can be previewed against real data while being built.
+
+**Built (`lablr-ui/src/label/`):** `types.ts` (Template/Draft/layout), `templates.ts` (`smd-basic` + 3 sample drafts: BC547, LM358, 100nF), `render.ts` (declarative-layout canvas renderer). The print test page is now data-driven — pick a draft, it re-renders, prints the same bitmap. This closes items 5, 7, 8, 9; item 6 (editing field values) and item 10 (confirm BC547 on hardware) remain.
+
+**Note:** config-as-code in the PWA for now; templates/drafts move to the label-config repo later (item 20).
