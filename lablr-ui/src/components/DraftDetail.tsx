@@ -186,6 +186,8 @@ export function DraftDetail({
           <Button
             size="sm"
             variant="outline"
+            disabled={!template?.designSize}
+            title={!template?.designSize ? "Landscape not available for responsive templates" : ""}
             onClick={() =>
               setOrientationOverride(orientation === "portrait" ? "landscape" : "portrait")
             }

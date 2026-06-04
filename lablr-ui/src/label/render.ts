@@ -172,8 +172,9 @@ export function renderLabel(
   }
 
   // Apply canvas transforms for rotation
+  // Note: responsive templates ignore landscape since they fill any media aspect ratio
   ctx.save()
-  if (landscape) {
+  if (landscape && !isResponsive) {
     const offsetDots = { x: mmToDots(offsetMm.x), y: mmToDots(offsetMm.y) }
     const designWDots = mmToDots(designW * scale)
     const designHDots = mmToDots(designH * scale)
@@ -182,7 +183,7 @@ export function renderLabel(
     ctx.rotate(Math.PI / 2)
     ctx.translate(-designWDots / 2, -designHDots / 2)
   } else {
-    // Portrait: just translate to the design offset
+    // Portrait or responsive template: just translate to the design offset
     ctx.translate(mmToDots(offsetMm.x), mmToDots(offsetMm.y))
   }
 
