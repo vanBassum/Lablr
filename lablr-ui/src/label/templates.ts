@@ -1,3 +1,4 @@
+import { load } from "js-yaml"
 import { parseMedia, parsePrinter, parseTemplate } from "./load"
 import type { Draft, Media, Orientation, Preset, Printer, Template } from "./types"
 
@@ -24,12 +25,12 @@ export async function loadTemplates(): Promise<Template[]> {
 
 /** Load the shared draft fixtures (data only — not bound to any template). */
 export async function loadDrafts(): Promise<Draft[]> {
-  return JSON.parse(await fetchText(`${CONFIG_BASE}drafts.json`)) as Draft[]
+  return load(await fetchText(`${CONFIG_BASE}drafts.yaml`)) as Draft[]
 }
 
 /** Load presets — reusable (template + media) output formats. */
 export async function loadPresets(): Promise<Preset[]> {
-  return JSON.parse(await fetchText(`${CONFIG_BASE}presets.json`)) as Preset[]
+  return load(await fetchText(`${CONFIG_BASE}presets.yaml`)) as Preset[]
 }
 
 /** Read the media manifest, then fetch and parse each physical-label profile. */

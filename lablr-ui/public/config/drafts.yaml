@@ -1,0 +1,17 @@
+# Sample drafts (data only) for browsing + testing — stand-ins for the drafts
+# the AI will create. `template` is a suggestion; values fill that template.
+- label: Sodium chloride
+  template: chemical-small
+  values: { name: Sodium chloride, formula: NaCl, hazard: "Irritant · hygroscopic" }
+- label: Acetone
+  template: chemical-small
+  values: { name: Acetone, formula: C3H6O, hazard: Flammable }
+- label: BC547 transistor
+  template: smd-basic
+  values: { name: BC547, subtitle: NPN Transistor, package: TO-92 }
+- label: LM358 op-amp
+  template: smd-basic
+  values: { name: LM358, subtitle: Dual Op-Amp, package: SOIC-8 }
+- label: Bin A1 — screws
+  template: storage-box
+  values: { code: A1, contents: "M3 × 6 screws" }
