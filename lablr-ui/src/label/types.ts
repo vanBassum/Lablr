@@ -24,7 +24,12 @@ export interface TextElement {
   type: "text"
   field?: string // field key from template.fields
   text?: string // literal text if no field
-  rect: { x: number; y: number; width: number; height: number } // mm
+  rect: {
+    x: number | string // mm or "x%" for percentage of media width
+    y: number | string // mm or "y%" for percentage of media height
+    width: number | string // mm or "w%" for percentage
+    height: number | string // mm or "h%" for percentage
+  }
   align?: "left" | "center" | "right"
   valign?: "top" | "center" | "bottom"
   font: {
@@ -42,7 +47,7 @@ export type TemplateElement = TextElement
 export interface Template {
   id: string
   name: string
-  designSize: { width: number; height: number } // mm — coordinate space for design
+  designSize?: { width: number; height: number } // mm — coordinate space for design. If omitted, template is responsive (elements use %)
   fields: Record<string, TemplateField>
   elements: TemplateElement[]
 }

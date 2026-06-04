@@ -47,6 +47,18 @@ function designToCanvasDots(
 }
 
 /**
+ * Parse a coordinate value (number in mm or string like "50%" of media width/height).
+ */
+function parseCoord(value: number | string, mediaSize: number): number {
+  if (typeof value === "number") return value
+  if (typeof value === "string" && value.endsWith("%")) {
+    const percent = parseFloat(value)
+    return (percent / 100) * mediaSize
+  }
+  return parseFloat(value)
+}
+
+/**
  * Measure text to see if it fits in the given box (in canvas dots).
  * Returns true if it fits, false if it doesn't (or would need to wrap).
  */
@@ -139,11 +151,15 @@ export function renderLabel(
   ctx.fillStyle = "black"
 
   const landscape = orientation === "landscape"
-  const designW = landscape ? template.designSize.height : template.designSize.width
-  const designH = landscape ? template.designSize.width : template.designSize.height
+
+  // Use designSize if provided, otherwise template is responsive (fills media)
+  const isResponsive = !template.designSize
+  const designSize = template.designSize || { width: media.size.w, height: media.size.h }
+  const designW = landscape ? designSize.height : designSize.width
+  const designH = landscape ? designSize.width : designSize.height
 
   // Contain scaling: fit design into media
-  const scale = Math.min(media.size.w / designW, media.size.h / designH)
+  const scale = isResponsive ? 1 : Math.min(media.size.w / designW, media.size.h / designH)
   const scaledW = designW * scale
   const scaledH = designH * scale
 
@@ -176,10 +192,18 @@ export function renderLabel(
     const text = element.field ? fieldValues[element.field] ?? "" : element.text ?? ""
     if (!text) continue
 
+    // Parse element coordinates (supports both mm and percentage)
+    const elemMm = {
+      x: parseCoord(element.rect.x, media.size.w),
+      y: parseCoord(element.rect.y, media.size.h),
+      w: parseCoord(element.rect.width, media.size.w),
+      h: parseCoord(element.rect.height, media.size.h),
+    }
+
     // Map element rect from design space to canvas dots (accounting for contain scaling)
     const rect = designToCanvasDots(
-      { x: element.rect.x, y: element.rect.y, w: element.rect.width, h: element.rect.height },
-      template.designSize,
+      elemMm,
+      template.designSize || { width: media.size.w, height: media.size.h },
       media.size,
     )
 

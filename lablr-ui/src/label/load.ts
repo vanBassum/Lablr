@@ -7,8 +7,9 @@ export function parseTemplate(yamlText: string): Template {
   if (!t || typeof t.id !== "string") {
     throw new Error("template: missing string `id`")
   }
-  if (!t.designSize || typeof t.designSize.width !== "number" || typeof t.designSize.height !== "number") {
-    throw new Error(`template ${t.id}: missing designSize { width, height } in mm`)
+  // designSize is optional; if present, validate it
+  if (t.designSize && (typeof t.designSize.width !== "number" || typeof t.designSize.height !== "number")) {
+    throw new Error(`template ${t.id}: designSize must have width and height in mm`)
   }
   if (!t.fields || typeof t.fields !== "object") {
     throw new Error(`template ${t.id}: missing fields object`)

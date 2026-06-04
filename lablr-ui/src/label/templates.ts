@@ -77,25 +77,25 @@ export const draftName = (d: Draft) => d.label ?? Object.values(d.fields).join("
 
 /**
  * A template fits a media when its design size can fit on the label.
- * Uses contain scaling, so as long as the template's aspect ratio is reasonable,
- * it fits. (We may want to add a min-scale threshold later.)
+ * Responsive templates (no designSize) always fit. Fixed-size templates use contain scaling.
  */
 export function templateFitsMedia(
   template: Template,
   media: Media,
   orientation: Orientation = "portrait",
 ): boolean {
-  // In landscape, design dimensions are swapped
+  // Responsive templates always fit (they adapt to the media)
+  if (!template.designSize) return true
+
+  // Fixed-size templates: check if design fits with contain scaling
   const designW = orientation === "landscape" ? template.designSize.height : template.designSize.width
   const designH = orientation === "landscape" ? template.designSize.width : template.designSize.height
   const mediaW = media.size.w
   const mediaH = media.size.h
 
-  // Contain always fits (scale factor is at least > 0), so we could return true.
-  // For now, require minimum scale (e.g., don't shrink below 50% of design).
-  // This prevents tiny designs but allows flexibility.
+  // Require minimum scale (don't shrink below 30% of design)
   const scale = Math.min(mediaW / designW, mediaH / designH)
-  return scale >= 0.3 // At least 30% of design size
+  return scale >= 0.3
 }
 
 /** The template to show for a draft by default: its suggestion, else first that fits. */

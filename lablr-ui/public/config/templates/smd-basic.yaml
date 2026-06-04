@@ -1,9 +1,8 @@
 # Template — declarative label layout. Defines field schema + rendering instructions.
-# All coordinates are millimetres. Design size is the coordinate system for layout;
-# physical output size is determined by the preset's media, not the template.
+# This template is RESPONSIVE: no designSize means it adapts to the media it's printed on.
+# Coordinates use percentage (e.g., "5%" = 5% of media width/height).
 id: smd-basic
 name: SMD / through-hole part
-designSize: { width: 50, height: 20 } # mm — canvas used during design
 
 # Field schema. Defines which fields a draft must supply to use this template.
 fields:
@@ -17,12 +16,12 @@ fields:
     required: false
     label: Package
 
-# Rectangular elements. Each text element lives in an explicit rect.
-# The renderer auto-fits text to fit inside the rectangle.
+# Responsive elements — percentages scale to fit any media size.
+# x/y/width/height can be "5%" (percent of media) or "5" (mm, for non-responsive templates).
 elements:
   - type: text
     field: name
-    rect: { x: 1, y: 1, width: 48, height: 8 }
+    rect: { x: "5%", y: "10%", width: "90%", height: "35%" }
     align: center
     valign: center
     font:
@@ -34,7 +33,7 @@ elements:
 
   - type: text
     field: package
-    rect: { x: 1, y: 10, width: 48, height: 6 }
+    rect: { x: "5%", y: "50%", width: "90%", height: "25%" }
     align: center
     valign: center
     font:
@@ -45,7 +44,7 @@ elements:
 
   - type: text
     field: subtitle
-    rect: { x: 1, y: 17, width: 48, height: 3 }
+    rect: { x: "5%", y: "77%", width: "90%", height: "18%" }
     align: center
     valign: center
     font:
