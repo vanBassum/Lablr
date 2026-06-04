@@ -1,5 +1,4 @@
-# Storage box label — deliberately different fields + layout from smd-basic,
-# to prove the template (not the draft) decides what a label is. RESPONSIVE: scales to any media.
+# Storage box label. Pure percentage layout, adapts to any media.
 id: storage-box
 name: Storage box
 

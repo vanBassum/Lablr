@@ -1,6 +1,4 @@
-# Large chemical label — e.g. a bucket. Same field schema as chemical-small,
-# different layout for larger media. Proves the same draft can render to
-# multiple outputs via different presets (Vial vs Bucket). RESPONSIVE: scales to any media.
+# Large chemical label — e.g. a bucket. Pure percentage layout, adapts to any media.
 id: chemical-large
 name: Chemical — large (bucket)
 

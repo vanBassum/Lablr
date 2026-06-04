@@ -1,10 +1,8 @@
-# Template — declarative label layout. Defines field schema + rendering instructions.
-# This template is RESPONSIVE: no designSize means it adapts to the media it's printed on.
-# Coordinates use percentage (e.g., "5%" = 5% of media width/height).
+# Template — declarative label layout. Pure layout, adapts to any media.
+# All coordinates are percentages of media width/height.
 id: smd-basic
 name: SMD / through-hole part
 
-# Field schema. Defines which fields a draft must supply to use this template.
 fields:
   name:
     required: true
@@ -16,8 +14,6 @@ fields:
     required: false
     label: Package
 
-# Responsive elements — percentages scale to fit any media size.
-# x/y/width/height can be "5%" (percent of media) or "5" (mm, for non-responsive templates).
 elements:
   - type: text
     field: name

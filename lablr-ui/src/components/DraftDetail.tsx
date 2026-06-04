@@ -11,11 +11,8 @@ import {
 import { DPI, mmToDots } from "@/dymo"
 import { usePrinter } from "@/printer"
 import {
-  compatiblePresets,
   defaultPreset,
   draftName,
-  pickMedia,
-  pickTemplate,
   printerForMedia,
 } from "@/label/templates"
 import type {
@@ -57,32 +54,21 @@ export function DraftDetail({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const printer = usePrinter()
-  const options = compatiblePresets(draft, presets, templates)
-  const [presetId, setPresetId] = useState(
-    () => defaultPreset(draft, presets, templates)?.id ?? "",
-  )
-  const [seenPreset, setSeenPreset] = useState(presetId)
-  const [orientationOverride, setOrientationOverride] = useState<Orientation | null>(null)
+
+  // Independent template + media selection (not locked to preset)
+  const defaultPresetVal = defaultPreset(draft, presets, templates)
+  const [templateId, setTemplateId] = useState(() => defaultPresetVal?.template ?? templates[0]?.id ?? "")
+  const [mediaId, setMediaId] = useState(() => defaultPresetVal?.media ?? media[0]?.id ?? "")
+  const [orientation, setOrientation] = useState<Orientation>(() => defaultPresetVal?.orientation ?? "portrait")
+
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
   const [advanced, setAdvanced] = useState(false)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null)
 
-  const preset = options.find((p) => p.id === presetId) ?? options[0]
-  // Orientation defaults to the selected preset's; reset the override when the
-  // preset changes (render-phase reset, not an effect).
-  if (seenPreset !== presetId) {
-    setSeenPreset(presetId)
-    setOrientationOverride(null)
-  }
-  const orientation: Orientation = orientationOverride ?? preset?.orientation ?? "portrait"
-  const template =
-    (preset && templates.find((t) => t.id === preset.template)) ??
-    pickTemplate(draft, templates)
-  const selectedMedia =
-    (preset && media.find((m) => m.id === preset.media)) ?? pickMedia(media)
-  // All templates fit all media (responsive layout)
+  const template = templates.find((t) => t.id === templateId)
+  const selectedMedia = media.find((m) => m.id === mediaId)
   const fits = true
 
   const printerProfile = printerForMedia(selectedMedia, printers)
@@ -168,26 +154,38 @@ export function DraftDetail({
           </div>
         )}
 
-        {/* Output options: preset (the big/small choice) + orientation. */}
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {options.map((p) => (
-            <Button
-              key={p.id}
-              size="sm"
-              variant={p.id === preset?.id ? "default" : "outline"}
-              onClick={() => setPresetId(p.id)}
-            >
-              {p.name}
-            </Button>
-          ))}
+        {/* Template + Media selection */}
+        <div className="flex flex-col items-center gap-2 text-sm">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {templates.map((t) => (
+              <Button
+                key={t.id}
+                size="sm"
+                variant={t.id === templateId ? "default" : "outline"}
+                onClick={() => setTemplateId(t.id)}
+              >
+                {t.name}
+              </Button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {media.map((m) => (
+              <Button
+                key={m.id}
+                size="sm"
+                variant={m.id === mediaId ? "default" : "outline"}
+                onClick={() => setMediaId(m.id)}
+              >
+                {m.name}
+              </Button>
+            ))}
+          </div>
           <Button
             size="sm"
             variant="outline"
-            onClick={() =>
-              setOrientationOverride(orientation === "portrait" ? "landscape" : "portrait")
-            }
+            onClick={() => setOrientation(orientation === "portrait" ? "landscape" : "portrait")}
           >
-            <RotateCw />
+            <RotateCw className="mr-1 size-3" />
             {orientation === "portrait" ? "Portrait" : "Landscape"}
           </Button>
         </div>
