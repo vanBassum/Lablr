@@ -239,6 +239,64 @@ Offset-nudge inputs and the WebUSB diagnostics probe moved into a collapsible **
 
 ---
 
+## 2026-06-04 — Architecture refinement: Presets, Rectangles, Auto-fit (roadmap items 36–45)
+
+**Scope:** bring the schema and renderer design in line with real usage patterns and AI-generation constraints.
+
+**Background:** the "draft suggests template" model works but introduced naming confusion — users think in output formats ("Vial", "Bucket"), but the schema used internal names ("chemical-small", "chemical-large"). Templates use declarative stacks + flex layout, which works but makes it hard to reason about fit and hard for the AI to generate. Text sizing is manual; overflow requires a preview loop.
+
+**Decision: restore presets as a user-facing concept.**
+
+Presets (template + media + orientation) are the *user-facing output formats*. This gives the UX a clear name: "which preset do you want?" — "Vial" instead of "chemical-small on 25mm". The draft now references a preset's *suggested* value, but the user can still override to another compatible preset. Drafts carry data only; media stays physical runtime state (which roll is loaded).
+
+Example (from the AI):
+
+```yaml
+label: Sodium chloride
+preset: chemical-vial  # user-facing name (not template id)
+fields:
+  name: Sodium chloride
+  formula: NaCl
+  hazard: "Irritant · hygroscopic"
+```
+
+The user sees "Vial", "Bucket", "Chem-resistant" as output options; the preset picker resolves each to a template + media at print time.
+
+**Consequence:** renaming for clarity. Drafts now use `fields` (not `values`) because templates define fields; the naming aligns (template declares fields, draft supplies values for those fields). This is a documentation win.
+
+**Design changes:**
+
+1. **Templates replace `size` with `designSize`** — the coordinate system for layout, independent of physical media. A 50×20mm design canvas can render on 25mm or 54mm media (scaled by the preset). This makes templates genuinely reusable and lets AI generate them once, reuse across media.
+
+2. **Templates replace stacks with rectangles** — each text element lives in an explicit `rect { x, y, width, height }` (mm). Reason: labels are small and tightly constrained. Rectangles + auto-fit are easier to reason about, easier for AI to generate, and eliminate the flexibility that paradoxically makes layout harder (flexbox "does the right thing" but on a 25×25mm label, the right thing is often not obvious).
+
+3. **Text auto-fits inside rectangles** — renderer starts at max font size, measures, reduces if it doesn't fit, repeats. Elements carry `font { maxSize, minSize, weight }`. This eliminates the hardest manual step: "does this fit?". The AI generates `maxSize=5, minSize=2` and the renderer handles the rest. Overflow becomes impossible by construction.
+
+4. **Alignment in rectangles** — `align: left|center|right` + `valign: top|center|bottom`. For a 25×25mm label, this granular control is essential; stacks don't provide it.
+
+5. **Text wrapping** — `wrap: true|false`, optional `maxLines: N`. When text wraps and exceeds maxLines, the auto-fit reduces font size further. Handles long chemical names gracefully.
+
+6. **Fit mode `shrink`** — directives like `fit: shrink` (reduce size until it fits). Future modes (stretch, clip, ellipsis) are deferred. This is clearer than implicit reduction.
+
+**Updated files:**
+
+- `smd-basic.yaml` (and other templates) now use `designSize: { width, height }`, `fields: { key: { required, label } }`, `elements: [ { type, field, rect, align, valign, font, wrap, fit } ]`.
+- Sample `drafts.yaml` now references `preset: smd` (not `template: smd-basic`) and uses `fields:` (not `values:`).
+- Presets remain in `presets.yaml` as `(template + media)` pairs; no change there.
+
+**Renderer impact:** the new rectangular model is simpler to implement than stacks. A text element is:
+
+1. Start at maxSize.
+2. Measure text in the rect at current size.
+3. If it doesn't fit (width, height, maxLines): reduce size, repeat.
+4. Render at the final size, aligned per the element's `align`/`valign`.
+
+No overflow, no clipping, no surprises.
+
+**Guiding-principle check:** templates are now AI-friendly (explicit, no flex surprises), users think in output names (presets), and the renderer guarantees fit by construction. This tightens the loop from "I need a label" to "label printed" by removing fit-checking and overflow debugging.
+
+---
+
 ## 2026-06-04 — Two-screen flow: browse grid → detail/print + gear
 
 Reworked the UX into the flow the user described:

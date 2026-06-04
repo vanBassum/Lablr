@@ -1,18 +1,53 @@
-# Small chemical label — e.g. a vial. Needs fewer fields than the large one;
-# any draft with at least name + formula can use it.
+# Small chemical label — e.g. a vial.
 id: chemical-small
 name: Chemical — small (vial)
-size: { w: 25, h: 25 } # mm
+designSize: { width: 50, height: 20 } # mm — canvas during design
 
 fields:
-  - { key: name, label: Name }
-  - { key: formula, label: Formula }
+  name:
+    required: true
+    label: Name
+  formula:
+    required: true
+    label: Formula
+  hazard:
+    required: false
+    label: Hazard
 
-layout:
-  type: stack
-  direction: vertical
-  align: center
-  gap: 1.5
-  children:
-    - { type: text, field: name, size: 3, weight: bold }
-    - { type: text, field: formula, size: 6, weight: bold }
+elements:
+  - type: text
+    field: name
+    rect: { x: 1, y: 2, width: 48, height: 6 }
+    align: center
+    valign: center
+    font:
+      maxSize: 4
+      minSize: 2
+      weight: bold
+    wrap: true
+    maxLines: 2
+    fit: shrink
+
+  - type: text
+    field: formula
+    rect: { x: 1, y: 9, width: 48, height: 6 }
+    align: center
+    valign: center
+    font:
+      maxSize: 5
+      minSize: 2
+      weight: bold
+    wrap: false
+    fit: shrink
+
+  - type: text
+    field: hazard
+    rect: { x: 1, y: 16, width: 48, height: 4 }
+    align: center
+    valign: center
+    font:
+      maxSize: 2
+      minSize: 1
+    wrap: true
+    maxLines: 1
+    fit: shrink

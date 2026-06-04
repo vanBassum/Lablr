@@ -1,20 +1,56 @@
-# Large chemical label — e.g. a bucket. Same draft data as the small one,
-# bigger media + layout. Proves draft ⟂ template (one draft, many outputs).
+# Large chemical label — e.g. a bucket. Same field schema as chemical-small,
+# different layout for larger media. Proves the same draft can render to
+# multiple outputs via different presets (Vial vs Bucket).
 id: chemical-large
 name: Chemical — large (bucket)
-size: { w: 54, h: 70 } # mm — fills the 54×70 roll
+designSize: { width: 108, height: 140 } # mm — canvas during design
 
 fields:
-  - { key: name, label: Name }
-  - { key: formula, label: Formula }
-  - { key: hazard, label: Hazard }
+  name:
+    required: true
+    label: Name
+  formula:
+    required: true
+    label: Formula
+  hazard:
+    required: false
+    label: Hazard
 
-layout:
-  type: stack
-  direction: vertical
-  align: center
-  gap: 8
-  children:
-    - { type: text, field: name, size: 6, weight: bold }
-    - { type: text, field: formula, size: 16, weight: bold }
-    - { type: text, field: hazard, size: 4 }
+elements:
+  - type: text
+    field: name
+    rect: { x: 4, y: 8, width: 100, height: 20 }
+    align: center
+    valign: center
+    font:
+      maxSize: 12
+      minSize: 6
+      weight: bold
+    wrap: true
+    maxLines: 2
+    fit: shrink
+
+  - type: text
+    field: formula
+    rect: { x: 4, y: 32, width: 100, height: 50 }
+    align: center
+    valign: center
+    font:
+      maxSize: 28
+      minSize: 12
+      weight: bold
+    wrap: true
+    maxLines: 3
+    fit: shrink
+
+  - type: text
+    field: hazard
+    rect: { x: 4, y: 85, width: 100, height: 20 }
+    align: center
+    valign: center
+    font:
+      maxSize: 8
+      minSize: 3
+    wrap: true
+    maxLines: 2
+    fit: shrink

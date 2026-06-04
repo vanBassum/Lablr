@@ -1,23 +1,56 @@
-# First template (roadmap item 9), declared in YAML.
-# All numbers are millimetres; layout is centered on the label center (0,0).
+# Template — declarative label layout. Defines field schema + rendering instructions.
+# All coordinates are millimetres. Design size is the coordinate system for layout;
+# physical output size is determined by the preset's media, not the template.
 id: smd-basic
 name: SMD / through-hole part
-size: { w: 25, h: 25 } # mm — designed for the 25mm square (S0929120)
+designSize: { width: 50, height: 20 } # mm — canvas used during design
 
-# The field schema. THIS is what decides which values a draft must supply.
+# Field schema. Defines which fields a draft must supply to use this template.
 fields:
-  - { key: name, label: Part }
-  - { key: subtitle, label: Description }
-  - { key: package, label: Package }
+  name:
+    required: true
+    label: Part
+  subtitle:
+    required: false
+    label: Description
+  package:
+    required: false
+    label: Package
 
-# Declarative layout. A text node binds to a field via `field`, or holds a
-# literal via `text`. `size` is cap height in mm.
-layout:
-  type: stack
-  direction: vertical
-  align: center
-  gap: 1.2
-  children:
-    - { type: text, field: name, size: 4.5, weight: bold }
-    - { type: text, field: subtitle, size: 1.8 }
-    - { type: text, field: package, size: 2.6 }
+# Rectangular elements. Each text element lives in an explicit rect.
+# The renderer auto-fits text to fit inside the rectangle.
+elements:
+  - type: text
+    field: name
+    rect: { x: 1, y: 1, width: 48, height: 8 }
+    align: center
+    valign: center
+    font:
+      maxSize: 5
+      minSize: 2
+      weight: bold
+    wrap: false
+    fit: shrink
+
+  - type: text
+    field: package
+    rect: { x: 1, y: 10, width: 48, height: 6 }
+    align: center
+    valign: center
+    font:
+      maxSize: 3
+      minSize: 1.5
+    wrap: false
+    fit: shrink
+
+  - type: text
+    field: subtitle
+    rect: { x: 1, y: 17, width: 48, height: 3 }
+    align: center
+    valign: center
+    font:
+      maxSize: 2
+      minSize: 1
+    wrap: true
+    maxLines: 1
+    fit: shrink

@@ -1,18 +1,38 @@
-# Second template — deliberately different fields + layout from smd-basic, to
-# prove the template (not the draft) decides what a label is.
+# Storage box label — deliberately different fields + layout from smd-basic,
+# to prove the template (not the draft) decides what a label is.
 id: storage-box
 name: Storage box
-size: { w: 25, h: 25 } # mm — same 25mm square media
+designSize: { width: 50, height: 20 } # mm — canvas during design
 
 fields:
-  - { key: code, label: Bin code }
-  - { key: contents, label: Contents }
+  code:
+    required: true
+    label: Bin code
+  contents:
+    required: true
+    label: Contents
 
-layout:
-  type: stack
-  direction: vertical
-  align: center
-  gap: 1.5
-  children:
-    - { type: text, field: code, size: 7, weight: bold }
-    - { type: text, field: contents, size: 2.8 }
+elements:
+  - type: text
+    field: code
+    rect: { x: 1, y: 1, width: 48, height: 10 }
+    align: center
+    valign: center
+    font:
+      maxSize: 10
+      minSize: 5
+      weight: bold
+    wrap: false
+    fit: shrink
+
+  - type: text
+    field: contents
+    rect: { x: 1, y: 12, width: 48, height: 8 }
+    align: center
+    valign: center
+    font:
+      maxSize: 3
+      minSize: 1.5
+    wrap: true
+    maxLines: 2
+    fit: shrink
