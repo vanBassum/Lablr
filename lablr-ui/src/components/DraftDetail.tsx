@@ -8,7 +8,7 @@ import {
   RotateCw,
   Settings2,
 } from "lucide-react"
-import { mmToDots } from "@/dymo"
+import { DPI, mmToDots } from "@/dymo"
 import { usePrinter } from "@/printer"
 import {
   compatiblePresets,
@@ -78,15 +78,14 @@ export function DraftDetail({
       ? templateFitsMedia(template, selectedMedia, orientation)
       : true
 
-  // Head offset = media calibration + manual nudge. X is byte-granular (ESC B).
+  // Head offset in dots = media calibration + manual nudge (both per-dot now).
   function headOffset() {
-    const totalX = mmToDots(selectedMedia?.offset?.x ?? 0) + offsetX
-    const totalY = mmToDots(selectedMedia?.offset?.y ?? 0) + offsetY
     return {
-      dotTabBytes: Math.round(Math.max(0, totalX) / 8),
-      topBlankLines: Math.round(Math.max(0, totalY)),
+      x: mmToDots(selectedMedia?.offset?.x ?? 0) + offsetX,
+      y: mmToDots(selectedMedia?.offset?.y ?? 0) + offsetY,
     }
   }
+  const dotsToMm = (dots: number) => ((dots / DPI) * 25.4).toFixed(1)
 
   async function handlePrint() {
     const canvas = canvasRef.current
@@ -222,8 +221,9 @@ export function DraftDetail({
                   </Field>
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  Print the pattern, see where it lands, nudge, repeat. Bake the final
-                  value into the media YAML's <code>offset</code>.
+                  Print the pattern, see where it lands, nudge, repeat. Current offset ≈{" "}
+                  {dotsToMm(headOffset().x)}×{dotsToMm(headOffset().y)}mm — bake it into the
+                  media YAML's <code>offset</code>.
                 </p>
                 <Button
                   variant="outline"

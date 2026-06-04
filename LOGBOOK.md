@@ -285,3 +285,13 @@ Printing used to `requestDevice → open → claim → print → release → clo
 - `dymo.ts` gained `getGrantedDymo()` + `onUsbDisconnect()`; `openDymo()` refactored to share a `claim()` helper. `DraftDetail` now prints through `usePrinter().print()` instead of opening/closing per press.
 
 (Same caveat as before: WebUSB needs localhost/HTTPS, so this is the dev/desktop path; phone-over-LAN-HTTP still can't print.)
+
+---
+
+## 2026-06-04 — Offset fix (compositing) + 1-bit threshold (darker thin lines)
+
+**Offset wasn't moving the print.** It was applied via printer commands — `ESC B` dot-tab (X) and leading blank lines (Y) — which the LabelWriter 450 ignores in practice. Replaced with **pixel compositing**: `printCanvas` draws the label canvas onto a full-head-width (672-dot) bitmap at the offset and sends that. Pure pixels always move, and X is now **per-dot** (was byte-coarse). `HeadOffset` changed from `{dotTabBytes, topBlankLines}` to `{x, y}` in dots; `buildJob` no longer does positioning. (`preview = print` holds for the label content — the print just composites that identical bitmap onto the head.)
+
+**Thin lines printed faint** — anti-aliased thin strokes render as gray pixels above the black cutoff. Added `thresholdTo1Bit` in the renderer (cutoff `INK_THRESHOLD = 176`) applied at the end of `renderLabel` and `renderCalibration`, so the canvas becomes pure black/white: thin lines round to solid black, and the **preview now shows the true 1-bit result** (tightening preview = print, which previously showed smooth gray the printer wouldn't reproduce). One knob (`INK_THRESHOLD`) tunes overall darkness.
+
+The calibration panel now also shows the current offset in **mm** (nudge is in dots; media YAML `offset` is mm) so the value is copy-pasteable.

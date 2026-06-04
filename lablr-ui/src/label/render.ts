@@ -3,6 +3,30 @@ import type { LayoutNode, Media, Orientation, Template, TextNode } from "./types
 
 type Align = "left" | "center" | "right"
 
+// 1-bit cutoff. High so anti-aliased thin lines/text edges round to solid black
+// rather than printing faint. Tune here to make everything lighter/darker.
+const INK_THRESHOLD = 176
+
+/**
+ * Collapse the canvas to pure black/white in place, so the preview shows
+ * exactly what prints (preview = print) and thin AA lines come out solid.
+ */
+function thresholdTo1Bit(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+): void {
+  const img = ctx.getImageData(0, 0, w, h)
+  const d = img.data
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = d[i + 3] === 0 ? 255 : (d[i] + d[i + 1] + d[i + 2]) / 3
+    const v = lum < INK_THRESHOLD ? 0 : 255
+    d[i] = d[i + 1] = d[i + 2] = v
+    d[i + 3] = 255
+  }
+  ctx.putImageData(img, 0, 0)
+}
+
 function resolveText(node: TextNode, values: Record<string, string>): string {
   if (node.field !== undefined) return values[node.field] ?? ""
   return node.text ?? ""
@@ -95,6 +119,8 @@ export function renderLabel(
   const startY = Math.max(0, (designH - total) / 2)
   draw(ctx, template.layout, values, 0, startY, designW, "center")
   ctx.restore()
+
+  thresholdTo1Bit(ctx, Wd, Hd)
 }
 
 /**
@@ -145,4 +171,6 @@ export function renderCalibration(canvas: HTMLCanvasElement, media: Media): void
   ctx.textBaseline = "top"
   ctx.textAlign = "left"
   ctx.fillText(`${media.size.w}×${media.size.h}`, mmToDots(2), mmToDots(2))
+
+  thresholdTo1Bit(ctx, W, H)
 }
