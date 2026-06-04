@@ -84,3 +84,19 @@ Built a minimal WebUSB probe page in the PWA and confirmed desktop Chrome can ta
 - This friction is **desktop-Windows-specific**. It reinforces that desktop WebUSB is a *dev convenience*, not the production path (Android/Niimbot over Bluetooth). The Android-OTG-WebUSB question (does it need the same rebinding?) stays deferred.
 
 **Next (item 4, print half):** format raster bytes per the LabelWriter command language and push to ep#2 OUT. Must verify the exact command set against a reliable source (CUPS `rastertolabel` / DYMO LW Technical Reference) before sending — don't guess at hardware.
+
+---
+
+## 2026-06-04 — First real label printed; item 4 complete
+
+A physical label came off the Dymo 450: full pipeline **render canvas → on-screen preview → 1-bit raster → WebUSB → print**, with preview = print holding by construction.
+
+**Verified LW450 raster protocol** (from CUPS `rastertolabel.c` + DYMO LW450 command manual), now in `lablr-ui/src/dymo.ts`:
+
+- 300 DPI, 672-dot (84-byte) head. SYN (`0x16`) + N data bytes per line, MSB = leftmost dot, bit 1 = black.
+- Sequence: `0x1B`×100 + `ESC @` reset → `ESC L hi lo` (length in dots) → `ESC D n` (bytes/line) → per-line SYN → `ESC E` eject.
+- S0929120 media = 25×25 mm = ~296 dots = 37 bytes (we now render full-head-width for calibration).
+
+**Known issue, deliberately deferred — alignment offset.** Print lands shifted (content too high; top border/triangle clipped). This is **not a renderer bug**: it's the physical position of the label on the 672-dot head + leading-edge start, which is **per-media and per-printer**. It belongs to the Media/Printer profile work (**roadmap items 12–14**), not to v1 plumbing. Decision: do **not** hardcode an offset into the throwaway test; the media model will own this value. A calibration tool (X/Y dot offsets, preview=print preserved) was added to the test page to *measure* the value when needed.
+
+**Guiding-principle check:** perfecting alignment before the media model exists would be premature complexity that doesn't reduce time-to-label. Item 4's goal was "prove a label *can* be printed" — achieved. Move on to the draft model (item 5).

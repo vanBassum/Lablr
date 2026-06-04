@@ -5,7 +5,7 @@
 1. [x] Define the end-to-end workflow from "I need a label" to "label printed"
 2. [x] Choose the first printer target — prototype: Dymo LabelWriter 450 (USB); production: Niimbot (Bluetooth)
 3. [x] Decide how printing works — one printer-transport interface, first impl WebUSB from desktop Chrome; Web Bluetooth added later
-4. [ ] Prove a label can be printed to the target printer
+4. [x] Prove a label can be printed to the target printer — Dymo 450 over WebUSB, render→preview→raster→print. (Alignment offset is a media/printer-profile concern, deferred to items 12–14.)
 5. [ ] Define the draft model (the data required to print a label)
 6. [ ] Create a minimal label editor
 7. [ ] Create a minimal preview
