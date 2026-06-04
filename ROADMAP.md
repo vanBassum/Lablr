@@ -6,7 +6,7 @@
 2. [x] Choose the first printer target — prototype: Dymo LabelWriter 450 (USB); production: Niimbot (Bluetooth)
 3. [x] Decide how printing works — one printer-transport interface, first impl WebUSB from desktop Chrome; Web Bluetooth added later
 4. [x] Prove a label can be printed to the target printer — Dymo 450 over WebUSB, render→preview→raster→print. (Alignment offset is a media/printer-profile concern, deferred to items 12–14.)
-5. [x] Define the draft model — generic envelope `{ templateId, values }`; the **template** owns the field schema, so fields vary per template (not a fixed draft schema). Draft references template by id and supplies all values.
+5. [x] Define the draft model — a draft is **data only** (`{ label?, values }`), NOT bound to a template. The same draft renders on any **compatible** template (template's fields ⊆ draft's values), so one chemical → big bucket label or small vial label. Templates own the field schema.
 6. [ ] ~~Create a minimal label editor~~ — **dropped**. The PWA renders/prints; it does not author. Field values come from AI-created drafts (items 27–28), not manual entry. (Number kept per stable-ID rule.)
 7. [x] Create a minimal preview — canvas render of a draft via the declarative layout
 8. [x] Ensure preview and print use the same bitmap — one canvas is both preview and print payload, by construction

@@ -16,8 +16,3 @@ layout:
   children:
     - { type: text, field: code, size: 7, weight: bold }
     - { type: text, field: contents, size: 2.8 }
-
-samples:
-  - { code: A1, contents: M3 × 6 screws }
-  - { code: B4, contents: 0603 resistors }
-  - { code: C2, contents: JST connectors }

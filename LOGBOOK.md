@@ -159,3 +159,22 @@ Templates moved from `src/label/templates/*.yaml` (imported via Vite `?raw`, **b
 **Decision (user): no manual label editor.** The PWA is a renderer/printer, not an authoring tool — drafts are created by the AI (the ChatGPT→draft→link→print workflow, items 27–28), and the bundled sample drafts are stand-ins for those. A manual field-editor would build something the architecture says shouldn't exist. **Item 6 dropped** (number retained per stable-ID rule).
 
 **Built instead:** a second template `storage-box.yaml` (fields `code` + `contents`, different layout from smd-basic) and a **template selector** dropdown in the test page. Switching template changes the fields *and* layout entirely — concrete proof that the template, not the draft, defines what a label is. Draft labels in the UI are now generic (`Object.values(values).join(" · ")`) since fields differ per template. This lands the multi-template mechanism for **item 22** (remaining: add the real template set).
+
+---
+
+## 2026-06-04 — Draft decoupled from template (reverses the earlier `templateId` binding)
+
+**User insight:** one draft should render on multiple templates — e.g. sodium chloride goes on a *big* bucket label and a *small* vial label. Same data, different presentation.
+
+**This reverses the 2026-06-04 "draft references template by id" decision.** That coupling (`{ templateId, values }`) was wrong: it tied data to one presentation. It also contradicted CLAUDE.md's own model ("ChatGPT creates a DRAFT (data only)"; "a preset resolves to media + template + printer") — the draft was always meant to be data-only.
+
+**New model:**
+
+- **Draft = `{ label?, values }`** — data only, no template reference.
+- **Template** owns the field schema + layout + size (unchanged).
+- **Compatibility by duck-typing:** a template can render a draft when `template.fields ⊆ draft.values` (`templateAccepts`). No new "kind" entity — field-key presence is enough. (An explicit `kind` to group drafts/templates is a possible later UX refinement.)
+- The render pairs *any* draft with *any* compatible template; the UI is now draft-first (pick data → choose among fitting templates).
+
+**Config restructure:** sample drafts moved out of templates into a shared `public/config/drafts.json` (so a draft isn't owned by a template). Added `chemical-large` (50×30mm) + `chemical-small` (25×25mm) templates; the sodium-chloride/acetone drafts fit both, proving the bucket/vial scenario. `Template.samples` removed.
+
+**Forward link:** this compatibility check is exactly what **presets** (items 13–14) will build on — a preset picks a (template + media + printer) for a draft, and only compatible templates are valid choices.

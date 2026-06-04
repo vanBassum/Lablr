@@ -2,10 +2,10 @@ import { parseTemplate } from "./load"
 import type { Draft, Template } from "./types"
 
 // Config is fetched at runtime from /config (the public folder), NOT bundled —
-// so templates can be edited/added without rebuilding, matching the decoupled
-// config direction (roadmap items 19–20). public/ is the interim host before
-// this becomes a served label-config repo.
-const CONFIG_BASE = `${import.meta.env.BASE_URL}config/templates/`
+// so templates/drafts can be edited or added without rebuilding, matching the
+// decoupled config direction (roadmap items 19–20). public/ is the interim host
+// before this becomes a served label-config repo.
+const CONFIG_BASE = `${import.meta.env.BASE_URL}config/`
 
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url)
@@ -13,17 +13,21 @@ async function fetchText(url: string): Promise<string> {
   return res.text()
 }
 
-/** Read the manifest, then fetch and parse each listed template. */
+/** Read the template manifest, then fetch and parse each listed template. */
 export async function loadTemplates(): Promise<Template[]> {
-  const ids = JSON.parse(await fetchText(`${CONFIG_BASE}index.json`)) as string[]
+  const base = `${CONFIG_BASE}templates/`
+  const ids = JSON.parse(await fetchText(`${base}index.json`)) as string[]
   return Promise.all(
-    ids.map(async (id) => parseTemplate(await fetchText(`${CONFIG_BASE}${id}.yaml`))),
+    ids.map(async (id) => parseTemplate(await fetchText(`${base}${id}.yaml`))),
   )
 }
 
-/** Drafts derived from each template's bundled sample fixtures. */
-export function draftsFrom(templates: Template[]): Draft[] {
-  return templates.flatMap((t) =>
-    (t.samples ?? []).map((values) => ({ templateId: t.id, values })),
-  )
+/** Load the shared draft fixtures (data only — not bound to any template). */
+export async function loadDrafts(): Promise<Draft[]> {
+  return JSON.parse(await fetchText(`${CONFIG_BASE}drafts.json`)) as Draft[]
+}
+
+/** A template can render a draft when the draft supplies all the fields it needs. */
+export function templateAccepts(template: Template, draft: Draft): boolean {
+  return template.fields.every((f) => f.key in draft.values)
 }

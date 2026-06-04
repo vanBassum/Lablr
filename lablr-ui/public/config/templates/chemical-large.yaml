@@ -1,0 +1,20 @@
+# Large chemical label — e.g. a bucket. Same draft data as the small one,
+# different physical size + layout. Proves draft ⟂ template.
+id: chemical-large
+name: Chemical — large (bucket)
+size: { w: 50, h: 30 } # mm
+
+fields:
+  - { key: name, label: Name }
+  - { key: formula, label: Formula }
+  - { key: hazard, label: Hazard }
+
+layout:
+  type: stack
+  direction: vertical
+  align: center
+  gap: 2
+  children:
+    - { type: text, field: name, size: 7, weight: bold }
+    - { type: text, field: formula, size: 5 }
+    - { type: text, field: hazard, size: 3 }

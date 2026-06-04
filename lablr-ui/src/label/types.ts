@@ -45,12 +45,15 @@ export interface Template {
   size: { w: number; h: number } // mm — the label this template is designed for
   fields: TemplateField[]
   layout: LayoutNode
-  /** Design-time fixtures: full value sets to preview the template against. */
-  samples?: Array<Record<string, string>>
 }
 
-/** An instance to print: a template reference plus a value per declared field. */
+/**
+ * The data for a label — values only, NOT bound to a template. The same draft
+ * (e.g. a chemical) can be rendered by any compatible template (big bucket
+ * label, small vial label). A template is compatible when the draft supplies
+ * every field the template needs (see `templateAccepts`).
+ */
 export interface Draft {
-  templateId: string
+  label?: string // optional display name
   values: Record<string, string>
 }

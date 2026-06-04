@@ -1,0 +1,18 @@
+# Small chemical label — e.g. a vial. Needs fewer fields than the large one;
+# any draft with at least name + formula can use it.
+id: chemical-small
+name: Chemical — small (vial)
+size: { w: 25, h: 25 } # mm
+
+fields:
+  - { key: name, label: Name }
+  - { key: formula, label: Formula }
+
+layout:
+  type: stack
+  direction: vertical
+  align: center
+  gap: 1.5
+  children:
+    - { type: text, field: name, size: 3, weight: bold }
+    - { type: text, field: formula, size: 6, weight: bold }

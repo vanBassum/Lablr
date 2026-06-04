@@ -1,0 +1,22 @@
+[
+  {
+    "label": "Sodium chloride",
+    "values": { "name": "Sodium chloride", "formula": "NaCl", "hazard": "Irritant · hygroscopic" }
+  },
+  {
+    "label": "Acetone",
+    "values": { "name": "Acetone", "formula": "C3H6O", "hazard": "Flammable" }
+  },
+  {
+    "label": "BC547 transistor",
+    "values": { "name": "BC547", "subtitle": "NPN Transistor", "package": "TO-92" }
+  },
+  {
+    "label": "LM358 op-amp",
+    "values": { "name": "LM358", "subtitle": "Dual Op-Amp", "package": "SOIC-8" }
+  },
+  {
+    "label": "Bin A1 — screws",
+    "values": { "code": "A1", "contents": "M3 × 6 screws" }
+  }
+]
