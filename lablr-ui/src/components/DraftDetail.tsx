@@ -7,7 +7,8 @@ import {
   RotateCw,
   Settings2,
 } from "lucide-react"
-import { mmToDots, openDymo, printCanvas } from "@/dymo"
+import { mmToDots } from "@/dymo"
+import { usePrinter } from "@/printer"
 import {
   compatiblePresets,
   defaultPreset,
@@ -44,6 +45,7 @@ export function DraftDetail({
   onBack: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const printer = usePrinter()
   const options = compatiblePresets(draft, presets, templates)
   const [presetId, setPresetId] = useState(
     () => defaultPreset(draft, presets, templates)?.id ?? "",
@@ -78,18 +80,15 @@ export function DraftDetail({
     const canvas = canvasRef.current
     if (!canvas || !selectedMedia) return
     setBusy(true)
-    setStatus({ ok: true, msg: "Opening printer…" })
+    setStatus({ ok: true, msg: "Printing…" })
     try {
       const totalX = mmToDots(selectedMedia.offset?.x ?? 0) + offsetX
       const totalY = mmToDots(selectedMedia.offset?.y ?? 0) + offsetY
-      const device = await openDymo()
-      setStatus({ ok: true, msg: "Sending…" })
-      await printCanvas(device, canvas, {
+      // Prints on the persistent connection; connects once on first use.
+      await printer.print(canvas, {
         dotTabBytes: Math.round(Math.max(0, totalX) / 8),
         topBlankLines: Math.round(Math.max(0, totalY)),
       })
-      await device.releaseInterface(0)
-      await device.close()
       setStatus({ ok: true, msg: `Printed “${draftName(draft)}”` })
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message })

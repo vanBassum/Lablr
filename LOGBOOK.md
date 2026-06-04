@@ -271,3 +271,17 @@ Reworked the UX into the flow the user described:
 **Orientation (item 32)** — added a per-print **portrait/landscape toggle** on the detail screen. Implementation: the print head width is fixed, so the bitmap is always the media's physical `w×h` dots; landscape lays the design into a *swapped* area (label height × width) and rotates it 90° onto the bitmap (`renderLabel(…, orientation)`). `templateFitsMedia` is orientation-aware (swaps the label's dims). Kept as a per-print toggle (default portrait) rather than a preset/template field — simplest, most "mode"-like; can be promoted to a preset default later if wanted. Rotation direction is a guess (clockwise) — verify on the device; trivial to flip.
 
 **Update:** orientation promoted to a **preset** field (`orientation?`, default portrait), per the user. NOT the template — a template's `size` aspect already implies its orientation, and putting it there would duplicate near-identical templates and conflate design with placement. A preset is the complete output spec = template + media + orientation, so it drives the right thumbnail/default; the per-print toggle remains as an override (reset to the preset's value when the preset changes).
+
+---
+
+## 2026-06-04 — Persistent printer connection (item 33)
+
+Printing used to `requestDevice → open → claim → print → release → close` on **every** Print press (re-prompting / re-opening each time). Now the connection is established **once** and held:
+
+- New `PrinterProvider` (`src/printer.tsx`) keeps the open+claimed `UsbDevice` in a ref; `print()` is just a `transferOut`. Connects once on first print (or via the header), reuses thereafter.
+- **Silent reconnect on load** via `navigator.usb.getDevices()` — after the first grant, the printer reconnects with no prompt on subsequent loads.
+- **Unplug handling** via the WebUSB `disconnect` event → status flips to disconnected.
+- Header shows a **Connect/Printer** chip (USB icon, green when connected) to connect/disconnect manually.
+- `dymo.ts` gained `getGrantedDymo()` + `onUsbDisconnect()`; `openDymo()` refactored to share a `claim()` helper. `DraftDetail` now prints through `usePrinter().print()` instead of opening/closing per press.
+
+(Same caveat as before: WebUSB needs localhost/HTTPS, so this is the dev/desktop path; phone-over-LAN-HTTP still can't print.)

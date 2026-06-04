@@ -34,5 +34,6 @@
 30. [ ] Add remote printer support if it becomes useful
 31. [ ] Add deployment and configuration packaging
 32. [x] Support landscape/portrait orientation — per-print toggle; renderer rotates the design 90° within the physical label (head width is fixed, so the bitmap stays the media's physical size)
+33. [x] Persistent printer connection — connect once (open + claim) held in a PrinterProvider; each print is just transferOut. Silent reconnect on load via `navigator.usb.getDevices()`; unplug detected via the `disconnect` event. Header shows connect/disconnect.
 
 > **Guiding principle:** Keep questioning every feature that does not directly reduce the time between needing a label and having a label in your hand.

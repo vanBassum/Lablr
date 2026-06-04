@@ -1,5 +1,6 @@
-import { Moon, Sun, Tag } from "lucide-react"
+import { Moon, Sun, Tag, Usb } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
+import { usePrinter } from "@/printer"
 import { LabelApp } from "@/components/LabelApp"
 import { Button } from "@/components/ui/button"
 
@@ -18,6 +19,24 @@ function ThemeToggle() {
   )
 }
 
+function PrinterChip() {
+  const { status, connect, disconnect } = usePrinter()
+  const connected = status === "connected" || status === "printing"
+  const label =
+    status === "connecting" ? "Connecting…" : connected ? "Printer" : "Connect"
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-label={connected ? "Disconnect printer" : "Connect printer"}
+      onClick={() => (connected ? disconnect() : connect().catch(() => {}))}
+    >
+      <Usb className={connected ? "text-green-600" : "text-muted-foreground"} />
+      {label}
+    </Button>
+  )
+}
+
 export function App() {
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col">
@@ -26,7 +45,10 @@ export function App() {
           <Tag className="size-4" />
           Lablr
         </span>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <PrinterChip />
+          <ThemeToggle />
+        </div>
       </header>
       <LabelApp />
     </div>

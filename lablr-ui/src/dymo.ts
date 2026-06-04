@@ -25,6 +25,7 @@ interface UsbOutTransferResult {
   bytesWritten: number
 }
 export interface UsbDevice {
+  vendorId: number
   open(): Promise<void>
   close(): Promise<void>
   selectConfiguration(value: number): Promise<void>
@@ -33,10 +34,16 @@ export interface UsbDevice {
   transferOut(endpointNumber: number, data: Uint8Array): Promise<UsbOutTransferResult>
   configuration: unknown
 }
+interface UsbConnectionEvent {
+  device: UsbDevice
+}
 interface Usb {
   requestDevice(opts: {
     filters: Array<{ vendorId?: number; productId?: number }>
   }): Promise<UsbDevice>
+  getDevices(): Promise<UsbDevice[]>
+  addEventListener(type: "disconnect", listener: (e: UsbConnectionEvent) => void): void
+  removeEventListener(type: "disconnect", listener: (e: UsbConnectionEvent) => void): void
 }
 
 function getUsb(): Usb {
@@ -45,15 +52,41 @@ function getUsb(): Usb {
   return usb
 }
 
-/** Prompt for the DYMO, then open + claim interface 0 ready for output. */
-export async function openDymo(): Promise<UsbDevice> {
-  const device = await getUsb().requestDevice({
-    filters: [{ vendorId: DYMO_VENDOR_ID }],
-  })
+function usbOrNull(): Usb | null {
+  return (navigator as unknown as { usb?: Usb }).usb ?? null
+}
+
+/** Open + claim interface 0 on an already-selected device, ready for output. */
+async function claim(device: UsbDevice): Promise<UsbDevice> {
   await device.open()
   if (device.configuration === null) await device.selectConfiguration(1)
   await device.claimInterface(0)
   return device
+}
+
+/** Prompt for the DYMO (needs a user gesture), then open + claim it. */
+export async function openDymo(): Promise<UsbDevice> {
+  const device = await getUsb().requestDevice({
+    filters: [{ vendorId: DYMO_VENDOR_ID }],
+  })
+  return claim(device)
+}
+
+/** Reconnect to a previously-granted DYMO without prompting; null if none. */
+export async function getGrantedDymo(): Promise<UsbDevice | null> {
+  const usb = usbOrNull()
+  if (!usb) return null
+  const device = (await usb.getDevices()).find((d) => d.vendorId === DYMO_VENDOR_ID)
+  return device ? claim(device) : null
+}
+
+/** Subscribe to USB unplug events; returns an unsubscribe function. */
+export function onUsbDisconnect(cb: (device: UsbDevice) => void): () => void {
+  const usb = usbOrNull()
+  if (!usb) return () => {}
+  const handler = (e: UsbConnectionEvent) => cb(e.device)
+  usb.addEventListener("disconnect", handler)
+  return () => usb.removeEventListener("disconnect", handler)
 }
 
 /**
