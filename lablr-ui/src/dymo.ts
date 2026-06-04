@@ -171,12 +171,14 @@ export async function printCanvas(
   offset: HeadOffset = {},
   threshold = 128,
 ): Promise<void> {
-  const x = Math.max(0, Math.round(offset.x ?? 0))
-  const y = Math.max(0, Math.round(offset.y ?? 0))
+  // Offsets may be negative (nudge the label left/up); drawImage clips the
+  // part that falls off the head. Only positive Y needs extra height.
+  const x = Math.round(offset.x ?? 0)
+  const y = Math.round(offset.y ?? 0)
 
   const head = document.createElement("canvas")
   head.width = MAX_BYTES_PER_LINE * 8 // full head width (672 dots)
-  head.height = canvas.height + y
+  head.height = canvas.height + Math.max(0, y)
   const ctx = head.getContext("2d")
   if (!ctx) throw new Error("no 2d context")
   ctx.fillStyle = "white"
