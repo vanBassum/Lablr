@@ -96,3 +96,53 @@ export function renderLabel(
   draw(ctx, template.layout, values, 0, startY, designW, "center")
   ctx.restore()
 }
+
+/**
+ * An alignment test pattern for calibrating a media's head offset: a full-edge
+ * border, a corner-to-corner cross, and a center crosshair, sized to the media.
+ * Print it, see where it lands on the physical label, then nudge the offset.
+ */
+export function renderCalibration(canvas: HTMLCanvasElement, media: Media): void {
+  const W = mmToDots(media.size.w)
+  const H = mmToDots(media.size.h)
+  canvas.width = W
+  canvas.height = H
+
+  const ctx = canvas.getContext("2d")
+  if (!ctx) throw new Error("no 2d context")
+
+  ctx.fillStyle = "white"
+  ctx.fillRect(0, 0, W, H)
+  ctx.strokeStyle = "black"
+  ctx.fillStyle = "black"
+
+  // Border hugging the label edges.
+  ctx.lineWidth = 3
+  ctx.strokeRect(1.5, 1.5, W - 3, H - 3)
+
+  // Corner-to-corner cross.
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.lineTo(W, H)
+  ctx.moveTo(W, 0)
+  ctx.lineTo(0, H)
+  ctx.stroke()
+
+  // Center crosshair.
+  const cx = W / 2
+  const cy = H / 2
+  const r = mmToDots(3)
+  ctx.beginPath()
+  ctx.moveTo(cx - r, cy)
+  ctx.lineTo(cx + r, cy)
+  ctx.moveTo(cx, cy - r)
+  ctx.lineTo(cx, cy + r)
+  ctx.stroke()
+
+  // Size label, top-left.
+  ctx.font = `${mmToDots(3)}px sans-serif`
+  ctx.textBaseline = "top"
+  ctx.textAlign = "left"
+  ctx.fillText(`${media.size.w}×${media.size.h}`, mmToDots(2), mmToDots(2))
+}

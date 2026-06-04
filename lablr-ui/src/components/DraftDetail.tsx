@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from "react"
 import {
   ChevronDown,
   ChevronLeft,
+  Crosshair,
   Loader2,
   Printer,
   RotateCw,
@@ -18,6 +19,7 @@ import {
   templateFitsMedia,
 } from "@/label/templates"
 import type { Draft, Media, Orientation, Preset, Template } from "@/label/types"
+import { renderCalibration } from "@/label/render"
 import { LabelCanvas } from "@/components/LabelCanvas"
 import { WebUsbProbe } from "@/WebUsbProbe"
 import { Button } from "@/components/ui/button"
@@ -76,20 +78,42 @@ export function DraftDetail({
       ? templateFitsMedia(template, selectedMedia, orientation)
       : true
 
+  // Head offset = media calibration + manual nudge. X is byte-granular (ESC B).
+  function headOffset() {
+    const totalX = mmToDots(selectedMedia?.offset?.x ?? 0) + offsetX
+    const totalY = mmToDots(selectedMedia?.offset?.y ?? 0) + offsetY
+    return {
+      dotTabBytes: Math.round(Math.max(0, totalX) / 8),
+      topBlankLines: Math.round(Math.max(0, totalY)),
+    }
+  }
+
   async function handlePrint() {
     const canvas = canvasRef.current
     if (!canvas || !selectedMedia) return
     setBusy(true)
     setStatus({ ok: true, msg: "Printing…" })
     try {
-      const totalX = mmToDots(selectedMedia.offset?.x ?? 0) + offsetX
-      const totalY = mmToDots(selectedMedia.offset?.y ?? 0) + offsetY
       // Prints on the persistent connection; connects once on first use.
-      await printer.print(canvas, {
-        dotTabBytes: Math.round(Math.max(0, totalX) / 8),
-        topBlankLines: Math.round(Math.max(0, totalY)),
-      })
+      await printer.print(canvas, headOffset())
       setStatus({ ok: true, msg: `Printed “${draftName(draft)}”` })
+    } catch (e) {
+      setStatus({ ok: false, msg: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Print a border + corner-to-corner cross to calibrate this media's offset.
+  async function printCalibration() {
+    if (!selectedMedia) return
+    const canvas = document.createElement("canvas")
+    renderCalibration(canvas, selectedMedia)
+    setBusy(true)
+    setStatus({ ok: true, msg: "Printing alignment pattern…" })
+    try {
+      await printer.print(canvas, headOffset())
+      setStatus({ ok: true, msg: "Printed alignment pattern" })
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message })
     } finally {
@@ -198,8 +222,19 @@ export function DraftDetail({
                   </Field>
                 </div>
                 <p className="text-muted-foreground text-xs">
-                  Calibrate the label position in the media YAML; nudge here to find it.
+                  Print the pattern, see where it lands, nudge, repeat. Bake the final
+                  value into the media YAML's <code>offset</code>.
                 </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-fit"
+                  onClick={printCalibration}
+                  disabled={busy || !selectedMedia}
+                >
+                  <Crosshair />
+                  Print alignment pattern
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"

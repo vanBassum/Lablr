@@ -35,5 +35,6 @@
 31. [ ] Add deployment and configuration packaging
 32. [x] Support landscape/portrait orientation — per-print toggle; renderer rotates the design 90° within the physical label (head width is fixed, so the bitmap stays the media's physical size)
 33. [x] Persistent printer connection — connect once (open + claim) held in a PrinterProvider; each print is just transferOut. Silent reconnect on load via `navigator.usb.getDevices()`; unplug detected via the `disconnect` event. Header shows connect/disconnect.
+34. [x] Offset calibration aid — "Print alignment pattern" (border + corner-to-corner cross + center crosshair, sized to the media) in the gear, printed with the current offset; nudge X/Y and reprint to dial in each media's offset.
 
 > **Guiding principle:** Keep questioning every feature that does not directly reduce the time between needing a label and having a label in your hand.
