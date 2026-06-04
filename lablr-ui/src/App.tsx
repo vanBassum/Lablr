@@ -1,26 +1,34 @@
-import { WebUsbProbe } from "@/WebUsbProbe"
-import { DymoPrintTest } from "@/DymoPrintTest"
+import { Moon, Sun, Tag } from "lucide-react"
+import { useTheme } from "@/components/theme-provider"
+import { PrintScreen } from "@/components/PrintScreen"
+import { Button } from "@/components/ui/button"
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label="Toggle theme"
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+    >
+      <Sun className="hidden dark:block" />
+      <Moon className="dark:hidden" />
+    </Button>
+  )
+}
 
 export function App() {
   return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-2xl min-w-0 flex-col gap-8 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Lablr — item 4: print a label</h1>
-          <p className="text-muted-foreground">
-            Render → preview → raster → print to the DYMO LabelWriter 450 over WebUSB.
-          </p>
-        </div>
-        <DymoPrintTest />
-        <details>
-          <summary className="text-muted-foreground cursor-pointer">
-            WebUSB connection probe (diagnostics)
-          </summary>
-          <div className="mt-3">
-            <WebUsbProbe />
-          </div>
-        </details>
-      </div>
+    <div className="mx-auto flex min-h-svh max-w-md flex-col">
+      <header className="bg-background/80 sticky top-0 z-10 flex items-center justify-between border-b px-4 py-3 backdrop-blur">
+        <span className="flex items-center gap-2 font-semibold">
+          <Tag className="size-4" />
+          Lablr
+        </span>
+        <ThemeToggle />
+      </header>
+      <PrintScreen />
     </div>
   )
 }

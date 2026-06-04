@@ -224,3 +224,15 @@ This **reverses CLAUDE.md's "users pick a preset" model**; CLAUDE.md "The model"
 ## 2026-06-04 — Dev server exposed on LAN for phone testing
 
 `dev` script now runs `vite --host` so the PWA is reachable from the phone (the production target) at `http://<pc-lan-ip>:5173` for UI/preview/ergonomics testing. **Caveat:** WebUSB needs a secure context (localhost or HTTPS), so the phone over plain-HTTP LAN can view/preview but **cannot print** — printing to the USB Dymo stays on the PC. (Phone printing is the later Bluetooth-Niimbot / HTTPS path.)
+
+---
+
+## 2026-06-04 — Phone-first UX with shadcn
+
+Replaced the dev test page with a real **phone-first** UX (`App.tsx` shell + `components/PrintScreen.tsx`), built on shadcn (`radix-nova` style): Card, Select, Badge, Label, Separator added via the CLI.
+
+Layout: sticky header (title + light/dark toggle) → centered label **preview** (white framed card, scaled to the media's real aspect, longest edge ≤280px) with a Fits/Clips badge → touch-friendly **Select**s for *What to print* (draft) · *Template* · *Label (loaded media)* → a big **sticky bottom Print bar** (thumb-reach, safe-area padding) with inline status. Column is `max-w-md` so it reads as a phone screen on desktop too.
+
+Offset-nudge inputs and the WebUSB diagnostics probe moved into a collapsible **Advanced** section — they're calibration/dev concerns, off the main path.
+
+**Note:** the draft→template defaulting was reworked from a setState-in-effect into a render-phase reset (track `seenDraft`, clear the override when the draft changes) — the lint rule `react-hooks/set-state-in-effect` flagged the effect version; the render-phase pattern is React's recommended alternative and avoids cascading renders.
