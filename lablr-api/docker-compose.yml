@@ -13,17 +13,21 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Cors__AllowedOrigins__0: https://${LABLR_UI_DOMAIN}
-      # Config is read from a mounted directory (edit without rebuilding).
+      # YAML in /config seeds the SQLite DB on first boot only (then the DB wins).
       Config__Dir: /config
+      # SQLite config store — on a writable, persistent volume so AI/UI edits survive.
+      Db__Path: /data/lablr.db
       # The PWA is served by this container (wwwroot), so deep-link URLs are
       # derived from the forwarded request host. Set App__PublicBaseUrl only to
       # override (e.g. if the public domain differs from the routed host).
       # App__PublicBaseUrl: https://${LABLR_UI_DOMAIN}
-      # Oidc__Authority: https://${AUTHENTIK_DOMAIN}/application/o/lablr/
-      # Oidc__ClientId: ${LABLR_OIDC_CLIENT_ID}
-      # Oidc__ClientSecret: ${LABLR_OIDC_CLIENT_SECRET}
+      # MCP OAuth via Authentik (off by default; see McpAuth.cs).
+      # Auth__Enabled: "true"
+      # Auth__AuthentikDomain: ${AUTHENTIK_DOMAIN}
+      # Auth__McpAppSlug: lablr-mcp
     volumes:
       - ${LABLR_CONFIG_DIR}:/config:ro
+      - ./runtime/data:/data
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.lablr-api.rule=Host(`${LABLR_API_DOMAIN}`)"

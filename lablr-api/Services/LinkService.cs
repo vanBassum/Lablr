@@ -1,4 +1,4 @@
-namespace Lablr.Api;
+namespace Lablr.Api.Services;
 
 /// <summary>Builds PWA deep links. Same-origin in prod (derived from the request),
 /// or App:PublicBaseUrl when set (e.g. dev, where the UI is on a separate port).</summary>

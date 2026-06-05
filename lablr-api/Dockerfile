@@ -22,6 +22,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish ./
 COPY --from=ui /ui/dist ./wwwroot
+# SQLite DB dir — a volume should overlay this for persistence (see docker-compose).
+RUN mkdir -p /data
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Lablr.Api.dll"]

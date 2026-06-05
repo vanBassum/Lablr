@@ -1,9 +1,15 @@
-using Lablr.Api;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.Extensions.FileProviders;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// SQLite config store. Db:Path is a file on a mounted volume in prod.
+var dbPath = builder.Configuration["Db:Path"] ?? "lablr.db";
+if (!Path.IsPathRooted(dbPath))
+    dbPath = Path.GetFullPath(dbPath, builder.Environment.ContentRootPath);
+builder.Services.AddDbContextFactory<LablrDbContext>(o => o.UseSqlite($"Data Source={dbPath}"));
+
+builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ConfigService>();
@@ -11,10 +17,10 @@ builder.Services.AddSingleton<DraftStore>();
 builder.Services.AddSingleton<LinkService>();
 builder.Services.AddHostedService<DraftSweeper>();
 
-// MCP server (Streamable HTTP at /mcp): an AI lists templates and creates drafts.
+// MCP server (Streamable HTTP at /mcp): an AI reads + authors config and creates drafts.
 builder.Services.AddMcpServer().WithHttpTransport().WithTools<LabelTools>();
 
-// Optional OAuth 2.1 protection for /mcp, federated to Authentik (see McpAuth.cs).
+// Optional OAuth 2.1 protection for /mcp, federated to Authentik (see Mcp/McpAuth.cs).
 // Disabled by default so local/dev runs need no IdP; prod sets Auth__* env vars.
 var mcpAuth = builder.Configuration.GetMcpAuthOptions();
 builder.Services.AddMcpAuth(mcpAuth);
@@ -33,9 +39,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("ui", policy =>
     {
         // Prod is same-origin (UI served by this app). Dev UI runs on a separate
-        // vite port, so allow any origin in Development; otherwise use the configured
-        // list. AllowAnyHeader/Method + cross-origin image reads keep the print
-        // canvas untainted in dev.
+        // vite port, so allow any origin in Development; otherwise use the configured list.
         if (builder.Environment.IsDevelopment())
             policy.SetIsOriginAllowed(_ => true).AllowAnyHeader().AllowAnyMethod();
         else if (corsOrigins.Length > 0)
@@ -44,8 +48,8 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Eager-load config at startup so failures surface immediately.
-var config = app.Services.GetRequiredService<ConfigService>();
+// Eager-init: creates + seeds the SQLite DB at startup so failures surface now.
+app.Services.GetRequiredService<ConfigService>();
 
 app.UseForwardedHeaders();
 
@@ -63,16 +67,6 @@ if (mcpAuth.Enabled)
 // Public OAuth discovery docs — the MCP client reads these to know how to sign in.
 app.MapMcpAuthMetadata(mcpAuth);
 
-// Serve pictogram SVGs straight from the config directory (the mount).
-if (Directory.Exists(config.PictogramsDir))
-{
-    app.UseStaticFiles(new StaticFileOptions
-    {
-        FileProvider = new PhysicalFileProvider(config.PictogramsDir),
-        RequestPath = "/pictograms",
-    });
-}
-
 // Serve the built PWA (copied into wwwroot at image build) same-origin.
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -83,36 +77,8 @@ var mcp = app.MapMcp("/mcp");
 if (mcpAuth.Enabled)
     mcp.RequireAuthorization();
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
-
-app.MapGet("/api/config", (ConfigService c) => Results.Json(c.Config));
-
-app.MapGet("/api/drafts", (DraftStore store) => Results.Ok(store.List()));
-
-app.MapGet("/api/drafts/{id}", (string id, DraftStore store) =>
-    store.Get(id) is { } draft ? Results.Ok(draft) : Results.NotFound());
-
-app.MapPost("/api/drafts", (CreateDraftRequest req, ConfigService c, DraftStore store, LinkService links) =>
-{
-    if (req.Fields is null || req.Fields.Count == 0)
-        return Results.BadRequest(new { error = "fields required" });
-
-    if (!string.IsNullOrEmpty(req.TemplateId))
-    {
-        var template = c.Config.Templates.FirstOrDefault(t => t.Id == req.TemplateId);
-        if (template is null)
-            return Results.BadRequest(new { error = $"unknown template '{req.TemplateId}'" });
-
-        var missing = template.RequiredFields
-            .Where(f => !req.Fields.TryGetValue(f, out var v) || string.IsNullOrWhiteSpace(v))
-            .ToList();
-        if (missing.Count > 0)
-            return Results.BadRequest(new { error = "missing required fields", missing });
-    }
-
-    var draft = store.Create(req.Fields, req.TemplateId);
-    return Results.Ok(new { id = draft.Id, url = links.DraftUrl(draft.Id), draft });
-});
+// REST endpoints (Controllers/): config, drafts, pictograms, health.
+app.MapControllers();
 
 // SPA fallback: client-side routes (and #/d/{id}) resolve to index.html.
 app.MapFallbackToFile("index.html");

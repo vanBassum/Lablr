@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 
-namespace Lablr.Api;
+namespace Lablr.Api.Services;
 
 /// <summary>
 /// Ephemeral, in-memory draft storage. Seed drafts (shipped with the config) are

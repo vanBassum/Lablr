@@ -21,3 +21,8 @@ lablr-api/runtime/
 
 ## PWA built into the image at build time (not committed)
 wwwroot/
+
+## SQLite dev database
+*.db
+*.db-shm
+*.db-wal

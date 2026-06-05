@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 
-namespace Lablr.Api;
+namespace Lablr.Api.Mcp;
 
 /// <summary>
 /// OAuth 2.1 protection for the MCP endpoint, federated to Authentik.
