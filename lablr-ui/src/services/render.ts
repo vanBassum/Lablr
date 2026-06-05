@@ -69,11 +69,25 @@ export class RenderService {
 
         ctx.font = `${element.font.weight === "bold" ? "bold " : ""}${fontSize}px monospace`
         ctx.textAlign = element.align
-        ctx.textBaseline = element.valign
+        ctx.textBaseline = element.valign === "center" ? "middle" : element.valign
 
         // Calculate position within rectangle based on alignment
-        const x = rectX + (element.align === "left" ? 0 : element.align === "right" ? rectW : rectW / 2)
-        const y = rectY + (element.valign === "top" ? fontSize : element.valign === "bottom" ? rectH : rectH / 2)
+        let x = rectX
+        if (element.align === "center") {
+          x = rectX + rectW / 2
+        } else if (element.align === "right") {
+          x = rectX + rectW
+        }
+
+        let y = rectY
+        if (element.valign === "center") {
+          y = rectY + rectH / 2
+        } else if (element.valign === "bottom") {
+          y = rectY + rectH
+        } else {
+          // "top" - baseline at top
+          y = rectY + fontSize * 0.8
+        }
 
         ctx.fillText(fieldValue, x, y)
       }
@@ -101,7 +115,9 @@ export class RenderService {
       ctx.font = `${weight === "bold" ? "bold " : ""}${size}px monospace`
       const metrics = ctx.measureText(text)
       const textWidth = metrics.width
-      const textHeight = size // Approximate height
+      // Use actual bounding box if available, otherwise estimate
+      const textHeight =
+        (metrics.fontBoundingBoxAscent || 0) + (metrics.fontBoundingBoxDescent || size * 1.2)
 
       if (textWidth <= widthPixels && textHeight <= heightPixels) {
         return size
