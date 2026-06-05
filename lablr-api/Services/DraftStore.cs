@@ -30,7 +30,8 @@ public sealed class DraftStore
         _drafts.TryGetValue(id, out var e) ? new DraftDto(id, e.Fields, e.TemplateId) : null;
 
     public IEnumerable<DraftDto> List() =>
-        _drafts.Select(kv => new DraftDto(kv.Key, kv.Value.Fields, kv.Value.TemplateId));
+        _drafts.OrderByDescending(kv => kv.Value.CreatedAt)
+            .Select(kv => new DraftDto(kv.Key, kv.Value.Fields, kv.Value.TemplateId));
 
     public DraftDto Create(Dictionary<string, string> fields, string? templateId)
     {
