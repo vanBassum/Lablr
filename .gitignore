@@ -32,3 +32,4 @@ appsettings.*.Local.json
 
 # Docker runtime
 lablr-api/runtime/
+.claude/settings.json
