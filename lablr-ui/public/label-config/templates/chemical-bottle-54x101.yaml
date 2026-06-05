@@ -7,7 +7,33 @@ label: chemical-resistant-54x101
 requiredFields:
   - name
   - formula
+
+optionalFields:
+  - pictogram1
+  - pictogram2
+  - pictogram3
+  - pictogram4
+  - pictogram5
   - hazard
+  - notes
+
+assets:
+  flammable:
+    image: ghs02.svg
+  oxidizer:
+    image: ghs03.svg
+  gas:
+    image: ghs04.svg
+  corrosive:
+    image: ghs05.svg
+  toxic:
+    image: ghs06.svg
+  irritant:
+    image: ghs07.svg
+  health-hazard:
+    image: ghs08.svg
+  environment:
+    image: ghs09.svg
 
 variants:
 
@@ -17,59 +43,81 @@ variants:
 
       - type: text
         field: name
-
         rect:
           x: 3
-          y: 3
+          y: 5
           width: 48
           height: 18
-
         align: center
         valign: center
-
         font:
-          maxSizeMm: 8
-          minSizeMm: 4
+          maxSizeMm: 10
+          minSizeMm: 5
           weight: bold
-
         fit: shrink
+        wrap: false
 
       - type: text
         field: formula
-
         rect:
           x: 3
-          y: 24
+          y: 25
           width: 48
           height: 10
-
         align: center
         valign: center
-
         font:
-          maxSizeMm: 5
+          maxSizeMm: 6
           minSizeMm: 3
-
         fit: shrink
+        wrap: false
+
+      - type: pictogram
+        field: pictogram1
+        rect: { x: 2, y: 40, width: 9.5, height: 9.5 }
+      - type: pictogram
+        field: pictogram2
+        rect: { x: 12, y: 40, width: 9.5, height: 9.5 }
+      - type: pictogram
+        field: pictogram3
+        rect: { x: 22, y: 40, width: 9.5, height: 9.5 }
+      - type: pictogram
+        field: pictogram4
+        rect: { x: 32, y: 40, width: 9.5, height: 9.5 }
+      - type: pictogram
+        field: pictogram5
+        rect: { x: 42, y: 40, width: 9.5, height: 9.5 }
 
       - type: text
         field: hazard
-
         rect:
           x: 3
-          y: 40
+          y: 54
           width: 48
-          height: 50
-
+          height: 28
         align: left
         valign: top
-
         wrap: true
+        maxLines: 7
+        font:
+          maxSizeMm: 4.5
+          minSizeMm: 3
+        fit: shrink
 
+      - type: text
+        field: notes
+        rect:
+          x: 3
+          y: 84
+          width: 48
+          height: 14
+        align: left
+        valign: top
+        wrap: true
+        maxLines: 5
         font:
           maxSizeMm: 3
           minSizeMm: 2
-
         fit: shrink
 
   landscape:
@@ -78,57 +126,79 @@ variants:
 
       - type: text
         field: name
-
         rect:
           x: 3
-          y: 3
+          y: 2
           width: 95
-          height: 15
-
+          height: 14
         align: center
         valign: center
-
         font:
           maxSizeMm: 8
           minSizeMm: 4
           weight: bold
-
         fit: shrink
+        wrap: false
 
       - type: text
         field: formula
-
         rect:
           x: 3
-          y: 20
+          y: 16
           width: 95
-          height: 10
-
+          height: 8
         align: center
         valign: center
-
         font:
           maxSizeMm: 5
           minSizeMm: 3
-
         fit: shrink
+        wrap: false
+
+      - type: pictogram
+        field: pictogram1
+        rect: { x: 3, y: 26, width: 9, height: 9 }
+      - type: pictogram
+        field: pictogram2
+        rect: { x: 13, y: 26, width: 9, height: 9 }
+      - type: pictogram
+        field: pictogram3
+        rect: { x: 23, y: 26, width: 9, height: 9 }
+      - type: pictogram
+        field: pictogram4
+        rect: { x: 33, y: 26, width: 9, height: 9 }
+      - type: pictogram
+        field: pictogram5
+        rect: { x: 43, y: 26, width: 9, height: 9 }
 
       - type: text
         field: hazard
-
         rect:
-          x: 3
-          y: 33
-          width: 95
-          height: 18
-
+          x: 55
+          y: 25
+          width: 43
+          height: 14
         align: left
         valign: top
-
         wrap: true
-
+        maxLines: 4
         font:
           maxSizeMm: 3
           minSizeMm: 2
+        fit: shrink
 
+      - type: text
+        field: notes
+        rect:
+          x: 3
+          y: 40
+          width: 95
+          height: 11
+        align: left
+        valign: top
+        wrap: true
+        maxLines: 3
+        font:
+          maxSizeMm: 2.5
+          minSizeMm: 1.6
         fit: shrink

@@ -15,55 +15,43 @@ elements:
 
   - type: text
     field: name
-
     rect:
       x: 1
-      y: 1
+      y: 2
       width: 23
-      height: 10
-
+      height: 12
     align: center
     valign: center
-
     font:
-      maxSizeMm: 4
-      minSizeMm: 2
+      maxSizeMm: 5
+      minSizeMm: 2.5
       weight: bold
-
     fit: shrink
 
   - type: text
     field: type
-
     rect:
       x: 1
-      y: 13
+      y: 15
       width: 11
-      height: 6
-
+      height: 8
     align: center
     valign: center
-
     font:
-      maxSizeMm: 2.5
+      maxSizeMm: 3
       minSizeMm: 1.5
-
     fit: shrink
 
   - type: text
     field: package
-
     rect:
       x: 13
-      y: 13
+      y: 15
       width: 11
-      height: 6
-
+      height: 8
     align: center
     valign: center
-
     font:
-      maxSizeMm: 2.5
+      maxSizeMm: 3
       minSizeMm: 1.5
-
     fit: shrink

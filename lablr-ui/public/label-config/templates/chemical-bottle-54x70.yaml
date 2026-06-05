@@ -105,12 +105,11 @@ variants:
         align: left
         valign: top
         font:
-          maxSizeMm: 2.7
-          minSizeMm: 1.6
-          weight: bold
+          maxSizeMm: 3
+          minSizeMm: 2
         fit: shrink
         wrap: true
-        maxLines: 3
+        maxLines: 4
 
       - type: text
         field: notes
@@ -215,9 +214,8 @@ variants:
         align: left
         valign: top
         font:
-          maxSizeMm: 2.5
-          minSizeMm: 1.5
-          weight: bold
+          maxSizeMm: 2.8
+          minSizeMm: 1.6
         fit: shrink
         wrap: true
         maxLines: 2
