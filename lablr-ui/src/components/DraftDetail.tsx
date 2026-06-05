@@ -44,7 +44,7 @@ export function DraftDetail({
     id: "test",
     fields: {
       name: "BC547",
-      type: "NPN Transistor",
+      type: "NPN",
     },
   }
 
@@ -56,12 +56,12 @@ export function DraftDetail({
   useEffect(() => {
     if (!canvasRef.current || !template) return
 
-    const media = configService.getMedia(template.mediaId)
+    const label = configService.getLabel(template.label)
     const templatePrinter = configService.getPrinter(template.printerId)
 
-    if (!media || !templatePrinter) return
+    if (!label || !templatePrinter) return
 
-    renderService.render(canvasRef.current, draft, template, media, templatePrinter)
+    renderService.render(canvasRef.current, draft, template, label, templatePrinter)
   }, [draft, template])
 
   const dotsToMm = (dots: number) => ((dots / DPI) * 25.4).toFixed(1)

@@ -1,24 +1,48 @@
-import type { Template, Media, Printer, Draft } from "@/types"
+import type { Template, Label, Printer, Draft } from "@/types"
 
 // Hardcoded test data
 const TEMPLATES: Template[] = [
   {
-    id: "test-smd",
-    mediaId: "aidetek-50x20",
+    id: "transistor-aidetek-small-landscape",
+    label: "aidetek-small",
     printerId: "dymo-450",
     orientation: "landscape",
-    fields: {
-      name: { required: true },
-      type: { required: false },
-    },
+    requiredFields: ["name", "type"],
+    elements: [
+      {
+        type: "text",
+        field: "name",
+        rect: { x: 2, y: 2, width: 46, height: 8 },
+        align: "center",
+        valign: "center",
+        font: { maxSizeMm: 4, minSizeMm: 2, weight: "bold" },
+        wrap: false,
+        fit: "shrink",
+      },
+      {
+        type: "text",
+        field: "type",
+        rect: { x: 2, y: 12, width: 46, height: 6 },
+        align: "center",
+        valign: "center",
+        font: { maxSizeMm: 3, minSizeMm: 1.5, weight: "normal" },
+        wrap: false,
+        fit: "shrink",
+      },
+    ],
   },
 ]
 
-const MEDIA: Media[] = [
+const LABELS: Label[] = [
   {
-    id: "aidetek-50x20",
+    id: "aidetek-small",
     widthMm: 50,
     heightMm: 20,
+    material: "PET",
+    manufacturer: "Aidetek",
+    marginsMm: { top: 1.5, left: 1.5, right: 1.5, bottom: 1.5 },
+    offsetCorrectionMm: { x: 0, y: 0 },
+    compatiblePrinters: ["dymo-450"],
   },
 ]
 
@@ -39,8 +63,8 @@ export class ConfigService {
     return TEMPLATES.find((t) => t.id === id)
   }
 
-  getMedia(id: string): Media | undefined {
-    return MEDIA.find((m) => m.id === id)
+  getLabel(id: string): Label | undefined {
+    return LABELS.find((l) => l.id === id)
   }
 
   getPrinter(id: string): Printer | undefined {
@@ -53,11 +77,7 @@ export class ConfigService {
    */
   getCompatibleTemplates(draft: Draft): Template[] {
     return TEMPLATES.filter((template) => {
-      const required = Object.entries(template.fields)
-        .filter(([, field]) => field.required)
-        .map(([key]) => key)
-
-      return required.every((key) => key in draft.fields)
+      return template.requiredFields.every((field) => field in draft.fields)
     })
   }
 }

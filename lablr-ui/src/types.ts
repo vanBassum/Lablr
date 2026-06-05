@@ -5,16 +5,52 @@ export interface Draft {
 
 export interface Template {
   id: string
-  mediaId: string
+  label: string
   printerId: string
   orientation: "portrait" | "landscape"
-  fields: Record<string, { required: boolean }>
+  requiredFields: string[]
+  elements: TemplateElement[]
 }
 
-export interface Media {
+export interface TemplateElement {
+  type: "text"
+  field: string
+  rect: {
+    x: number // mm
+    y: number // mm
+    width: number // mm
+    height: number // mm
+  }
+  align: "left" | "center" | "right"
+  valign: "top" | "center" | "bottom"
+  font: {
+    maxSizeMm: number
+    minSizeMm: number
+    weight: "normal" | "bold"
+  }
+  wrap: boolean
+  fit: "shrink" | "none"
+}
+
+export interface Label {
   id: string
   widthMm: number
   heightMm: number
+  material?: string
+  color?: string
+  manufacturer?: string
+  sku?: string
+  marginsMm?: {
+    top: number
+    left: number
+    right: number
+    bottom: number
+  }
+  offsetCorrectionMm?: {
+    x: number
+    y: number
+  }
+  compatiblePrinters?: string[]
 }
 
 export interface Printer {
