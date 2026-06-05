@@ -124,10 +124,7 @@ export function DraftDetail({
                     key={t.id}
                     variant={t.id === template.id ? "default" : "outline"}
                     size="sm"
-                    onClick={() => {
-                      setTemplateId(t.id)
-                      setOrientation("")
-                    }}
+                    onClick={() => setTemplateId(t.id)}
                   >
                     {t.name}
                   </Button>
