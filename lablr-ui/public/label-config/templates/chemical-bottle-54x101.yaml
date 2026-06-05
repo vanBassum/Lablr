@@ -17,24 +17,6 @@ optionalFields:
   - hazard
   - notes
 
-assets:
-  flammable:
-    image: ghs02.svg
-  oxidizer:
-    image: ghs03.svg
-  gas:
-    image: ghs04.svg
-  corrosive:
-    image: ghs05.svg
-  toxic:
-    image: ghs06.svg
-  irritant:
-    image: ghs07.svg
-  health-hazard:
-    image: ghs08.svg
-  environment:
-    image: ghs09.svg
-
 variants:
 
   portrait:
