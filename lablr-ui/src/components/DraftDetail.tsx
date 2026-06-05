@@ -117,8 +117,27 @@ export function DraftDetail({
               printer={printer}
               canvasRef={canvasRef}
             />
+            {matchingTemplates.length > 1 ? (
+              <OptionGroup label="Template">
+                {matchingTemplates.map((t) => (
+                  <Button
+                    key={t.id}
+                    variant={t.id === template.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setTemplateId(t.id)
+                      setOrientation("")
+                    }}
+                  >
+                    {t.name}
+                  </Button>
+                ))}
+              </OptionGroup>
+            ) : (
+              <p className="text-muted-foreground text-sm">Template: {template.name}</p>
+            )}
             {orientations.length > 1 && (
-              <div className="flex gap-2">
+              <OptionGroup label="Orientation">
                 {orientations.map((o) => (
                   <Button
                     key={o}
@@ -130,25 +149,7 @@ export function DraftDetail({
                     {o}
                   </Button>
                 ))}
-              </div>
-            )}
-            {matchingTemplates.length > 1 ? (
-              <select
-                value={template.id}
-                onChange={(e) => {
-                  setTemplateId(e.target.value)
-                  setOrientation("")
-                }}
-                className="border-input bg-background rounded-md border px-3 py-2 text-sm"
-              >
-                {matchingTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-muted-foreground text-sm">Template: {template.name}</p>
+              </OptionGroup>
             )}
           </>
         ) : (
@@ -239,6 +240,18 @@ function rotate90cw(src: HTMLCanvasElement): HTMLCanvasElement {
   ctx.rotate(Math.PI / 2)
   ctx.drawImage(src, 0, 0)
   return out
+}
+
+/** A labeled row of choice buttons (e.g. Template, Orientation). */
+function OptionGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex w-full flex-col items-center gap-1.5">
+      <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+        {label}
+      </span>
+      <div className="flex flex-wrap justify-center gap-2">{children}</div>
+    </div>
+  )
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
