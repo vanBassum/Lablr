@@ -7,7 +7,6 @@ import {
   Printer,
   Settings2,
 } from "lucide-react"
-import { DPI } from "@/dymo"
 import { usePrinter } from "@/printer"
 import { LabelPreviewContainer } from "@/components/LabelPreviewContainer"
 import { WebUsbProbe } from "@/WebUsbProbe"
@@ -23,6 +22,7 @@ import {
 import { configService } from "@/services/config"
 import { renderService } from "@/services/render"
 import { draftService } from "@/services/drafts"
+import type { Orientation } from "@/types"
 
 export function DraftDetail({
   draftId,
@@ -32,42 +32,55 @@ export function DraftDetail({
   onBack: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const printer = usePrinter()
+  const printerApi = usePrinter()
 
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null)
 
-  // Load draft from service
   const draft = draftService.getDraft(draftId)
   const draftName = draft ? Object.values(draft.fields)[0] : draftId
 
-  // Find compatible template
-  const compatibleTemplates = draft ? configService.getCompatibleTemplates(draft) : []
-  const template = compatibleTemplates[0]
+  // Auto-discover the matching template; resolve its stock and printer.
+  const template = draft ? configService.getMatchingTemplates(draft)[0] : undefined
+  const orientations = template ? configService.getTemplateOrientations(template) : []
+  const [orientation, setOrientation] = useState<Orientation | "">("")
+  const activeOrientation: Orientation =
+    (orientations.includes(orientation as Orientation)
+      ? (orientation as Orientation)
+      : orientations[0]) ?? "portrait"
 
-  // Re-render when template changes
+  const stock = template ? configService.getLabelStock(template.label) : undefined
+  const printer = stock ? configService.getPrinterForStock(stock) : undefined
+
+  // Re-render the single bitmap whenever inputs change.
   useEffect(() => {
-    if (!canvasRef.current || !template || !draft) return
+    if (!canvasRef.current || !template || !draft || !stock || !printer) return
+    const elements = configService.getTemplateElements(template, activeOrientation)
+    renderService.render(canvasRef.current, {
+      draft,
+      elements,
+      orientation: activeOrientation,
+      stock,
+      printer,
+    })
+  }, [template, draft, stock, printer, activeOrientation])
 
-    const label = configService.getLabel(template.label)
-    const templatePrinter = configService.getPrinter(template.printerId)
-
-    if (!label || !templatePrinter) return
-
-    renderService.render(canvasRef.current, draft, template, label, templatePrinter)
-  }, [template, draft])
-
-  const dotsToMm = (dots: number) => ((dots / DPI) * 25.4).toFixed(1)
+  const dotsToMm = (dots: number) => (printer ? ((dots / printer.dpi) * 25.4).toFixed(1) : "0.0")
 
   async function handlePrint() {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas || !stock || !printer) return
     setBusy(true)
     setStatus({ ok: true, msg: "Printing…" })
     try {
-      await printer.print(canvas, { x: offsetX, y: offsetY })
+      // Offset = stock calibration (mm→dots) + manual nudge. Applied only here,
+      // at print time — never baked into the preview bitmap.
+      const mmToDots = printer.dpi / 25.4
+      const x = Math.round((stock.offsetCorrectionMm?.x ?? 0) * mmToDots) + offsetX
+      const y = Math.round((stock.offsetCorrectionMm?.y ?? 0) * mmToDots) + offsetY
+      await printerApi.print(canvas, { x, y })
       setStatus({ ok: true, msg: `Printed "${draftName}"` })
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message })
@@ -86,10 +99,30 @@ export function DraftDetail({
           <span className="font-medium">{draftName}</span>
         </div>
 
-        {template && draft ? (
+        {template && draft && stock && printer ? (
           <>
-            <LabelPreviewContainer draft={draft} template={template} canvasRef={canvasRef} />
-            <p className="text-muted-foreground text-sm">Template: {template.id}</p>
+            <LabelPreviewContainer
+              stock={stock}
+              orientation={activeOrientation}
+              printer={printer}
+              canvasRef={canvasRef}
+            />
+            {orientations.length > 1 && (
+              <div className="flex gap-2">
+                {orientations.map((o) => (
+                  <Button
+                    key={o}
+                    variant={o === activeOrientation ? "default" : "outline"}
+                    size="sm"
+                    className="capitalize"
+                    onClick={() => setOrientation(o)}
+                  >
+                    {o}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <p className="text-muted-foreground text-sm">Template: {template.name}</p>
           </>
         ) : (
           <p className="text-destructive text-sm">No compatible template found</p>
@@ -109,7 +142,7 @@ export function DraftDetail({
           <Button
             className="h-12 flex-1 text-base"
             onClick={handlePrint}
-            disabled={busy}
+            disabled={busy || !template}
           >
             {busy ? <Loader2 className="animate-spin" /> : <Printer />}
             {busy ? "Printing…" : "Print label"}

@@ -1,45 +1,38 @@
-import { RefObject, useMemo } from "react"
-import { configService } from "@/services/config"
-import type { Draft, Template } from "@/types"
+import { useMemo, type RefObject } from "react"
+import type { LabelStock, Orientation, Printer } from "@/types"
 
+/**
+ * Sizes the on-screen preview box to the label's aspect ratio. The canvas it
+ * wraps holds the exact print bitmap (rendered at the printer's DPI); CSS just
+ * scales that bitmap down to fit the screen.
+ */
 export function LabelPreviewContainer({
-  draft,
-  template,
+  stock,
+  orientation,
+  printer,
   canvasRef,
 }: {
-  draft: Draft
-  template: Template
+  stock: LabelStock
+  orientation: Orientation
+  printer: Printer
   canvasRef: RefObject<HTMLCanvasElement | null>
 }) {
-  // Calculate the correct aspect ratio
   const dimensions = useMemo(() => {
-    const label = configService.getLabel(template.label)
-    const printer = configService.getPrinter(template.printerId)
+    const isLandscape = orientation === "landscape"
+    const widthMm = isLandscape ? stock.heightMm : stock.widthMm
+    const heightMm = isLandscape ? stock.widthMm : stock.heightMm
 
-    if (!label || !printer) return { width: 300, height: 400 }
-
-    let widthMm = label.widthMm
-    let heightMm = label.heightMm
-
-    // Apply orientation: portrait means swap, landscape means keep as-is
-    if (template.orientation === "portrait") {
-      ;[widthMm, heightMm] = [heightMm, widthMm]
-    }
-
-    // Convert to pixels
     const mmToDots = printer.dpi / 25.4
     const widthPixels = widthMm * mmToDots
     const heightPixels = heightMm * mmToDots
 
-    // Scale to fit in reasonable preview size (max 300px width)
     const maxWidth = 300
     const scale = Math.min(1, maxWidth / widthPixels)
-
     return {
       width: Math.round(widthPixels * scale),
       height: Math.round(heightPixels * scale),
     }
-  }, [template])
+  }, [stock, orientation, printer])
 
   return (
     <div

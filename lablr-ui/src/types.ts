@@ -1,58 +1,59 @@
-export interface Draft {
-  id: string
-  fields: Record<string, string>
-}
+export type Orientation = "portrait" | "landscape"
 
-export interface Template {
+/** A physical label product (a roll/sheet of a specific size & material). */
+export interface LabelStock {
   id: string
-  label: string
-  printerId: string
-  orientation: "portrait" | "landscape"
-  requiredFields: string[]
-  elements: TemplateElement[]
+  name: string
+  widthMm: number
+  heightMm: number
+  material: string
+  marginsMm: { top: number; right: number; bottom: number; left: number }
+  /** Print-head calibration. Applied only at print time, never to the preview. */
+  offsetCorrectionMm: { x: number; y: number }
+  compatiblePrinters: string[]
+  manufacturer?: string
+  sku?: string
 }
 
 export interface TemplateElement {
   type: "text"
   field: string
-  rect: {
-    x: number // mm
-    y: number // mm
-    width: number // mm
-    height: number // mm
+  rect: { x: number; y: number; width: number; height: number } // mm
+  align?: "left" | "center" | "right"
+  valign?: "top" | "center" | "bottom"
+  wrap?: boolean
+  fit?: "shrink" | "none"
+  font?: {
+    maxSizeMm?: number
+    minSizeMm?: number
+    weight?: "normal" | "bold"
   }
-  align: "left" | "center" | "right"
-  valign: "top" | "center" | "bottom"
-  font: {
-    maxSizeMm: number
-    minSizeMm: number
-    weight: "normal" | "bold"
-  }
-  wrap: boolean
-  fit: "shrink" | "none"
 }
 
-export interface Label {
+export interface TemplateVariant {
+  elements: TemplateElement[]
+}
+
+/**
+ * A handcrafted design for one label stock. A template either has a single set
+ * of `elements` (with an `orientation`), or per-orientation `variants`.
+ */
+export interface Template {
   id: string
-  widthMm: number
-  heightMm: number
-  material?: string
-  color?: string
-  manufacturer?: string
-  sku?: string
-  marginsMm?: {
-    top: number
-    left: number
-    right: number
-    bottom: number
-  }
-  offsetCorrectionMm?: {
-    x: number
-    y: number
-  }
-  compatiblePrinters?: string[]
+  name: string
+  label: string // references a LabelStock id
+  requiredFields: string[]
+  orientation?: Orientation
+  elements?: TemplateElement[]
+  variants?: Partial<Record<Orientation, TemplateVariant>>
 }
 
+export interface Draft {
+  id: string
+  fields: Record<string, string>
+}
+
+/** Output device: identity + native resolution (used to size the bitmap). */
 export interface Printer {
   id: string
   name: string

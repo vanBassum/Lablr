@@ -1,0 +1,24 @@
+id: chemical-resistant-54x101
+
+name: Chemical Resistant 54x101
+
+widthMm: 54
+heightMm: 101
+
+material: Chemical Resistant
+
+manufacturer: Dymo
+sku: "1933084"
+
+marginsMm:
+  top: 1
+  right: 1
+  bottom: 1
+  left: 1
+
+offsetCorrectionMm:
+  x: 0
+  y: 0
+
+compatiblePrinters:
+  - dymo-450

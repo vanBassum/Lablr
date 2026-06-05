@@ -1,168 +1,51 @@
-import type { Template, Label, Printer, Draft } from "@/types"
-import { parseYaml } from "@/lib/yaml-parser"
+import { load } from "js-yaml"
+import type {
+  Draft,
+  LabelStock,
+  Orientation,
+  Printer,
+  Template,
+  TemplateElement,
+} from "@/types"
+
+// ---------- Build-time load of the YAML config in public/label-config ----------
+//
+// Config is authored as YAML in Git and bundled at build time via import.meta.glob.
+// This is the single source of truth — there is no hardcoded fallback.
+
+function parseAll<T>(modules: Record<string, string>): T[] {
+  return Object.values(modules).map((raw) => load(raw) as T)
+}
+
+const labelModules = import.meta.glob("../../public/label-config/labels/*.yaml", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>
+
+const templateModules = import.meta.glob("../../public/label-config/templates/*.yaml", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>
+
+const printerModules = import.meta.glob("../../public/label-config/printers/*.yaml", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>
+
+const FALLBACK_PRINTER: Printer = { id: "default", name: "Default", dpi: 300 }
 
 export class ConfigService {
-  private templates: Map<string, Template> = new Map()
-  private labels: Map<string, Label> = new Map()
-  private printers: Map<string, Printer> = new Map()
-  private loaded = false
+  private labels = new Map<string, LabelStock>()
+  private templates = new Map<string, Template>()
+  private printers = new Map<string, Printer>()
 
   constructor() {
-    // Initialize with hardcoded fallback data
-    this.initializeDefaults()
-  }
-
-  private initializeDefaults(): void {
-    const defaultTemplate: Template = {
-      id: "transistor-aidetek-small-landscape",
-      label: "aidetek-small",
-      printerId: "dymo-450",
-      orientation: "landscape",
-      requiredFields: ["name", "type"],
-      elements: [
-        {
-          type: "text",
-          field: "name",
-          rect: { x: 1, y: 5, width: 18, height: 15 },
-          align: "center",
-          valign: "center",
-          font: { maxSizeMm: 5, minSizeMm: 2, weight: "bold" },
-          wrap: false,
-          fit: "shrink",
-        },
-        {
-          type: "text",
-          field: "type",
-          rect: { x: 1, y: 25, width: 18, height: 12 },
-          align: "center",
-          valign: "center",
-          font: { maxSizeMm: 4, minSizeMm: 1.5, weight: "normal" },
-          wrap: false,
-          fit: "shrink",
-        },
-      ],
-    }
-
-    const defaultLabel: Label = {
-      id: "aidetek-small",
-      widthMm: 50,
-      heightMm: 20,
-      material: "PET",
-      manufacturer: "Aidetek",
-      marginsMm: { top: 1.5, left: 1.5, right: 1.5, bottom: 1.5 },
-      offsetCorrectionMm: { x: 0, y: 0 },
-      compatiblePrinters: ["dymo-450"],
-    }
-
-    const defaultPrinter: Printer = {
-      id: "dymo-450",
-      name: "Dymo LabelWriter 450",
-      dpi: 203,
-    }
-
-    this.templates.set(defaultTemplate.id, defaultTemplate)
-    this.labels.set(defaultLabel.id, defaultLabel)
-    this.printers.set(defaultPrinter.id, defaultPrinter)
-  }
-
-  async load(): Promise<void> {
-    if (this.loaded) return
-
-    // Currently using hardcoded data
-    // YAML loading can be added in the future by implementing:
-    // await this.loadTemplates()
-    // await this.loadLabels()
-    // await this.loadPrinters()
-
-    this.loaded = true
-  }
-
-  private async loadTemplates(): Promise<void> {
-    try {
-      const response = await fetch("/label-config/templates/transistor-aidetek-small-landscape.yaml")
-      const content = await response.text()
-      const data = parseYaml(content)
-      const template = this.normalizeTemplate(data)
-      this.templates.set(template.id, template)
-    } catch (error) {
-      console.error("Failed to load templates:", error)
-    }
-  }
-
-  private async loadLabels(): Promise<void> {
-    try {
-      const response = await fetch("/label-config/labels/aidetek-small.yaml")
-      const content = await response.text()
-      const data = parseYaml(content)
-      const label = this.normalizeLabel(data)
-      this.labels.set(label.id, label)
-    } catch (error) {
-      console.error("Failed to load labels:", error)
-    }
-  }
-
-  private async loadPrinters(): Promise<void> {
-    try {
-      const response = await fetch("/label-config/printers/dymo-450.yaml")
-      const content = await response.text()
-      const data = parseYaml(content)
-      const printer = this.normalizePrinter(data)
-      this.printers.set(printer.id, printer)
-    } catch (error) {
-      console.error("Failed to load printers:", error)
-    }
-  }
-
-  private normalizeTemplate(data: any): Template {
-    return {
-      id: data.id,
-      label: data.label,
-      printerId: data.printerId,
-      orientation: data.orientation,
-      requiredFields: data.requiredFields,
-      elements: (data.elements || []).map((el: any) => ({
-        type: el.type,
-        field: el.field,
-        rect: {
-          x: el.rect.x,
-          y: el.rect.y,
-          width: el.rect.width,
-          height: el.rect.height,
-        },
-        align: el.align,
-        valign: el.valign,
-        font: {
-          maxSizeMm: el.font.maxSizeMm,
-          minSizeMm: el.font.minSizeMm,
-          weight: el.font.weight,
-        },
-        wrap: el.wrap,
-        fit: el.fit,
-      })),
-    }
-  }
-
-  private normalizeLabel(data: any): Label {
-    return {
-      id: data.id,
-      widthMm: data.widthMm,
-      heightMm: data.heightMm,
-      material: data.material,
-      color: data.color,
-      manufacturer: data.manufacturer,
-      sku: data.sku,
-      marginsMm: data.marginsMm,
-      offsetCorrectionMm: data.offsetCorrectionMm,
-      compatiblePrinters: data.compatiblePrinters,
-    }
-  }
-
-  private normalizePrinter(data: any): Printer {
-    return {
-      id: data.id,
-      name: data.name,
-      dpi: data.dpi,
-    }
+    for (const l of parseAll<LabelStock>(labelModules)) this.labels.set(l.id, l)
+    for (const t of parseAll<Template>(templateModules)) this.templates.set(t.id, t)
+    for (const p of parseAll<Printer>(printerModules)) this.printers.set(p.id, p)
   }
 
   getTemplates(): Template[] {
@@ -173,7 +56,7 @@ export class ConfigService {
     return this.templates.get(id)
   }
 
-  getLabel(id: string): Label | undefined {
+  getLabelStock(id: string): LabelStock | undefined {
     return this.labels.get(id)
   }
 
@@ -181,20 +64,50 @@ export class ConfigService {
     return this.printers.get(id)
   }
 
+  /** The printer used to size a stock's bitmap — first compatible one, or a default. */
+  getPrinterForStock(stock: LabelStock): Printer {
+    for (const id of stock.compatiblePrinters) {
+      const p = this.printers.get(id)
+      if (p) return p
+    }
+    return FALLBACK_PRINTER
+  }
+
   /**
-   * Find all templates that can print this draft.
-   * A template can print a draft if the draft has all required fields.
+   * A template matches a draft when every one of its requiredFields is present
+   * (and non-empty) in the draft's fields.
    */
-  getCompatibleTemplates(draft: Draft): Template[] {
-    return this.getTemplates().filter((template) => {
-      return template.requiredFields.every((field) => field in draft.fields)
-    })
+  getMatchingTemplates(draft: Draft): Template[] {
+    const keys = new Set(
+      Object.entries(draft.fields)
+        .filter(([, v]) => v != null && String(v).trim() !== "")
+        .map(([k]) => k),
+    )
+    return this.getTemplates().filter((t) => t.requiredFields.every((f) => keys.has(f)))
+  }
+
+  /** Which orientations a template supports. */
+  getTemplateOrientations(template: Template): Orientation[] {
+    if (template.variants) {
+      return (Object.keys(template.variants) as Orientation[]).filter(
+        (o) => template.variants?.[o],
+      )
+    }
+    return [template.orientation ?? "portrait"]
+  }
+
+  /** The elements to render for a given orientation, handling both layouts. */
+  getTemplateElements(template: Template, orientation: Orientation): TemplateElement[] {
+    if (template.variants) {
+      return (
+        template.variants[orientation]?.elements ??
+        template.variants.portrait?.elements ??
+        template.variants.landscape?.elements ??
+        []
+      )
+    }
+    return template.elements ?? []
   }
 }
 
 export const configService = new ConfigService()
-
-// Auto-load on app start
-configService.load().catch((error) => {
-  console.error("Config loading failed:", error)
-})

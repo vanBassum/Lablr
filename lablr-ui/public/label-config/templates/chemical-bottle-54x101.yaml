@@ -1,0 +1,134 @@
+id: chemical-bottle-54x101
+
+name: Chemical Bottle Large
+
+label: chemical-resistant-54x101
+
+requiredFields:
+  - name
+  - formula
+  - hazard
+
+variants:
+
+  portrait:
+
+    elements:
+
+      - type: text
+        field: name
+
+        rect:
+          x: 3
+          y: 3
+          width: 48
+          height: 18
+
+        align: center
+        valign: center
+
+        font:
+          maxSizeMm: 8
+          minSizeMm: 4
+          weight: bold
+
+        fit: shrink
+
+      - type: text
+        field: formula
+
+        rect:
+          x: 3
+          y: 24
+          width: 48
+          height: 10
+
+        align: center
+        valign: center
+
+        font:
+          maxSizeMm: 5
+          minSizeMm: 3
+
+        fit: shrink
+
+      - type: text
+        field: hazard
+
+        rect:
+          x: 3
+          y: 40
+          width: 48
+          height: 50
+
+        align: left
+        valign: top
+
+        wrap: true
+
+        font:
+          maxSizeMm: 3
+          minSizeMm: 2
+
+        fit: shrink
+
+  landscape:
+
+    elements:
+
+      - type: text
+        field: name
+
+        rect:
+          x: 3
+          y: 3
+          width: 95
+          height: 15
+
+        align: center
+        valign: center
+
+        font:
+          maxSizeMm: 8
+          minSizeMm: 4
+          weight: bold
+
+        fit: shrink
+
+      - type: text
+        field: formula
+
+        rect:
+          x: 3
+          y: 20
+          width: 95
+          height: 10
+
+        align: center
+        valign: center
+
+        font:
+          maxSizeMm: 5
+          minSizeMm: 3
+
+        fit: shrink
+
+      - type: text
+        field: hazard
+
+        rect:
+          x: 3
+          y: 33
+          width: 95
+          height: 18
+
+        align: left
+        valign: top
+
+        wrap: true
+
+        font:
+          maxSizeMm: 3
+          minSizeMm: 2
+
+        fit: shrink
