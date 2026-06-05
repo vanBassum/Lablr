@@ -1,0 +1,14 @@
+fields:
+  name: Potassium Perchlorate
+  formula: KClO4
+
+  pictogram1: oxidizing
+  pictogram2: irritant
+
+  hazard: >
+    May intensify fire; oxidizer.
+    Harmful if swallowed.
+
+  notes: >
+    Keep away from combustible material,
+    heat and ignition sources.
