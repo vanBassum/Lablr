@@ -62,7 +62,7 @@ export function DraftDetail({
     if (!label || !templatePrinter) return
 
     renderService.render(canvasRef.current, draft, template, label, templatePrinter)
-  }, [draft, template])
+  }, [template])
 
   const dotsToMm = (dots: number) => ((dots / DPI) * 25.4).toFixed(1)
 
