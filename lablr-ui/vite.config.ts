@@ -4,9 +4,9 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
 // https://vite.dev/config/
-export default defineConfig(({ command }) => ({
-  // GitHub Pages serves this project site under /Lablr/. Dev stays at /.
-  base: command === "build" ? "/Lablr/" : "/",
+export default defineConfig(() => ({
+  // Served at root, same-origin, by lablr-api (wwwroot).
+  base: "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

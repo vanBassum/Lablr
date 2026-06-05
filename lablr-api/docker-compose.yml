@@ -1,6 +1,9 @@
 services:
   lablr-api:
-    build: .
+    # Build context is the repo root so the image can build both the API and the PWA.
+    build:
+      context: ..
+      dockerfile: lablr-api/Dockerfile
     container_name: lablr-api
     restart: unless-stopped
     networks:
@@ -12,8 +15,10 @@ services:
       Cors__AllowedOrigins__0: https://${LABLR_UI_DOMAIN}
       # Config is read from a mounted directory (edit without rebuilding).
       Config__Dir: /config
-      # Public URL of the PWA, used to build draft deep links.
-      App__PublicBaseUrl: https://${LABLR_UI_DOMAIN}
+      # The PWA is served by this container (wwwroot), so deep-link URLs are
+      # derived from the forwarded request host. Set App__PublicBaseUrl only to
+      # override (e.g. if the public domain differs from the routed host).
+      # App__PublicBaseUrl: https://${LABLR_UI_DOMAIN}
       # Oidc__Authority: https://${AUTHENTIK_DOMAIN}/application/o/lablr/
       # Oidc__ClientId: ${LABLR_OIDC_CLIENT_ID}
       # Oidc__ClientSecret: ${LABLR_OIDC_CLIENT_SECRET}

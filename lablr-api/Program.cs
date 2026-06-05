@@ -1,4 +1,5 @@
 using Lablr.Api;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +8,15 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<ConfigService>();
 builder.Services.AddSingleton<DraftStore>();
 builder.Services.AddHostedService<DraftSweeper>();
+
+// Behind Traefik (TLS terminated upstream): trust forwarded scheme/host so
+// request-derived URLs (draft deep links) are correct https://public-host links.
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    o.KnownNetworks.Clear();
+    o.KnownProxies.Clear();
+});
 
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options =>
@@ -27,6 +37,8 @@ var app = builder.Build();
 // Eager-load config at startup so failures surface immediately.
 var config = app.Services.GetRequiredService<ConfigService>();
 
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 
@@ -41,6 +53,10 @@ if (Directory.Exists(config.PictogramsDir))
         RequestPath = "/pictograms",
     });
 }
+
+// Serve the built PWA (copied into wwwroot at image build) same-origin.
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 string DraftUrl(HttpRequest req, string id)
 {
@@ -81,5 +97,8 @@ app.MapPost("/api/drafts", (CreateDraftRequest req, ConfigService c, DraftStore 
     var draft = store.Create(req.Fields, req.TemplateId);
     return Results.Ok(new { id = draft.Id, url = DraftUrl(http, draft.Id), draft });
 });
+
+// SPA fallback: client-side routes (and #/d/{id}) resolve to index.html.
+app.MapFallbackToFile("index.html");
 
 app.Run();
