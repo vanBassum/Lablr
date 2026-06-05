@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import { DPI } from "@/dymo"
 import { usePrinter } from "@/printer"
-import { LabelCanvas } from "@/components/LabelCanvas"
+import { LabelPreviewContainer } from "@/components/LabelPreviewContainer"
 import { WebUsbProbe } from "@/WebUsbProbe"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -86,10 +86,11 @@ export function DraftDetail({
           <span className="font-medium">{draftName}</span>
         </div>
 
-        <LabelCanvas canvasRef={canvasRef} width={300} height={400} />
-
-        {template ? (
-          <p className="text-muted-foreground text-sm">Template: {template.id}</p>
+        {template && draft ? (
+          <>
+            <LabelPreviewContainer draft={draft} template={template} canvasRef={canvasRef} />
+            <p className="text-muted-foreground text-sm">Template: {template.id}</p>
+          </>
         ) : (
           <p className="text-destructive text-sm">No compatible template found</p>
         )}

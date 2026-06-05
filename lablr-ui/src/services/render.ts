@@ -18,8 +18,8 @@ export class RenderService {
     let widthMm = label.widthMm
     let heightMm = label.heightMm
 
-    // Step 2: Apply template orientation
-    if (template.orientation === "landscape") {
+    // Step 2: Apply template orientation (portrait = swap, landscape = keep)
+    if (template.orientation === "portrait") {
       ;[widthMm, heightMm] = [heightMm, widthMm]
     }
 
