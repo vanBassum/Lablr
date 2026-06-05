@@ -58,13 +58,27 @@
 
 ## Phase 7 — AI integration 🤖
 
-- [~] **28.** ChatGPT → open draft → print — PWA `#/draft` deep-link route opens straight into preview/print
-- [~] **27.** Serverless draft creation — generated `llms.txt` + `catalog.json` on Pages; any browsing chat builds a `#/draft` link (no MCP, no Custom GPT)
-- [ ] **47.** **MCP server on the homelab** — `create_label(template, fields)` validates against config and returns a `#/draft` link. A two-way contract (vs the one-way `llms.txt`) so the AI doesn't guess. Stateless (no draft DB); never renders.
+- [~] **28.** ChatGPT → open draft → print — PWA `#/draft` deep-link route opens straight into preview/print (→ becomes `#/d/{id}`, item 52)
+- [~] **27.** Serverless draft creation — generated `llms.txt` + `catalog.json` on Pages; any browsing chat builds a `#/draft` link (no MCP, no Custom GPT) — **superseded by the MCP `create_draft` tool (item 51); see LOGBOOK 2026-06-05**
+- [ ] **47.** MCP server on the homelab — **reshaped: now STATEFUL (creates + stores drafts in RAM, returns a deep link), generic MCP first. See Phase 10 / LOGBOOK 2026-06-05.**
 
 ## Phase 8 — Deployment
 
-- [~] **31.** Deployment packaging — GitHub Pages workflow builds `lablr-ui` → vanbassum.github.io/Lablr (Vite `base: /Lablr/`)
+- [~] **31.** Deployment packaging — GitHub Pages workflow builds `lablr-ui` → vanbassum.github.io/Lablr (Vite `base: /Lablr/`) — **superseded by same-origin homelab hosting (item 50); see LOGBOOK 2026-06-05**
+
+## Phase 10 — Backend, config hosting & MCP (planned 2026-06-05) 🔧
+
+> Activates `lablr-api`. Decisions (LOGBOOK 2026-06-05): generic MCP first
+> (ChatGPT OAuth later), UI served **same-origin** from the homelab (retires
+> Pages, removes the cross-origin canvas-taint risk), config baked into the API
+> image from git.
+
+- [ ] **48.** In-memory draft store in `lablr-api` — `POST /api/drafts` + `GET /api/drafts/{id}`, TTL eviction, no DB (drafts in RAM)
+- [ ] **49.** Move config (`label-config/` + pictogram SVGs) into `lablr-api/`; serve `GET /api/config` + static pictograms; UI fetches at runtime behind a config-ready gate
+- [ ] **50.** Serve the PWA same-origin from the backend (UI build copied into the image) — drops CORS + canvas-taint; retires the GitHub Pages deploy (supersedes 31)
+- [ ] **51.** MCP server (`ModelContextProtocol.AspNetCore`, `MapMcp()` Streamable HTTP at `/mcp`) — `list_templates` + `create_draft` (stores draft → deep link) + config resources; generic MCP, no/simple auth (reshapes 47)
+- [ ] **52.** PWA `#/d/{id}` deep-link route fetches the stored draft → straight into preview/print
+- [ ] **53.** ChatGPT connector — OAuth 2.1 + Dynamic Client Registration (likely via Authentik); later
 
 ## Phase 9 — Later / maybe
 

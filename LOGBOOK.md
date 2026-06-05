@@ -439,3 +439,23 @@ Everything decided lives in CLAUDE.md (active model) + ROADMAP.md (phased, stabl
 - Item 47: MCP server on homelab (`create_label` validates + returns `#/draft` link) — stateless, no draft DB.
 
 **Decision note:** contain scaling (uniform scale, preserves aspect) was chosen for designSize → media mapping. Allows a single template (e.g. 50×20mm design) to render on 25mm or 54mm media (scaled to fit). This is friendlier for AI generation and template reuse than fixed-size designs.
+
+---
+
+## 2026-06-05 — Backend activation plan: drafts in RAM, config on the server, MCP (items 48–53; reshapes 27, 31, 47)
+
+> Context: since the wireframe port (see memory `render-model-wireframe`), the code dropped presets/`designSize`; model is now `LabelStock` / `Template`(+orientation variants) / `Draft` / `Printer`, absolute-mm, config in `lablr-ui/public/label-config/`, loaded by build-time `import.meta.glob`. ROADMAP/LOGBOOK above describe the older model and are stale; reconciling CLAUDE.md/DESIGN.md remains a standing follow-up. This entry records the **next** architecture step the user asked to plan.
+
+**Goal:** activate `lablr-api` so it stores ephemeral drafts in RAM and exposes a **proper MCP server**; move the YAML config to the backend so the MCP can serve it too.
+
+**Decisions locked with the user:**
+1. **Generic MCP first, OAuth deferred.** ChatGPT remote connectors require OAuth 2.1 + Dynamic Client Registration (bearer tokens rejected) + Developer Mode — substantial. Build the MCP server + tools now with no/simple-token auth, validate with MCP Inspector / Claude; ChatGPT's OAuth (likely fronted by the Authentik instance the compose already references) is a later phase.
+2. **UI served same-origin from the homelab.** Serve the built PWA from the backend (or same Traefik host) so UI + `/api` + `/mcp` + config + pictograms share one origin. This **retires the GitHub Pages deploy** and, crucially, removes the cross-origin **canvas-taint** risk: pictograms drawn onto the print canvas from another origin would taint it and break `getImageData`/`packToRaster` (printing). Same-origin sidesteps that entirely.
+3. **Config baked into the image from git.** Config files move `lablr-ui/public/label-config/` → `lablr-api/config/`, stay in git, copied into the image, read-only at runtime (matches "config lives in Git").
+
+**Reversals this implies:**
+- **Item 47 MCP is now STATEFUL** — it creates *and stores* drafts in RAM and returns a deep link, reversing "stateless, no draft DB; never renders." (Still never renders.)
+- **Item 27** (serverless: AI builds the `#/draft?...` link itself from `catalog.json`/`llms.txt` on Pages) is **superseded** by a real MCP `create_draft` tool — a two-way contract instead of the AI guessing a URL.
+- **Item 31** (GitHub Pages hosting) is **superseded** by same-origin homelab hosting behind Traefik.
+
+**Phased plan:** (1) backend config endpoints + in-memory draft store (TTL); (2) UI fetches config at runtime with a ready-gate + `#/d/{id}` deep-link route, served same-origin; (3) MCP server (`ModelContextProtocol.AspNetCore`, `MapMcp()` Streamable HTTP at `/mcp`) — `list_templates` + `create_draft` tools + config resources; (4) ChatGPT OAuth hardening (later); (5) retire `build-catalog.mjs`/`llms.txt` + GH Pages, update Dockerfile/compose + docs.
