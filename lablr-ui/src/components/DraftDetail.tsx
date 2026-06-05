@@ -86,7 +86,11 @@ export function DraftDetail({
       const mmToDots = printer.dpi / 25.4
       const x = Math.round((stock.offsetCorrectionMm?.x ?? 0) * mmToDots) + offsetX
       const y = Math.round((stock.offsetCorrectionMm?.y ?? 0) * mmToDots) + offsetY
-      await printerApi.print(canvas, { x, y })
+      // The print head feeds the label lengthwise at a fixed width. A landscape
+      // bitmap is wider than the head, so rotate it 90° to the physical media
+      // orientation. Same pixels as the preview — a device mapping, not a re-render.
+      const payload = activeOrientation === "landscape" ? rotate90cw(canvas) : canvas
+      await printerApi.print(payload, { x, y })
       setStatus({ ok: true, msg: `Printed "${draftName}"` })
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message })
@@ -218,6 +222,23 @@ export function DraftDetail({
       </div>
     </>
   )
+}
+
+/**
+ * Rotate a canvas 90° clockwise into a new canvas (dimensions swapped).
+ * Used to map a landscape preview onto the printer's physical media orientation.
+ * If a landscape print comes out upside-down/mirrored, flip to a CCW rotation.
+ */
+function rotate90cw(src: HTMLCanvasElement): HTMLCanvasElement {
+  const out = document.createElement("canvas")
+  out.width = src.height
+  out.height = src.width
+  const ctx = out.getContext("2d")
+  if (!ctx) throw new Error("no 2d context")
+  ctx.translate(out.width, 0)
+  ctx.rotate(Math.PI / 2)
+  ctx.drawImage(src, 0, 0)
+  return out
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
