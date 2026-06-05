@@ -10,9 +10,15 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Cors__AllowedOrigins__0: https://${LABLR_UI_DOMAIN}
+      # Config is read from a mounted directory (edit without rebuilding).
+      Config__Dir: /config
+      # Public URL of the PWA, used to build draft deep links.
+      App__PublicBaseUrl: https://${LABLR_UI_DOMAIN}
       # Oidc__Authority: https://${AUTHENTIK_DOMAIN}/application/o/lablr/
       # Oidc__ClientId: ${LABLR_OIDC_CLIENT_ID}
       # Oidc__ClientSecret: ${LABLR_OIDC_CLIENT_SECRET}
+    volumes:
+      - ${LABLR_CONFIG_DIR}:/config:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.lablr-api.rule=Host(`${LABLR_API_DOMAIN}`)"

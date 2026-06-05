@@ -1,0 +1,57 @@
+id: transistor-25x25
+
+name: Transistor Small Square
+
+label: label-25x25
+
+orientation: portrait
+
+requiredFields:
+  - name
+  - type
+  - package
+
+elements:
+
+  - type: text
+    field: name
+    rect:
+      x: 1
+      y: 2
+      width: 23
+      height: 12
+    align: center
+    valign: center
+    font:
+      maxSizeMm: 5
+      minSizeMm: 2.5
+      weight: bold
+    fit: shrink
+
+  - type: text
+    field: type
+    rect:
+      x: 1
+      y: 15
+      width: 11
+      height: 8
+    align: center
+    valign: center
+    font:
+      maxSizeMm: 3
+      minSizeMm: 1.5
+    fit: shrink
+
+  - type: text
+    field: package
+    rect:
+      x: 13
+      y: 15
+      width: 11
+      height: 8
+    align: center
+    valign: center
+    font:
+      maxSizeMm: 3
+      minSizeMm: 1.5
+    fit: shrink

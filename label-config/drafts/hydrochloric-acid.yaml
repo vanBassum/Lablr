@@ -1,0 +1,12 @@
+fields:
+  name: Hydrochloric Acid
+  formula: HCl
+
+  pictogram1: corrosive
+  pictogram2: irritant
+
+  hazard: >
+    Causes severe skin burns and eye damage.
+
+  notes: >
+    Store tightly closed. Avoid contact with metals.

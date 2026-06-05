@@ -1,0 +1,13 @@
+fields:
+  name: Acetone
+  formula: C3H6O
+
+  pictogram1: flammable
+  pictogram2: irritant
+
+  hazard: >
+    Highly flammable liquid and vapor.
+    Causes serious eye irritation.
+
+  notes: >
+    Keep away from heat, sparks and open flames.
