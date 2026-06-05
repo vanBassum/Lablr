@@ -5,9 +5,14 @@ using Microsoft.Extensions.FileProviders;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ConfigService>();
 builder.Services.AddSingleton<DraftStore>();
+builder.Services.AddSingleton<LinkService>();
 builder.Services.AddHostedService<DraftSweeper>();
+
+// MCP server (Streamable HTTP at /mcp): an AI lists templates and creates drafts.
+builder.Services.AddMcpServer().WithHttpTransport().WithTools<LabelTools>();
 
 // Behind Traefik (TLS terminated upstream): trust forwarded scheme/host so
 // request-derived URLs (draft deep links) are correct https://public-host links.
@@ -58,14 +63,7 @@ if (Directory.Exists(config.PictogramsDir))
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-string DraftUrl(HttpRequest req, string id)
-{
-    var baseUrl = app.Configuration["App:PublicBaseUrl"];
-    if (string.IsNullOrEmpty(baseUrl))
-        baseUrl = $"{req.Scheme}://{req.Host}{req.PathBase}/";
-    if (!baseUrl.EndsWith('/')) baseUrl += "/";
-    return $"{baseUrl}#/d/{id}";
-}
+app.MapMcp("/mcp");
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
@@ -76,7 +74,7 @@ app.MapGet("/api/drafts", (DraftStore store) => Results.Ok(store.List()));
 app.MapGet("/api/drafts/{id}", (string id, DraftStore store) =>
     store.Get(id) is { } draft ? Results.Ok(draft) : Results.NotFound());
 
-app.MapPost("/api/drafts", (CreateDraftRequest req, ConfigService c, DraftStore store, HttpRequest http) =>
+app.MapPost("/api/drafts", (CreateDraftRequest req, ConfigService c, DraftStore store, LinkService links) =>
 {
     if (req.Fields is null || req.Fields.Count == 0)
         return Results.BadRequest(new { error = "fields required" });
@@ -95,7 +93,7 @@ app.MapPost("/api/drafts", (CreateDraftRequest req, ConfigService c, DraftStore 
     }
 
     var draft = store.Create(req.Fields, req.TemplateId);
-    return Results.Ok(new { id = draft.Id, url = DraftUrl(http, draft.Id), draft });
+    return Results.Ok(new { id = draft.Id, url = links.DraftUrl(draft.Id), draft });
 });
 
 // SPA fallback: client-side routes (and #/d/{id}) resolve to index.html.
