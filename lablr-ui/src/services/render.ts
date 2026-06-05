@@ -108,18 +108,17 @@ export class RenderService {
     heightPixels: number,
     weight: string,
   ): number {
-    let size = maxSizePixels
+    let size = Math.min(maxSizePixels, heightPixels * 0.9)
     const step = 0.5
 
     while (size >= minSizePixels) {
       ctx.font = `${weight === "bold" ? "bold " : ""}${size}px monospace`
       const metrics = ctx.measureText(text)
       const textWidth = metrics.width
-      // Use actual bounding box if available, otherwise estimate
       const textHeight =
-        (metrics.fontBoundingBoxAscent || 0) + (metrics.fontBoundingBoxDescent || size * 1.2)
+        (metrics.fontBoundingBoxAscent || 0) + (metrics.fontBoundingBoxDescent || size)
 
-      if (textWidth <= widthPixels && textHeight <= heightPixels) {
+      if (textWidth <= widthPixels * 0.95 && textHeight <= heightPixels * 0.95) {
         return size
       }
 
