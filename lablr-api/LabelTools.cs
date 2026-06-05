@@ -24,6 +24,12 @@ public sealed class LabelTools
             optionalFields = t.OptionalFields ?? [],
         });
 
+    [McpServerTool(Name = "list_pictograms")]
+    [Description("List the available pictogram names (e.g. flammable, corrosive, oxidizing). " +
+                 "Use these as the values for a template's pictogram1..N fields.")]
+    public static object ListPictograms(ConfigService config) =>
+        config.Config.Pictograms.Keys.OrderBy(k => k, StringComparer.Ordinal);
+
     [McpServerTool(Name = "create_draft")]
     [Description("Create a label draft from a template and field values, and return a URL " +
                  "the user opens on their phone to preview and print. Fill every required field.")]
