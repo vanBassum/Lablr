@@ -1,5 +1,6 @@
 import type { Draft } from "@/types"
 
+// Draft data matching public/label-config/drafts/*.yaml files
 const SAMPLE_DRAFTS: Draft[] = [
   {
     id: "draft-1",
