@@ -18,12 +18,19 @@ let resolveReady!: () => void
 export const pictogramsReady = new Promise<void>((r) => (resolveReady = r))
 if (pending === 0) resolveReady()
 
+// Track successful loads explicitly: official GHS SVGs often declare only a
+// viewBox (no width/height), so img.naturalWidth can be 0 even when drawable.
+const loaded = new Set<string>()
+
 for (const [name, def] of entries) {
   const img = new Image()
   const done = () => {
     if (--pending === 0) resolveReady()
   }
-  img.onload = done
+  img.onload = () => {
+    loaded.add(name)
+    done()
+  }
   img.onerror = () => {
     console.error(`Pictogram "${name}" failed to load: ${def.image}`)
     done()
@@ -34,8 +41,7 @@ for (const [name, def] of entries) {
 
 /** A loaded, drawable image for a pictogram name, or undefined if unknown/unloaded. */
 export function getPictogram(name: string): HTMLImageElement | undefined {
-  const img = images.get(name)
-  return img && img.complete && img.naturalWidth > 0 ? img : undefined
+  return loaded.has(name) ? images.get(name) : undefined
 }
 
 /** True once every pictogram image has settled, so a re-render can draw them. */
