@@ -1,15 +1,21 @@
 name: Build & publish Docker image
 
-# Publishes the lablr-api image (which also bundles the built PWA) to GHCR on a
-# version tag, e.g. `git tag v1.2.0 && git push --tags`.
+# Publishes the lablr-api image (which also bundles the built PWA) to GHCR.
+#   push to main      -> :latest (+ :sha-<commit> for rollbacks)
+#   push a vX.Y.Z tag -> :X.Y.Z and :X.Y
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   docker:
@@ -21,8 +27,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
-          # On a vX.Y.Z tag: publishes X.Y.Z, X.Y, and (highest semver) latest.
           tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
