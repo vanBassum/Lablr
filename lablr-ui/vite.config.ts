@@ -15,5 +15,11 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     host: "0.0.0.0",
+    // Proxy API + pictograms to the backend so dev is same-origin as prod
+    // (no CORS, no cross-origin canvas tainting).
+    proxy: {
+      "/api": "http://localhost:5110",
+      "/pictograms": "http://localhost:5110",
+    },
   },
 }))

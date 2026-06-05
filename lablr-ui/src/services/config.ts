@@ -1,51 +1,40 @@
-import { load } from "js-yaml"
-import type {
-  Draft,
-  LabelStock,
-  Orientation,
-  Printer,
-  Template,
-  TemplateElement,
-} from "@/types"
+import type { Template, LabelStock, Printer, Draft, Orientation, TemplateElement } from "@/types"
 
-// ---------- Build-time load of the YAML config in public/label-config ----------
-//
-// Config is authored as YAML in Git and bundled at build time via import.meta.glob.
-// This is the single source of truth — there is no hardcoded fallback.
-
-function parseAll<T>(modules: Record<string, string>): T[] {
-  return Object.values(modules).map((raw) => load(raw) as T)
+interface PictogramRegistry {
+  [name: string]: { image: string }
 }
 
-const labelModules = import.meta.glob("../../public/label-config/labels/*.yaml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>
+// Config is loaded once at runtime from the API (GET /api/config). The backend
+// is the single source of truth; see lablr-api. Paths are root-relative — same
+// origin in prod, proxied to the backend in dev.
 
-const templateModules = import.meta.glob("../../public/label-config/templates/*.yaml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>
-
-const printerModules = import.meta.glob("../../public/label-config/printers/*.yaml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>
-
-const FALLBACK_PRINTER: Printer = { id: "default", name: "Default", dpi: 300 }
+let resolveReady!: () => void
+export const configReady = new Promise<void>((r) => (resolveReady = r))
 
 export class ConfigService {
-  private labels = new Map<string, LabelStock>()
   private templates = new Map<string, Template>()
+  private labels = new Map<string, LabelStock>()
   private printers = new Map<string, Printer>()
+  private pictograms: PictogramRegistry = {}
 
-  constructor() {
-    for (const l of parseAll<LabelStock>(labelModules)) this.labels.set(l.id, l)
-    for (const t of parseAll<Template>(templateModules)) this.templates.set(t.id, t)
-    for (const p of parseAll<Printer>(printerModules)) this.printers.set(p.id, p)
+  async load(): Promise<void> {
+    const res = await fetch("/api/config")
+    if (!res.ok) throw new Error(`config load failed: ${res.status}`)
+    const data = (await res.json()) as {
+      labels: LabelStock[]
+      templates: Template[]
+      printers: Printer[]
+      pictograms: PictogramRegistry
+    }
+    this.labels = new Map(data.labels.map((l) => [l.id, l]))
+    this.templates = new Map(data.templates.map((t) => [t.id, t]))
+    this.printers = new Map(data.printers.map((p) => [p.id, p]))
+    this.pictograms = data.pictograms ?? {}
+    resolveReady()
+  }
+
+  getPictogramRegistry(): PictogramRegistry {
+    return this.pictograms
   }
 
   getTemplates(): Template[] {
@@ -66,11 +55,11 @@ export class ConfigService {
 
   /** The printer used to size a stock's bitmap — first compatible one, or a default. */
   getPrinterForStock(stock: LabelStock): Printer {
-    for (const id of stock.compatiblePrinters) {
+    for (const id of stock.compatiblePrinters ?? []) {
       const p = this.printers.get(id)
       if (p) return p
     }
-    return FALLBACK_PRINTER
+    return { id: "default", name: "Default", dpi: 300 }
   }
 
   /**

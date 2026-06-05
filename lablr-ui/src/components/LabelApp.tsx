@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { DraftDetail } from "@/components/DraftDetail"
 import { DraftPreview } from "@/components/DraftPreview"
 import { draftService } from "@/services/drafts"
@@ -8,13 +8,24 @@ export function LabelApp() {
   const [selected, setSelected] = useState<string | null>(null)
   const drafts = draftService.getDrafts()
 
+  // Deep link: #/d/{id} opens straight into a stored draft (the AI handoff).
+  useEffect(() => {
+    const match = window.location.hash.match(/^#\/d\/([\w-]+)/)
+    if (!match) return
+    draftService.fetchDraft(match[1]).then((d) => {
+      if (d) setSelected(d.id)
+    })
+  }, [])
+
+  const closeDraft = () => {
+    if (window.location.hash.startsWith("#/d/")) {
+      history.replaceState(null, "", window.location.pathname + window.location.search)
+    }
+    setSelected(null)
+  }
+
   if (selected) {
-    return (
-      <DraftDetail
-        draftId={selected}
-        onBack={() => setSelected(null)}
-      />
-    )
+    return <DraftDetail draftId={selected} onBack={closeDraft} />
   }
 
   return (

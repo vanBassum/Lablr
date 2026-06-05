@@ -1,7 +1,8 @@
-import { Moon, Sun, Tag, Usb } from "lucide-react"
+import { Loader2, Moon, Sun, Tag, Usb } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
 import { usePrinter } from "@/printer"
 import { LabelApp } from "@/components/LabelApp"
+import { useAppReady } from "@/services/bootstrap"
 import { Button } from "@/components/ui/button"
 
 function ThemeToggle() {
@@ -38,6 +39,7 @@ function PrinterChip() {
 }
 
 export function App() {
+  const ready = useAppReady()
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col">
       <header className="bg-background/80 sticky top-0 z-10 flex items-center justify-between border-b px-4 py-3 backdrop-blur">
@@ -50,7 +52,14 @@ export function App() {
           <ThemeToggle />
         </div>
       </header>
-      <LabelApp />
+      {ready ? (
+        <LabelApp />
+      ) : (
+        <div className="text-muted-foreground flex flex-1 items-center justify-center gap-2 text-sm">
+          <Loader2 className="size-4 animate-spin" />
+          Loading…
+        </div>
+      )}
     </div>
   )
 }

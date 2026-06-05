@@ -1,27 +1,39 @@
-import { load } from "js-yaml"
 import type { Draft } from "@/types"
 
-// Drafts authored as YAML in public/label-config/drafts. The id is derived from
-// the filename (draft files contain only `fields`).
-const draftModules = import.meta.glob("../../public/label-config/drafts/*.yaml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>
+// Drafts live in the backend's in-memory store. The list is loaded once at
+// startup; a single draft (e.g. an AI deep link #/d/{id}) can be fetched on demand.
 
-const drafts: Draft[] = Object.entries(draftModules).map(([file, raw]) => {
-  const parsed = load(raw) as { fields?: Record<string, string> }
-  const id = file.split("/").pop()!.replace(/\.yaml$/, "")
-  return { id, fields: parsed.fields ?? {} }
-})
+let resolveReady!: () => void
+export const draftsReady = new Promise<void>((r) => (resolveReady = r))
 
 export class DraftService {
+  private drafts = new Map<string, Draft>()
+
+  async load(): Promise<void> {
+    const res = await fetch("/api/drafts")
+    if (!res.ok) throw new Error(`drafts load failed: ${res.status}`)
+    const list = (await res.json()) as Draft[]
+    this.drafts = new Map(list.map((d) => [d.id, d]))
+    resolveReady()
+  }
+
   getDrafts(): Draft[] {
-    return drafts
+    return Array.from(this.drafts.values())
   }
 
   getDraft(id: string): Draft | undefined {
-    return drafts.find((d) => d.id === id)
+    return this.drafts.get(id)
+  }
+
+  /** Fetch a single draft by id (for deep links), caching it locally. */
+  async fetchDraft(id: string): Promise<Draft | undefined> {
+    const cached = this.drafts.get(id)
+    if (cached) return cached
+    const res = await fetch(`/api/drafts/${id}`)
+    if (!res.ok) return undefined
+    const draft = (await res.json()) as Draft
+    this.drafts.set(draft.id, draft)
+    return draft
   }
 }
 
