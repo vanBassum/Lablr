@@ -47,6 +47,8 @@ jobs:
           context: .
           file: lablr-api/Dockerfile
           push: true
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
           # Add linux/arm64 here if the homelab is ARM.
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}

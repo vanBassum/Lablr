@@ -5,6 +5,10 @@ import { LabelApp } from "@/components/LabelApp"
 import { useAppReady } from "@/services/bootstrap"
 import { Button } from "@/components/ui/button"
 
+// Build identifier — the short commit SHA injected at image build (VITE_COMMIT_SHA),
+// or "dev" locally.
+const VERSION = import.meta.env.VITE_COMMIT_SHA?.slice(0, 7) || "dev"
+
 function ThemeToggle() {
   const { theme, setTheme } = useTheme()
   return (
@@ -46,6 +50,9 @@ export function App() {
         <span className="flex items-center gap-2 font-semibold">
           <Tag className="size-4" />
           Lablr
+          <span className="text-muted-foreground text-[10px] font-normal" title="build">
+            {VERSION}
+          </span>
         </span>
         <div className="flex items-center gap-1">
           <PrinterChip />

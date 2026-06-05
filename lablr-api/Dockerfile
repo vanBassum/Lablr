@@ -7,6 +7,9 @@ WORKDIR /ui
 COPY lablr-ui/package.json lablr-ui/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY lablr-ui/ ./
+# Stamp the build with the commit SHA (shown in the UI); "dev" when not passed.
+ARG COMMIT_SHA=""
+ENV VITE_COMMIT_SHA=$COMMIT_SHA
 RUN pnpm build
 
 # --- Build the API ---
