@@ -16,12 +16,14 @@ export interface LabelStock {
 }
 
 export interface TemplateElement {
-  type: "text"
+  type: "text" | "pictogram"
   field: string
   rect: { x: number; y: number; width: number; height: number } // mm
   align?: "left" | "center" | "right"
   valign?: "top" | "center" | "bottom"
   wrap?: boolean
+  /** Cap wrapped text to this many lines (last line is ellipsised if it overflows). */
+  maxLines?: number
   fit?: "shrink" | "none"
   font?: {
     maxSizeMm?: number
@@ -43,9 +45,16 @@ export interface Template {
   name: string
   label: string // references a LabelStock id
   requiredFields: string[]
+  /** Fields a template can use but does not require for matching. */
+  optionalFields?: string[]
   orientation?: Orientation
   elements?: TemplateElement[]
   variants?: Partial<Record<Orientation, TemplateVariant>>
+}
+
+/** A named symbol resolvable to an image asset (see pictograms.yaml). */
+export interface Pictogram {
+  image: string // filename under label-config/pictograms/
 }
 
 export interface Draft {

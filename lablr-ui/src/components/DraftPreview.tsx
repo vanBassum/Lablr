@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { renderService } from "@/services/render"
 import { configService } from "@/services/config"
+import { usePictogramsReady } from "@/services/pictograms"
 import type { Draft } from "@/types"
 
 export function DraftPreview({
@@ -13,6 +14,7 @@ export function DraftPreview({
   height?: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const pictogramsReady = usePictogramsReady()
 
   useEffect(() => {
     if (!canvasRef.current) return
@@ -44,7 +46,7 @@ export function DraftPreview({
     const y = (height - scaledHeight) / 2
 
     ctx.drawImage(offscreen, x, y, scaledWidth, scaledHeight)
-  }, [draft, width, height])
+  }, [draft, width, height, pictogramsReady])
 
   return (
     <canvas

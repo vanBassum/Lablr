@@ -1,0 +1,15 @@
+fields:
+  name: Methanol
+  formula: CH3OH
+
+  pictogram1: flammable
+  pictogram2: toxic
+  pictogram3: health-hazard
+
+  hazard: >
+    Toxic if swallowed, in contact with skin,
+    or if inhaled.
+
+  notes: >
+    May cause damage to organs.
+    Use only in well ventilated areas.

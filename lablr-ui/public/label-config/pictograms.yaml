@@ -1,0 +1,29 @@
+# Named symbols → image asset (under label-config/pictograms/).
+# Drafts reference these by name, e.g. `pictogram1: flammable`.
+# Drop in the official public-domain GHS SVGs to replace the placeholders.
+
+pictograms:
+
+  flammable:
+    image: ghs02.svg
+
+  oxidizing:
+    image: ghs03.svg
+
+  corrosive:
+    image: ghs05.svg
+
+  toxic:
+    image: ghs06.svg
+
+  irritant:
+    image: ghs07.svg
+
+  health-hazard:
+    image: ghs08.svg
+
+  food-safe:
+    image: food-safe.svg
+
+  drinking-water:
+    image: water.svg

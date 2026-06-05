@@ -22,6 +22,7 @@ import {
 import { configService } from "@/services/config"
 import { renderService } from "@/services/render"
 import { draftService } from "@/services/drafts"
+import { usePictogramsReady } from "@/services/pictograms"
 import type { Orientation } from "@/types"
 
 export function DraftDetail({
@@ -41,9 +42,14 @@ export function DraftDetail({
 
   const draft = draftService.getDraft(draftId)
   const draftName = draft ? Object.values(draft.fields)[0] : draftId
+  const pictogramsReady = usePictogramsReady()
 
-  // Auto-discover the matching template; resolve its stock and printer.
-  const template = draft ? configService.getMatchingTemplates(draft)[0] : undefined
+  // Auto-discover matching templates; let the user pick when more than one fits.
+  const matchingTemplates = draft ? configService.getMatchingTemplates(draft) : []
+  const [templateId, setTemplateId] = useState<string>("")
+  const template =
+    matchingTemplates.find((t) => t.id === templateId) ?? matchingTemplates[0]
+
   const orientations = template ? configService.getTemplateOrientations(template) : []
   const [orientation, setOrientation] = useState<Orientation | "">("")
   const activeOrientation: Orientation =
@@ -54,7 +60,7 @@ export function DraftDetail({
   const stock = template ? configService.getLabelStock(template.label) : undefined
   const printer = stock ? configService.getPrinterForStock(stock) : undefined
 
-  // Re-render the single bitmap whenever inputs change.
+  // Re-render the single bitmap whenever inputs change (incl. once pictograms load).
   useEffect(() => {
     if (!canvasRef.current || !template || !draft || !stock || !printer) return
     const elements = configService.getTemplateElements(template, activeOrientation)
@@ -65,7 +71,7 @@ export function DraftDetail({
       stock,
       printer,
     })
-  }, [template, draft, stock, printer, activeOrientation])
+  }, [template, draft, stock, printer, activeOrientation, pictogramsReady])
 
   const dotsToMm = (dots: number) => (printer ? ((dots / printer.dpi) * 25.4).toFixed(1) : "0.0")
 
@@ -122,7 +128,24 @@ export function DraftDetail({
                 ))}
               </div>
             )}
-            <p className="text-muted-foreground text-sm">Template: {template.name}</p>
+            {matchingTemplates.length > 1 ? (
+              <select
+                value={template.id}
+                onChange={(e) => {
+                  setTemplateId(e.target.value)
+                  setOrientation("")
+                }}
+                className="border-input bg-background rounded-md border px-3 py-2 text-sm"
+              >
+                {matchingTemplates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-muted-foreground text-sm">Template: {template.name}</p>
+            )}
           </>
         ) : (
           <p className="text-destructive text-sm">No compatible template found</p>
