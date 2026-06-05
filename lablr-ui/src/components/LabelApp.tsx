@@ -1,13 +1,17 @@
 import { useState } from "react"
 import { DraftDetail } from "@/components/DraftDetail"
+import { DraftPreview } from "@/components/DraftPreview"
+import { draftService } from "@/services/drafts"
+import type { Draft } from "@/types"
 
 export function LabelApp() {
   const [selected, setSelected] = useState<string | null>(null)
+  const drafts = draftService.getDrafts()
 
   if (selected) {
     return (
       <DraftDetail
-        draftName={selected}
+        draftId={selected}
         onBack={() => setSelected(null)}
       />
     )
@@ -17,10 +21,9 @@ export function LabelApp() {
     <main className="flex-1 p-4">
       <h1 className="text-muted-foreground mb-3 text-sm">Pick a label to print</h1>
       <div className="grid grid-cols-2 gap-3">
-        <DraftCardPlaceholder label="Label 1" onClick={() => setSelected("Label 1")} />
-        <DraftCardPlaceholder label="Label 2" onClick={() => setSelected("Label 2")} />
-        <DraftCardPlaceholder label="Label 3" onClick={() => setSelected("Label 3")} />
-        <DraftCardPlaceholder label="Label 4" onClick={() => setSelected("Label 4")} />
+        {drafts.map((draft) => (
+          <DraftCard key={draft.id} draft={draft} onClick={() => setSelected(draft.id)} />
+        ))}
       </div>
 
       <footer className="text-muted-foreground mt-8 text-center text-xs">
@@ -40,22 +43,24 @@ export function LabelApp() {
   )
 }
 
-function DraftCardPlaceholder({
-  label,
+function DraftCard({
+  draft,
   onClick,
 }: {
-  label: string
+  draft: Draft
   onClick: () => void
 }) {
+  const name = Object.values(draft.fields)[0] || draft.id
+
   return (
     <button
       onClick={onClick}
       className="bg-card hover:bg-muted/40 flex flex-col items-center gap-2 rounded-xl border p-3 text-center transition active:scale-[0.98]"
     >
-      <div className="flex h-28 items-center justify-center rounded bg-slate-100">
-        <span className="text-muted-foreground text-xs">(render pipeline)</span>
+      <div className="flex h-28 w-full items-center justify-center rounded bg-white ring-1 ring-black/10">
+        <DraftPreview draft={draft} width={100} height={100} />
       </div>
-      <span className="line-clamp-2 text-sm font-medium">{label}</span>
+      <span className="line-clamp-2 text-sm font-medium">{name}</span>
     </button>
   )
 }

@@ -22,13 +22,13 @@ import {
 } from "@/components/ui/drawer"
 import { configService } from "@/services/config"
 import { renderService } from "@/services/render"
-import type { Draft, Template } from "@/types"
+import { draftService } from "@/services/drafts"
 
 export function DraftDetail({
-  draftName = "Label",
+  draftId,
   onBack,
 }: {
-  draftName?: string
+  draftId: string
   onBack: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -39,22 +39,17 @@ export function DraftDetail({
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null)
 
-  // Test draft
-  const draft: Draft = {
-    id: "test",
-    fields: {
-      name: "BC547",
-      type: "NPN",
-    },
-  }
+  // Load draft from service
+  const draft = draftService.getDraft(draftId)
+  const draftName = draft ? Object.values(draft.fields)[0] : draftId
 
   // Find compatible template
-  const compatibleTemplates = configService.getCompatibleTemplates(draft)
+  const compatibleTemplates = draft ? configService.getCompatibleTemplates(draft) : []
   const template = compatibleTemplates[0]
 
   // Re-render when template changes
   useEffect(() => {
-    if (!canvasRef.current || !template) return
+    if (!canvasRef.current || !template || !draft) return
 
     const label = configService.getLabel(template.label)
     const templatePrinter = configService.getPrinter(template.printerId)
@@ -62,7 +57,7 @@ export function DraftDetail({
     if (!label || !templatePrinter) return
 
     renderService.render(canvasRef.current, draft, template, label, templatePrinter)
-  }, [template])
+  }, [template, draft])
 
   const dotsToMm = (dots: number) => ((dots / DPI) * 25.4).toFixed(1)
 
