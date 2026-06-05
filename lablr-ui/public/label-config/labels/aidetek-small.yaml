@@ -1,0 +1,23 @@
+id: aidetek-small
+
+widthMm: 50
+heightMm: 20
+
+material: PET
+color: white
+
+manufacturer: Aidetek
+sku: LBL-AIDA-50X20
+
+marginsMm:
+  top: 1.5
+  left: 1.5
+  right: 1.5
+  bottom: 1.5
+
+offsetCorrectionMm:
+  x: 0
+  y: 0
+
+compatiblePrinters:
+  - dymo-450

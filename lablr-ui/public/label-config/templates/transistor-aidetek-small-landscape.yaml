@@ -1,0 +1,44 @@
+id: transistor-aidetek-small-landscape
+
+label: aidetek-small
+
+printerId: dymo-450
+
+orientation: landscape
+
+requiredFields:
+  - name
+  - type
+
+elements:
+  - type: text
+    field: name
+    rect:
+      x: 2
+      y: 2
+      width: 46
+      height: 8
+    align: center
+    valign: center
+    font:
+      maxSizeMm: 4
+      minSizeMm: 2
+      weight: bold
+    wrap: false
+    fit: shrink
+
+  - type: text
+    field: type
+    rect:
+      x: 2
+      y: 12
+      width: 46
+      height: 6
+    align: center
+    valign: center
+    font:
+      maxSizeMm: 3
+      minSizeMm: 1.5
+      weight: normal
+    wrap: false
+    fit: shrink
