@@ -14,6 +14,11 @@ builder.Services.AddHostedService<DraftSweeper>();
 // MCP server (Streamable HTTP at /mcp): an AI lists templates and creates drafts.
 builder.Services.AddMcpServer().WithHttpTransport().WithTools<LabelTools>();
 
+// Optional OAuth 2.1 protection for /mcp, federated to Authentik (see McpAuth.cs).
+// Disabled by default so local/dev runs need no IdP; prod sets Auth__* env vars.
+var mcpAuth = builder.Configuration.GetMcpAuthOptions();
+builder.Services.AddMcpAuth(mcpAuth);
+
 // Behind Traefik (TLS terminated upstream): trust forwarded scheme/host so
 // request-derived URLs (draft deep links) are correct https://public-host links.
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
@@ -49,6 +54,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("ui");
 
+if (mcpAuth.Enabled)
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
+
+// Public OAuth discovery docs — the MCP client reads these to know how to sign in.
+app.MapMcpAuthMetadata(mcpAuth);
+
 // Serve pictogram SVGs straight from the config directory (the mount).
 if (Directory.Exists(config.PictogramsDir))
 {
@@ -63,7 +77,11 @@ if (Directory.Exists(config.PictogramsDir))
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapMcp("/mcp");
+// MCP at /mcp — gated by Authentik OAuth when enabled; the PWA/api are gated
+// separately by Traefik forward-auth, so they are not required here.
+var mcp = app.MapMcp("/mcp");
+if (mcpAuth.Enabled)
+    mcp.RequireAuthorization();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 
