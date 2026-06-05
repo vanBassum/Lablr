@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react"
+import { useRef, useState, useEffect, type ReactNode } from "react"
 import {
   ChevronDown,
   ChevronLeft,
@@ -20,6 +20,9 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer"
+import { configService } from "@/services/config"
+import { renderService } from "@/services/render"
+import type { Draft, Template } from "@/types"
 
 export function DraftDetail({
   draftName = "Label",
@@ -35,6 +38,31 @@ export function DraftDetail({
   const [offsetY, setOffsetY] = useState(0)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  // Test draft
+  const draft: Draft = {
+    id: "test",
+    fields: {
+      name: "BC547",
+      type: "NPN Transistor",
+    },
+  }
+
+  // Find compatible template
+  const compatibleTemplates = configService.getCompatibleTemplates(draft)
+  const template = compatibleTemplates[0]
+
+  // Re-render when template changes
+  useEffect(() => {
+    if (!canvasRef.current || !template) return
+
+    const media = configService.getMedia(template.mediaId)
+    const templatePrinter = configService.getPrinter(template.printerId)
+
+    if (!media || !templatePrinter) return
+
+    renderService.render(canvasRef.current, draft, template, media, templatePrinter)
+  }, [draft, template])
 
   const dotsToMm = (dots: number) => ((dots / DPI) * 25.4).toFixed(1)
 
@@ -65,8 +93,11 @@ export function DraftDetail({
 
         <LabelCanvas canvasRef={canvasRef} width={300} height={400} />
 
-        {/* Placeholder for template/media selection */}
-        <p className="text-muted-foreground text-sm">Render pipeline: to be designed</p>
+        {template ? (
+          <p className="text-muted-foreground text-sm">Template: {template.id}</p>
+        ) : (
+          <p className="text-destructive text-sm">No compatible template found</p>
+        )}
       </main>
 
       {/* Sticky action bar: Print + gear */}
