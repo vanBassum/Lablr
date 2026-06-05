@@ -46,6 +46,8 @@ DPI is a property of the **media/printer profile**, passed into the mm→dots st
 v1 templates are a small **declarative layout** the canvas renderer interprets directly (stacks, text fields, font size/weight/align; barcode/QR later). Claude- and human-editable. **HTML/CSS templates are deferred** to a possible later alternative renderer — decoupled on purpose.
 
 ### The model — Draft / Template / Media / Preset / Printer
+> ⚠ **Stale — pending reconciliation.** The shipped code (the "wireframe" render model, see LOGBOOK 2026-06-05 + memory `render-model-wireframe`) dropped **presets** and `designSize`; it uses `LabelStock` (not "Media"), **absolute mm**, and per-template **orientation variants**. The section below describes the older design and is kept until this is reconciled.
+
 Labels compose from decoupled concepts:
 - **Draft** — the data: a **preset** + field values (`fields`). Created by the AI — it picks the preset (use case) and fills the fields.
 - **Template** — declarative layout + field schema + `designSize` (a coordinate space, not physical size). Owns which fields exist; renders any draft that supplies them.
@@ -60,13 +62,20 @@ The renderer and printer live on the **same device** — the production target i
 
 ### End-to-end workflow
 ```
-talk to ChatGPT → it creates a DRAFT (data only) on the hosted server → returns a link
-   → tap link → PWA opens directly on the draft → preview → one tap → print over Bluetooth
+AI calls the MCP create_draft tool → backend stores the draft in RAM → returns a #/d/{id} link
+   → tap link → PWA opens directly on the draft → preview → one tap → print
 ```
-ChatGPT never renders or prints — it only produces draft data + a URL. The hosted server (not the user's PC) holds drafts, so the flow works with the PC off.
+The AI never renders or prints — it only produces draft data via MCP and gets back a URL. The hosted backend (not the user's PC) holds drafts, so the flow works with the PC off.
 
-### Persistence
-Drafts are ephemeral (memory / simple storage). No database. A small server exists only to store and hand off drafts — it never renders.
+### Persistence & the backend (now active)
+
+The **lablr-api** backend is live (no longer dormant). It:
+- holds **drafts in memory** (TTL eviction, no database) — `POST/GET /api/drafts`;
+- serves the **config** (`GET /api/config`) and pictogram SVGs (`/pictograms`), read from a directory on disk (`Config:Dir`) that is a **mount point** in prod (edit config without rebuilding);
+- exposes an **MCP server** (Streamable HTTP at `/mcp`) with `list_templates` + `create_draft` so an AI creates a draft and gets a `#/d/{id}` deep link;
+- **serves the built PWA same-origin** (`wwwroot`).
+
+It **never renders** — the PWA remains the canonical renderer. MCP auth is deferred (generic MCP for now; ChatGPT's OAuth 2.1 + DCR is item 53).
 
 ---
 
@@ -83,14 +92,14 @@ Components, chemicals, and products are optional integrations — never required
 
 ## Deployment
 
-Destined for the strato-stack homelab at **vanbassum.com**, behind Traefik (HTTPS via Let's Encrypt). A fresh deployment should become functional without manual admin/config forms.
+Runs on the strato-stack homelab at **vanbassum.com**, behind Traefik (HTTPS via Let's Encrypt). The **lablr-api** container serves everything **same-origin**: the PWA (built into `wwwroot`), `/api`, `/pictograms`, and `/mcp`. Config is a **read-only mounted directory** (`Config__Dir=/config`); deep-link URLs derive from Traefik's forwarded headers. GitHub Pages is retired. A fresh deployment should become functional without manual admin/config forms.
 
 ---
 
 ## Project Structure
 
 ```
-/lablr-ui      → React PWA — the canonical renderer (primary)
-/lablr-api     → .NET 9 minimal API — dormant in v1; later only for draft storage/handoff
-/label-config  → configuration (media, templates, presets, printers) — introduced incrementally
+/lablr-ui      → React PWA — the canonical renderer; fetches config + drafts from the API
+/lablr-api     → .NET 9 minimal API (active) — config + in-memory drafts + MCP; serves the PWA
+/label-config  → configuration (labels, templates, printers, pictograms, drafts) — read by the API from disk (a mount in prod)
 ```

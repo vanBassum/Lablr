@@ -1,3 +1,0 @@
-# Lablr — label maker (templates in redesign)
-
-Configuration is being redesigned. Check back soon.
