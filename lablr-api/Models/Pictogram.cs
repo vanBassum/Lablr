@@ -18,3 +18,9 @@ public sealed class PictogramRef
 {
     public string Image { get; set; } = "";
 }
+
+/// <summary>PUT /api/pictograms/{name} body.</summary>
+public sealed class UpsertPictogramRequest
+{
+    public string Svg { get; set; } = "";
+}

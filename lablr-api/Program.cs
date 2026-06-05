@@ -10,6 +10,8 @@ if (!Path.IsPathRooted(dbPath))
 builder.Services.AddDbContextFactory<LablrDbContext>(o => o.UseSqlite($"Data Source={dbPath}"));
 
 builder.Services.AddControllers();
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
 builder.Services.AddOpenApi();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ConfigService>();
@@ -51,6 +53,7 @@ var app = builder.Build();
 // Eager-init: creates + seeds the SQLite DB at startup so failures surface now.
 app.Services.GetRequiredService<ConfigService>();
 
+app.UseExceptionHandler(); // maps ConfigValidationException -> 400
 app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())

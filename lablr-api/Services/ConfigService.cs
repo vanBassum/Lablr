@@ -1,15 +1,19 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 namespace Lablr.Api.Services;
 
+/// <summary>Thrown when a write is rejected; surfaced as 400 (REST) or a tool error (MCP).</summary>
+public sealed class ConfigValidationException(string message) : Exception(message);
+
 /// <summary>
 /// The config store. Models (labels, templates, printers, pictograms) live in
-/// SQLite via EF Core and are edited at runtime (REST/MCP). On first boot, an
-/// empty DB is seeded from the YAML in Config:Dir so existing config carries
-/// over; after that the DB is the source of truth. Drafts are seeded into the
-/// RAM store from the same YAML on every boot (they're ephemeral, not in the DB).
+/// SQLite via EF Core and are edited at runtime (REST/MCP). Validation lives here
+/// so both surfaces share it. On first boot an empty DB is seeded from the YAML in
+/// Config:Dir; after that the DB is the source of truth. Drafts are seeded into
+/// the RAM store from the same YAML on every boot (ephemeral, not in the DB).
 /// </summary>
 public sealed class ConfigService
 {
@@ -52,11 +56,17 @@ public sealed class ConfigService
         };
     }
 
-    public LabelTemplate? GetTemplate(string id)
-    {
-        using var db = _dbf.CreateDbContext();
-        return db.Templates.AsNoTracking().FirstOrDefault(t => t.Id == id);
-    }
+    public List<LabelStock> GetLabels() => All<LabelStock>();
+    public LabelStock? GetLabel(string id) => Find<LabelStock>(id);
+
+    public List<LabelTemplate> GetTemplates() => All<LabelTemplate>();
+    public LabelTemplate? GetTemplate(string id) => Find<LabelTemplate>(id);
+
+    public List<Printer> GetPrinters() => All<Printer>();
+    public Printer? GetPrinter(string id) => Find<Printer>(id);
+
+    public List<Pictogram> GetPictograms() => All<Pictogram>();
+    public Pictogram? GetPictogram(string name) => Find<Pictogram>(name);
 
     /// <summary>The SVG for a pictogram image filename (served at /pictograms/{image}).</summary>
     public string? GetPictogramSvg(string image)
@@ -65,30 +75,107 @@ public sealed class ConfigService
         return db.Pictograms.AsNoTracking().FirstOrDefault(p => p.Image == image)?.Svg;
     }
 
-    // ---------- Writes ----------
+    private List<T> All<T>() where T : class
+    {
+        using var db = _dbf.CreateDbContext();
+        return db.Set<T>().AsNoTracking().ToList();
+    }
 
-    public void UpsertLabel(LabelStock label) => Upsert(db => db.Labels, label.Id, label);
+    private T? Find<T>(string id) where T : class
+    {
+        using var db = _dbf.CreateDbContext();
+        return db.Set<T>().Find(id) is { } e ? Detached(db, e) : null;
+    }
+
+    private static T Detached<T>(LablrDbContext db, T entity) where T : class
+    {
+        db.Entry(entity).State = EntityState.Detached;
+        return entity;
+    }
+
+    // ---------- Writes (validated; throw ConfigValidationException) ----------
+
+    public LabelStock UpsertLabel(LabelStock label)
+    {
+        Require(label.Id, "label.id");
+        Require(label.Name, "label.name");
+        if (label.WidthMm <= 0 || label.HeightMm <= 0)
+            throw new ConfigValidationException("label.widthMm and label.heightMm must be greater than 0.");
+        Save(db => db.Labels, label.Id, label);
+        return label;
+    }
+
     public bool DeleteLabel(string id) => Delete<LabelStock>(id);
 
-    public void UpsertTemplate(LabelTemplate template) => Upsert(db => db.Templates, template.Id, template);
+    public LabelTemplate UpsertTemplate(LabelTemplate template)
+    {
+        Require(template.Id, "template.id");
+        Require(template.Name, "template.name");
+        if (Find<LabelStock>(template.Label) is null)
+            throw new ConfigValidationException(
+                $"Unknown label '{template.Label}'. Create it first (POST /api/labels or upsert_label).");
+        var hasElements = template.Elements is { Count: > 0 };
+        var hasVariants = template.Variants is { Count: > 0 };
+        if (!hasElements && !hasVariants)
+            throw new ConfigValidationException("Provide either `elements` or `variants`.");
+        Save(db => db.Templates, template.Id, template);
+        return template;
+    }
+
     public bool DeleteTemplate(string id) => Delete<LabelTemplate>(id);
 
-    public void UpsertPrinter(Printer printer) => Upsert(db => db.Printers, printer.Id, printer);
+    public Printer UpsertPrinter(Printer printer)
+    {
+        Require(printer.Id, "printer.id");
+        if (printer.Dpi <= 0) throw new ConfigValidationException("printer.dpi must be greater than 0.");
+        Save(db => db.Printers, printer.Id, printer);
+        return printer;
+    }
+
     public bool DeletePrinter(string id) => Delete<Printer>(id);
 
-    public void UpsertPictogram(Pictogram pictogram) => Upsert(db => db.Pictograms, pictogram.Name, pictogram);
+    public Pictogram UpsertPictogram(string name, string svg)
+    {
+        Require(name, "name");
+        if (string.IsNullOrWhiteSpace(svg) || !svg.Contains("<svg"))
+            throw new ConfigValidationException("svg must be SVG markup containing an <svg> element.");
+        // Keep an existing pictogram's filename so its URL stays stable; else derive one.
+        var image = GetPictogram(name)?.Image ?? Slug(name) + ".svg";
+        var pictogram = new Pictogram { Name = name, Image = image, Svg = svg };
+        Save(db => db.Pictograms, name, pictogram);
+        return pictogram;
+    }
+
     public bool DeletePictogram(string name) => Delete<Pictogram>(name);
 
-    private void Upsert<T>(Func<LablrDbContext, DbSet<T>> set, string id, T entity) where T : class
+    /// <summary>Validate a draft against a template; throws if unknown or missing required fields.</summary>
+    public void ValidateDraft(string templateId, IDictionary<string, string> fields)
+    {
+        var template = GetTemplate(templateId)
+            ?? throw new ConfigValidationException($"Unknown template '{templateId}'.");
+        var missing = template.RequiredFields
+            .Where(f => !fields.TryGetValue(f, out var v) || string.IsNullOrWhiteSpace(v))
+            .ToList();
+        if (missing.Count > 0)
+            throw new ConfigValidationException(
+                $"Missing required fields for '{templateId}': {string.Join(", ", missing)}");
+    }
+
+    private static void Require(string value, string field)
+    {
+        if (string.IsNullOrWhiteSpace(value)) throw new ConfigValidationException($"{field} is required.");
+    }
+
+    private static string Slug(string s) => Regex.Replace(s.ToLowerInvariant(), "[^a-z0-9]+", "-").Trim('-');
+
+    private void Save<T>(Func<LablrDbContext, DbSet<T>> set, string id, T entity) where T : class
     {
         using var db = _dbf.CreateDbContext();
         var dbSet = set(db);
-        var exists = dbSet.Find(id) is not null;
-        if (exists)
+        if (dbSet.Find(id) is not null)
         {
-            // Detach the loaded instance so Update(entity) can attach by the same key.
-            db.ChangeTracker.Clear();
-            dbSet.Update(entity); // marks all columns modified — full overwrite
+            db.ChangeTracker.Clear(); // detach the loaded copy so Update can attach by key
+            dbSet.Update(entity);     // marks all columns modified — full overwrite
         }
         else
         {

@@ -39,6 +39,8 @@ public sealed class DraftStore
         return new DraftDto(id, fields, templateId);
     }
 
+    public bool Delete(string id) => _drafts.TryRemove(id, out _);
+
     /// <summary>Drop expired non-seed drafts. Returns the number removed.</summary>
     public int Sweep()
     {

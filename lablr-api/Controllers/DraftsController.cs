@@ -20,19 +20,13 @@ public sealed class DraftsController(ConfigService config, DraftStore store, Lin
             return BadRequest(new { error = "fields required" });
 
         if (!string.IsNullOrEmpty(req.TemplateId))
-        {
-            var template = config.GetTemplate(req.TemplateId);
-            if (template is null)
-                return BadRequest(new { error = $"unknown template '{req.TemplateId}'" });
-
-            var missing = template.RequiredFields
-                .Where(f => !req.Fields.TryGetValue(f, out var v) || string.IsNullOrWhiteSpace(v))
-                .ToList();
-            if (missing.Count > 0)
-                return BadRequest(new { error = "missing required fields", missing });
-        }
+            config.ValidateDraft(req.TemplateId, req.Fields); // throws -> 400 via handler
 
         var draft = store.Create(req.Fields, req.TemplateId);
         return Ok(new { id = draft.Id, url = links.DraftUrl(draft.Id), draft });
     }
+
+    [HttpDelete("{id}")]
+    public IActionResult Delete(string id) =>
+        store.Delete(id) ? NoContent() : NotFound();
 }
