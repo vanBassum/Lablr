@@ -1,200 +1,381 @@
-# Lablr v2 Design
+# Lablr Design
 
 Lablr is a label creation and printing system designed to minimize friction between needing a label and having a printed label.
 
-**Not an inventory system.** Does not manage components, chemicals, stock, locations, suppliers, or products. The central unit is a **label draft**.
+**Not an inventory system.** Does not manage components, chemicals, stock, locations, suppliers, or products.
+
+---
+
+## Core Philosophy
+
+Optimize for:
+
+- Simplicity
+- Predictability
+- Full control over label appearance
+- Fast creation of new label designs
+- Easy YAML configuration
+- Easy AI generation of templates
+
+Do NOT optimize for:
+
+- Automatic responsive layouts
+- Generic templates that work on every label
+- Dynamic scaling between label sizes
+- Building a CSS/flexbox/grid replacement
+
+**The goal is to print labels, not to build a layout engine.**
 
 ---
 
 ## Core Model
 
-Four concepts, one matching rule:
+Four concepts:
 
+```text
+Draft (data only)
+    ↓
+Template (design for specific label + orientation)
+    ├─ Label (physical product)
+    ├─ Printer (output device)
+    └─ Orientation (portrait / landscape)
 ```
-Draft (key-value pairs)
-  ↓
-matches by fields
-  ↓
-Template (declares required fields, layout for specific media + orientation)
-  ├─ Media (physical dimensions)
-  ├─ Printer (DPI, transport)
-  └─ Orientation (portrait / landscape)
-```
+
+**Template Matching:** A draft is compatible with a template if the draft contains all fields the template requires.
 
 ---
 
 ## Draft
 
-**What it is:** The user's current label.
+**What it is:** User data for a label.
 
 **Contains:**
-- User data (text fields to print)
-- A recommended or selected preset
+
+- Key-value pairs (field names and values)
 
 **Example:**
 ```yaml
-preset: smd-basic
 fields:
   name: BC547
   type: NPN
   package: TO-92
 ```
 
-**Responsibilities:**
-- Store label data
-- Reference the preset to use
-- Be easy to create from UI, ChatGPT, MCP, or manual input
-- Be editable before printing
-
 **Constraints:**
-- Must NOT contain layout details
-- Must NOT contain physical label dimensions
-- Must NOT contain printer details
-- Must NOT contain inventory data
 
----
+- Must NOT contain template references
+- Must NOT contain label references
+- Must NOT contain printer references
+- Must NOT contain layout information
+- Describes information only
 
 ---
 
 ## Template
 
-**What it is:** Concrete layout designed for a specific media and orientation.
+**What it is:** A handcrafted design for a specific label and orientation.
 
-**Declares:**
-- Required and optional fields (field names the draft must provide to match this template)
-- Elements (text, barcode, etc.)
-- Rectangles with normalized coordinates (0.0–1.0 of the media)
-- Font sizes, alignment, wrapping rules
+**Template names reflect their purpose:**
+
+```text
+transistor-aidetek-small-landscape
+chemical-vial-small-portrait
+storage-box-dymo-54x70-landscape
+```
 
 **Example:**
+
 ```yaml
-id: smd-basic-50x20-landscape
-media: aidetek-small-50x20
+id: transistor-aidetek-small-landscape
+
+label: aidetek-small
+
 orientation: landscape
 
-fields:
-  name:
-    required: true
-  type:
-    required: true
-  package:
-    required: false
+requiredFields:
+  - name
+  - type
+  - package
 
 elements:
+
   - type: text
     field: name
     rect:
-      x: 0.05
-      y: 0.05
-      width: 0.90
-      height: 0.40
+      x: 2
+      y: 2
+      width: 46
+      height: 8
     align: center
     valign: center
     font:
-      size: 12
+      maxSizeMm: 4
+      minSizeMm: 2
       weight: bold
     wrap: false
+    fit: shrink
 
   - type: text
     field: type
     rect:
-      x: 0.05
-      y: 0.55
-      width: 0.42
-      height: 0.35
+      x: 2
+      y: 12
+      width: 46
+      height: 6
     align: center
     valign: center
     font:
-      size: 8
+      maxSizeMm: 3
+      minSizeMm: 1.5
     wrap: false
+    fit: shrink
 ```
 
 **Responsibilities:**
-- Declare required and optional fields
-- Define layout using normalized coordinates (0.0–1.0)
-- Define elements and their positioning
+
+- Define required fields
+- Define label reference
+- Define orientation
+- Define element positions and styling
+- Define text fitting rules
+
+**Key principles:**
+
+- One template = one label + orientation combination
+- Templates are NOT responsive
+- Templates are NOT intended to work on arbitrary label sizes
+- Templates are handcrafted designs
+- A template references exactly one label
+- Coordinates are absolute millimeters, not relative percentages
 
 **Matching rule:** A draft can be printed with this template if the draft contains all required fields.
 
-**Key principle:** One template = one media + orientation combination. No responsive scaling. Reusable by any draft that has the required fields.
-
 ---
 
-## Media
+## Label
 
-**What it is:** The physical label.
+**What it is:** A physical label product.
+
+**Represents:**
+
+- A roll, sheet, or specific label product
+- A set of physical properties
+- Compatibility constraints
 
 **Example:**
+
 ```yaml
-id: aidetek-small-label
+id: aidetek-small
+
 widthMm: 50
 heightMm: 20
+
 material: PET
 color: white
-sku: LBL123
-manufacturer: Niimbot
+
+manufacturer: Aidetek
+sku: LBL-AIDA-50X20
+
+marginsMm:
+  top: 1.5
+  left: 1.5
+  right: 1.5
+  bottom: 1.5
+
+offsetCorrectionMm:
+  x: 0
+  y: 0
+
+compatiblePrinters:
+  - niimbot-b21
+  - niimbot-m2
 ```
 
 **Responsibilities:**
-- Define physical width and height (in millimeters)
-- Define material
-- Define manufacturer, SKU, order information
-- Represent the actual roll or sheet of labels
+
+- Define physical dimensions
+- Define material properties
+- Define order information
+- Define usable margins (safe area for printing)
+- Define printer offset correction (for calibration)
+- List compatible printers
+
+**Key principle:** Physical label behavior is centralized. If margins or offsets change, all templates using that label automatically benefit. Do NOT duplicate these values in templates.
 
 **Constraints:**
+
 - Must NOT contain DPI (that's the printer's job)
 
 ---
 
 ## Printer
 
-**What it is:** The output device and resolution.
+**What it is:** The output device and its resolution.
 
 **Example:**
 ```yaml
 id: niimbot-b21
+
 name: Niimbot B21
+
 dpi: 203
+
 protocol: niimbot
+
 transport: bluetooth
 ```
 
 **Responsibilities:**
-- Define print resolution (DPI)
-- Define printer protocol (niimbot, dymo, etc.)
-- Define transport type (bluetooth, webusb, etc.)
-- Provide enough information for a printer adapter to convert a bitmap into device-specific commands
 
-**Constraint:** The printer adapter receives a bitmap. It should not know about drafts, templates, or presets.
+- Define print resolution (DPI)
+- Define printer protocol
+- Define transport type
+
+**Constraint:** The printer adapter receives a bitmap. It should not know about drafts, templates, or labels.
+
+---
+
+## Template Elements
+
+Elements are the building blocks of a template.
+
+**Fundamental layout primitive:** Each element owns a rectangle (absolute millimeter coordinates).
+
+### Text Element
+
+```yaml
+type: text
+
+field: name
+
+rect:
+  x: 2        # mm from left edge of label
+  y: 2        # mm from top edge of label
+  width: 46   # mm
+  height: 8   # mm
+
+align: left|center|right
+
+valign: top|center|bottom
+
+font:
+  maxSizeMm: 4      # max font size to try
+  minSizeMm: 2      # min font size to use
+  weight: normal|bold
+
+wrap: true|false
+
+fit: shrink|none
+```
+
+**Text Fitting Algorithm:**
+
+The renderer must guarantee text stays inside its rectangle.
+
+```text
+Start at maxSizeMm.
+Measure text.
+If text does not fit:
+    Reduce size by step.
+Repeat until it fits or reaches minSizeMm.
+Render.
+```
+
+**Parameters:**
+
+- `align` — horizontal alignment (left, center, right)
+- `valign` — vertical alignment (top, center, bottom)
+- `wrap` — allow text to wrap to multiple lines
+- `fit` — behavior when text is too large
+  - `shrink` — reduce font size until it fits
+  - `none` — render at specified size (may overflow)
+- `font.weight` — bold or normal rendering
+
+### Future Element Types
+
+Design for future support of:
+
+```text
+rectangle
+line
+image
+qr
+barcode
+```
+
+Only text needs implementation now.
 
 ---
 
 ## Render Pipeline
 
 **Input:**
-- Draft (key-value pairs)
-- Template (selected by field matching)
-- Media (from template)
-- Printer (from template)
+
+- Draft
+- Template
+- Label (resolved from template)
+- Printer (user selected or default compatible printer)
 
 **Output:**
+
 - Monochrome bitmap
 
 **Steps:**
 
-1. Load the template, media, and printer
-2. Get physical dimensions from media (widthMm, heightMm)
-3. Apply orientation (if landscape, swap dimensions)
-4. Get DPI from printer
-5. Convert media size from millimeters to pixels: `pixels = mm * (dpi / 25.4)`
-6. For each element in the template:
-   - Scale element rect from 0.0–1.0 to pixel coordinates
+1. Load template, label, and printer
+2. Get label dimensions from label (widthMm, heightMm)
+3. Apply template orientation (if landscape, swap dimensions)
+4. Apply label margins (reduce usable area)
+5. Get DPI from printer
+6. Convert all millimeter values to pixels: `pixels = mm * (dpi / 25.4)`
+7. Apply printer offset correction to all coordinates
+8. For each element in the template:
+   - Get the element's rectangle and properties
    - Get the field value from the draft
-   - Render text at specified font size, aligned within the rectangle
-7. Rasterize all elements into a monochrome bitmap
-8. Return the bitmap (for both preview and printing)
+   - If text element:
+     - Fit text to rectangle using fit algorithm
+     - Apply alignment (horizontal and vertical)
+     - Render text at final size
+9. Rasterize all elements into a monochrome bitmap
+10. Return the bitmap (for both preview and printing)
 
-**Key principle:** The renderer is deterministic. The same draft + template produces the same bitmap every time.
+**Key principle:** The renderer is deterministic. The same draft + template + label + printer produces the same bitmap every time.
+
+---
+
+## Template Matching
+
+**Automatic discovery, not selection.**
+
+A template is compatible with a draft when:
+
+```text
+All required fields are present in the draft.
+```
+
+**Example:**
+
+Draft:
+
+```yaml
+fields:
+  name: BC547
+  type: NPN
+  package: TO-92
+```
+
+Template:
+
+```yaml
+requiredFields:
+  - name
+  - type
+  - package
+```
+
+Result: **Compatible** ✅
+
+The UI should only show templates that are compatible with the current draft.
 
 ---
 
@@ -203,14 +384,16 @@ transport: bluetooth
 **Rule:** Preview and print must use the same bitmap.
 
 **Correct:**
-```
-Draft → Renderer → Bitmap → Preview
-                      ↓
-                    Print
+
+```text
+Draft → Template → Renderer → Bitmap → Preview
+                                ↓
+                              Print
 ```
 
 **Incorrect:**
-```
+
+```text
 Draft → Browser preview renderer
 Draft → Separate print renderer
 ```
@@ -224,64 +407,76 @@ Draft → Separate print renderer
 **Where:** YAML files, versioned in Git.
 
 **Structure:**
-```
+
+```text
 label-config/
   templates/
-    smd-basic.yaml
-    chemical-small.yaml
-    storage-box.yaml
-  media/
-    aidetek-small-label.yaml
+    transistor-aidetek-small-landscape.yaml
+    chemical-vial-small-portrait.yaml
+    storage-box-dymo-54x70-landscape.yaml
+  labels/
+    aidetek-small.yaml
     dymo-54x70.yaml
+    chemical-vial-small.yaml
   printers/
     niimbot-b21.yaml
     dymo-450.yaml
-  presets.yaml
 ```
 
 **ConfigService responsibilities:**
-- Load YAML files
-- Validate references (presets → existing templates, media, printers)
-- Validate that drafts contain required fields for their template
-- Support reload during development
-- Provide templates, media, presets, printers to the app
+
+- Load YAML files from disk
+- Validate that templates reference existing labels and printers
+- Validate that templates declare required fields
+- Provide template, label, printer lookups
+- Find compatible templates for a draft (field matching)
+- Reload configuration during development
 
 ---
 
 ## Application Responsibilities
 
 ### UI Layer
+
 - Create drafts with key-value pairs
 - Edit draft fields
-- Show available templates (filtered by field matching)
+- Show available templates (auto-filtered by field matching)
 - Show the rendered bitmap preview
+- Allow printer selection (if multiple compatible)
 - Trigger print
-- Show recent drafts / history (if implemented)
+- Show recent drafts / history (optional)
 
 ### Renderer
-- Resolve all dimensions
-- Map coordinates from 0.0–1.0 to pixels
-- Render elements
-- Produce the final bitmap
+
+- Resolve all dimensions (mm → pixels)
+- Apply margins and offset corrections
+- Fit text to rectangles
+- Render elements to bitmap
+- Produce deterministic output
 
 ### Printer Adapter
-- Take the bitmap
-- Encode it for a specific printer
-- Send it over the chosen transport
 
-### Configuration Loader
-- Load YAML
-- Validate configuration
-- Provide templates, media, printers to the app
+- Accept a bitmap
+- Encode it for a specific printer
+- Send commands to device
+- Handle transport (WebUSB, Bluetooth, etc.)
+
+### Configuration Service
+
+- Load and validate YAML
+- Resolve references
+- Provide configuration data to the app
 
 ---
 
 ## Suggested Internal Services
 
 ### DraftService
+
 Manages draft objects.
 
 **Responsibilities:**
+
 - Create draft with key-value pairs
 - Update draft fields
 - List drafts
@@ -290,42 +485,53 @@ Manages draft objects.
 Persistence can be in memory at first.
 
 ### ConfigService
+
 Loads and validates configuration.
 
 **Responsibilities:**
+
 - Load templates from YAML
-- Load media from YAML
+- Load labels from YAML
 - Load printers from YAML
-- Validate that templates reference existing media and printers
-- Provide matching: given a draft, return all templates whose required fields are satisfied
+- Validate references
+- Return compatible templates for a draft (field matching)
+- Return label by ID
+- Return printer by ID
 
 ### RenderService
-Converts drafts into bitmaps.
+
+Converts drafts to bitmaps.
 
 **Responsibilities:**
-- Accept: draft + template + media + printer
+
+- Accept: draft + template + label + printer
 - Execute the render pipeline
 - Return: monochrome bitmap
 
 **Does not know about:** Printer adapters, network, storage, UI.
 
 ### PrinterService
+
 Handles print output.
 
 **Responsibilities:**
-- Select the correct printer adapter for a template's printer ID
-- Pass the bitmap to the adapter
-- Handle transport (send commands to device)
+
+- Accept: bitmap + printer ID
+- Select the correct printer adapter
+- Send bitmap to adapter
+- Handle transport
 
 ### PrinterAdapter (one per printer family)
 
 Examples:
+
 - NiimbotPrinterAdapter
 - DymoPrinterAdapter
 - BrotherPrinterAdapter
 
 **Responsibility:**
-```
+
+```text
 Bitmap → Printer-specific byte sequence
 ```
 
@@ -333,25 +539,27 @@ Bitmap → Printer-specific byte sequence
 
 ## Design Rules
 
-✅ **Drafts contain data only.** Key-value pairs, no layout.
+✅ **Drafts contain data only.** Key-value pairs, no layout, no references.
 
-✅ **Templates are concrete.** Each template is designed for one specific (media, orientation) pair.
+✅ **Templates are concrete.** Each template is designed for one specific label + orientation.
 
-✅ **Field-based matching.** A draft can print with a template if it has all required fields.
+✅ **Field-based matching.** Drafts automatically discover compatible templates.
 
-✅ **Templates define layout only.** No physical size, no DPI.
+✅ **Templates define layout only.** No DPI, no margins (those are on the label).
 
-✅ **Media defines physical size only.** No DPI.
+✅ **Labels define physical properties.** Margins, offset corrections, compatible printers.
 
-✅ **Printers define DPI and transport.** No knowledge of templates or media.
+✅ **Coordinates are absolute millimeters.** Not relative percentages.
 
-✅ **Templates use relative coordinates (0.0–1.0).** Scaled to the media dimensions at render time.
+✅ **Text fitting is guaranteed.** Text stays inside its rectangle or is cut off by `fit: none`.
 
-✅ **One render pipeline.** The renderer produces one bitmap.
+✅ **One render pipeline.** Deterministic, single entry point.
 
 ✅ **Preview and print use the same bitmap.** Never separate renders.
 
-✅ **Configuration lives in Git.** YAML files, versioned.
+✅ **Configuration lives in Git.** YAML files, versioned, human-editable.
+
+✅ **Many simple templates > few complex ones.** Simplicity over generality.
 
 ✅ **Avoid inventory management.** It is not this system's job.
 
@@ -359,23 +567,12 @@ Bitmap → Printer-specific byte sequence
 
 ---
 
-## Implementation Order (Suggested)
+## Design Principle
 
-1. Type definitions (Draft, Preset, Template, Media, Printer)
-2. ConfigService (load YAML, validate)
-3. RenderService (11-step pipeline)
-4. DraftService (create, update, list)
-5. PrinterService + adapters
-6. UI integration
+**A template is a handcrafted design for a specific label.**
 
----
+The system should prefer many simple templates over a small number of complicated responsive templates.
 
-## Key Insight
+This keeps the renderer simple, keeps YAML understandable, and gives complete control over label appearance.
 
-The design separates concerns so clearly that:
-- The renderer never has to ask "what's the printer?" or "what's the media?"
-- The template never has to know physical millimeters or pixels
-- The draft never has to know layout or printer details
-- The UI never has to perform math (rendering, text fitting, coordinate mapping)
-
-Each service knows exactly what it needs and nothing more.
+When you need a new label design, write a new template. Don't try to make an old template work with a different label.
