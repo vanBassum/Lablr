@@ -42,6 +42,9 @@ export function LabelApp() {
           Ask your AI assistant for a label — it creates a draft and sends a link
           that opens here, ready to print.
         </p>
+        <a href="#/labels" className="mt-2 inline-block underline underline-offset-2">
+          Manage label stocks →
+        </a>
       </footer>
     </main>
   )
