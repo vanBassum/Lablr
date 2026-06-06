@@ -10,8 +10,8 @@ import {
   type ReactNode,
 } from "react"
 import { usePrinter } from "@/printer"
-import { buildJobFromCanvas, type HeadOffset } from "@/dymo"
-import { listAgents, printToAgent, type PrintAgent } from "@/services/agents"
+import { listAgents, type PrintAgent } from "@/services/agents"
+import { fetchJobBytes, printDraftToAgent, type PrintParams } from "@/services/printApi"
 
 // A print target is where a job goes: the local USB printer (WebUSB) or a
 // remote bridge agent (relayed by the backend, Option C). The selected target
@@ -26,7 +26,7 @@ interface PrintTargetApi {
   selectedId: string
   selected?: PrintTarget
   setSelectedId: (id: string) => void
-  print: (canvas: HTMLCanvasElement, offset?: HeadOffset) => Promise<void>
+  print: (params: PrintParams) => Promise<void>
 }
 
 const Ctx = createContext<PrintTargetApi | undefined>(undefined)
@@ -90,14 +90,16 @@ export function PrintTargetProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const print = useCallback(
-    async (canvas: HTMLCanvasElement, offset?: HeadOffset) => {
+    async (params: PrintParams) => {
       const target = targets.find((t) => t.id === selectedId)
       if (!target) throw new Error("No printer selected")
       if (target.kind === "usb") {
-        await usb.print(canvas, offset) // WebUSB; prompts/connects on first use
+        // Backend renders the job; we just push the bytes over WebUSB.
+        const bytes = await fetchJobBytes(params)
+        await usb.print(bytes) // prompts/connects on first use
       } else {
-        const bytes = buildJobFromCanvas(canvas, offset)
-        await printToAgent(target.id, bytes) // backend relays to the bridge
+        // Backend renders + relays to the bridge — same render as the preview.
+        await printDraftToAgent(target.id, params)
       }
     },
     [targets, selectedId, usb],

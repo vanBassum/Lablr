@@ -483,3 +483,21 @@ Everything decided lives in CLAUDE.md (active model) + ROADMAP.md (phased, stabl
 Replaced `Database.EnsureCreated()` with **EF Core migrations** (`lablr-api/Data/Migrations/`, first migration `InitialCreate`). Startup runs a `MigrateToLatest` routine: a brand-new/empty DB is built straight from migrations; a **pre-migrations DB** (created by the old `EnsureCreated`, so it has our tables but no `__EFMigrationsHistory`) is **auto-baselined** — the existing migrations are stamped as applied so `Migrate()` won't try to recreate the tables and clobber data. Added a `IDesignTimeDbContextFactory` so `dotnet ef` scaffolds without booting the app/seed. Both paths verified locally (fresh → applies `InitialCreate` + seeds; existing dev DB → baselines, no-op migrate, data preserved). Schema changes now ship as migrations instead of silently not applying to a persisted prod volume.
 
 Also: removed the stray root `package-lock.json` (npm) and generated `pnpm-lock.yaml` — the repo is pnpm everywhere.
+
+---
+
+## 2026-06-06 — Backend-canonical rendering (corrects the earlier same-day reversal)
+
+**Decision (with the user): the single renderer is the C# backend; the frontend fetches its output.** This corrects an earlier same-day entry that removed backend rendering and kept the PWA as the renderer — the wrong half.
+
+**The round-trip, honestly:** The codebase had *two* renderers — the PWA (browser canvas, for preview + WebUSB) and a Node `lablr-render` sidecar (node-canvas, for the AI print path). That genuinely violated "one renderer / preview = print." This morning I unified the wrong way: deleted `lablr-render` + `print_draft` and kept the PWA as the renderer. But the user's actual goal is **zero-touch AI printing** ("tell ChatGPT to make a label and print it; it just comes out — no app"), which *requires* backend rendering (the AI has no browser). The frontend should only **check** things and do occasional manual config.
+
+**The insight that resolves it:** the Node sidecar only existed to share *one render codebase* between frontend and backend. Once the frontend stops rendering (it just displays the backend's image), there's nothing to share — so rendering goes back into **C# (SkiaSharp)** and Node is dropped entirely. There is exactly one renderer, and preview == print because the preview PNG and the print job come from the *same* backend render of the *same* draft.
+
+**What shipped:**
+- Restored the C# `LabelRenderer` (SkiaSharp + Svg.Skia) from history (it already matched the wireframe model: shrink-to-fit/wrap/align/valign, orientation variants, SVG pictograms, 1-bit DYMO LW450 job). Refactored so one render path yields both a **preview PNG** and the **job bytes**; the preview is 1-bit-thresholded so it shows exactly what prints.
+- New endpoints: `GET /api/render/preview`, `GET /api/render/template-preview` (sample values), `GET /api/render/job` (WebUSB bytes). Restored `POST /api/print/draft` + MCP `print_draft`/`list_bridges` (render + relay to bridge).
+- Frontend rewired to consume the backend: previews are `<img>` of `/api/render/preview`; USB print fetches `/api/render/job` bytes and `transferOut`s them; bridge print POSTs `/api/print/draft`. Deleted the client renderer (`services/render.ts`) and the client pictogram preloader (`services/pictograms.ts`); `dymo.ts` is now WebUSB transport only.
+- Dropped the Node `lablr-render` image/service for good. SkiaSharp needs `libfontconfig1` + `fonts-dejavu-core` in the API image (restored to the Dockerfile).
+
+Verified locally: both bc547 and acetone (with GHS pictograms) render correctly through the C# pipeline; API + PWA build clean. Memory `backend-canonical-render` records the durable intent so this doesn't flip again.

@@ -1,21 +1,21 @@
-import { useMemo, type RefObject } from "react"
+import { useMemo } from "react"
 import type { LabelStock, Orientation, Printer } from "@/types"
 
 /**
- * Sizes the on-screen preview box to the label's aspect ratio. The canvas it
- * wraps holds the exact print bitmap (rendered at the printer's DPI); CSS just
- * scales that bitmap down to fit the screen.
+ * Sizes the on-screen preview box to the label's aspect ratio and shows the
+ * backend-rendered PNG (`src`). The backend is the single renderer, so this image
+ * is the exact 1-bit bitmap that prints — CSS just scales it down to fit.
  */
 export function LabelPreviewContainer({
   stock,
   orientation,
   printer,
-  canvasRef,
+  src,
 }: {
   stock: LabelStock
   orientation: Orientation
   printer: Printer
-  canvasRef: RefObject<HTMLCanvasElement | null>
+  src: string
 }) {
   const dimensions = useMemo(() => {
     const isLandscape = orientation === "landscape"
@@ -39,13 +39,15 @@ export function LabelPreviewContainer({
       className="flex items-center justify-center rounded-md bg-white p-1 shadow-sm ring-1 ring-black/10"
       style={{ width: `${dimensions.width}px`, height: `${dimensions.height}px` }}
     >
-      <canvas
-        ref={canvasRef}
+      <img
+        src={src}
+        alt="Label preview"
         style={{
           width: "100%",
           height: "100%",
           imageRendering: "pixelated",
           display: "block",
+          objectFit: "contain",
         }}
       />
     </div>

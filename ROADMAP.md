@@ -85,12 +85,12 @@
 - [ ] **22.** Add the remaining real templates (SMD, chemical, storage families)
 - [ ] **25.** Add a simple server/API if needed
 - [ ] **26.** Add draft persistence / short links if needed
-- [ ] **29.** Add headless/server-side printing if it becomes useful
+- [x] **29.** Headless/server-side printing — **done**: backend renders (SkiaSharp) + MCP `print_draft` relays to a bridge; the AI prints with no app open. See the "Backend-canonical rendering" note below.
 - [ ] **30.** Add remote printer support if it becomes useful
 
 ## Dropped / superseded
 
-- ~~Server-side renderer (`lablr-render`) + headless print (`print_draft` / `/api/print/draft`)~~ — **removed 2026-06-06**: a Node/node-canvas service re-rendered the label so the AI could print without a browser. That is a **second renderer** — its bitmap can differ from the browser preview, breaking "preview = print." Reverted to one renderer: the PWA renders, and the backend only relays the PWA's bytes to a bridge. The AI creates a draft + link; the human previews and prints. (Settles item **29** as *rejected*, not deferred. See LOGBOOK 2026-06-06.)
+- **Backend-canonical rendering (2026-06-06, final).** Settled after a same-day round-trip: briefly removed *all* backend rendering (kept the PWA as renderer), then reversed — the **C# backend (`LabelRenderer`/SkiaSharp) is the single renderer**. It serves the preview PNG and the print job; the **PWA fetches both and never rasterizes**. The Node `lablr-render` sidecar is **dropped** (it only existed to share the PWA's TS render code — moot once the PWA stops rendering). This makes **item 29 (headless/server-side printing) DONE**: MCP `print_draft` renders + relays to a bridge, so the AI prints with no app open. See LOGBOOK 2026-06-06 + memory `backend-canonical-render`.
 - ~~**6.** Minimal label editor~~ — **dropped**: the PWA renders/prints, it doesn't author; values come from AI-created drafts.
 - ~~**45.** Remove presets~~ — **reverted, settled**: presets are KEPT. A use case ("Aida box", "Vial", "Bucket") is a named template+media; presets give consistency (same thing → same output). The print page (46) is the override. Don't relitigate — see CLAUDE.md.
 - ~~**35.** Auto-fit text (initial idea)~~ — **folded into 39/40/43**.

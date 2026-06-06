@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { ChevronLeft, Loader2, Trash2, X } from "lucide-react"
 import type { Template } from "@/types"
 import { deleteTemplate, listTemplates } from "@/services/templatesApi"
-import { renderService } from "@/services/render"
 import { configService } from "@/services/config"
-import { getPictogram, usePictogramsReady } from "@/services/pictograms"
+import { templatePreviewUrl } from "@/services/printApi"
 import { Button } from "@/components/ui/button"
 
 // Lists templates with a live preview + delete. Authoring is done via the AI
@@ -141,46 +140,16 @@ function fitBox(template: Template, maxW: number, maxH: number) {
   return { w: Math.max(1, Math.round(wMm * scale)), h: Math.max(1, Math.round(hMm * scale)), wMm, hMm }
 }
 
-// Renders a template with placeholder field values (field names as sample text,
-// a real pictogram for any pictogram slots), fit-scaled into a w×h canvas.
+// Template preview rendered by the backend (the single renderer) with sample
+// field values, fit-scaled into a w×h box.
 function TemplateRender({ template, w, h }: { template: Template; w: number; h: number }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const picReady = usePictogramsReady()
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-    ctx.fillStyle = "white"
-    ctx.fillRect(0, 0, w, h)
-
-    const stock = configService.getLabelStock(template.label)
-    if (!stock) return
-    const orientation = configService.getTemplateOrientations(template)[0] ?? "portrait"
-    const printer = configService.getPrinterForStock(stock)
-    const elements = configService.getTemplateElements(template, orientation)
-
-    const picNames = Object.keys(configService.getPictogramRegistry())
-    const fields: Record<string, string> = {}
-    for (const el of elements)
-      fields[el.field] = el.type === "pictogram" ? (picNames[0] ?? "") : el.field
-
-    const off = document.createElement("canvas")
-    renderService.render(off, { draft: { id: "preview", fields }, elements, orientation, stock, printer, getPictogram })
-
-    const scale = Math.min(w / off.width, h / off.height)
-    const sw = off.width * scale
-    const sh = off.height * scale
-    ctx.drawImage(off, (w - sw) / 2, (h - sh) / 2, sw, sh)
-  }, [template, w, h, picReady])
-
   return (
-    <canvas
-      ref={canvasRef}
+    <img
+      src={templatePreviewUrl(template.id)}
+      alt=""
       width={w}
       height={h}
-      style={{ width: w, height: h, imageRendering: "pixelated", display: "block" }}
+      style={{ width: w, height: h, objectFit: "contain", imageRendering: "pixelated", display: "block" }}
     />
   )
 }

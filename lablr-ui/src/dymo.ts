@@ -1,23 +1,12 @@
-// Minimal WebUSB driver for the DYMO LabelWriter 450 (raster mode).
+// Minimal WebUSB transport for the DYMO LabelWriter 450.
 //
-// Protocol verified against the CUPS DYMO driver (rastertolabel.c), DYMO's
-// LW 450-series command manual, and the SYN raster-mode spec:
-//   reset:        0x1B x100, then ESC @ (0x1B 0x40)
-//   label length: ESC L (0x1B 0x4C) hi lo   — length in dots
-//   bytes/line:   ESC D (0x1B 0x44) n        — n = 1..84
-//   raster line:  SYN (0x16) + n data bytes  — MSB = leftmost dot, bit 1 = black
-//   eject:        ESC E (0x1B 0x45)          — form feed to tear bar
+// Rendering and the LW450 raster encoding now live on the backend (the single
+// renderer). This module only opens the device and pushes already-built job
+// bytes to its bulk OUT endpoint — so "preview = print" holds: the bytes here
+// are exactly what the backend rendered and previewed.
 
 export const DYMO_VENDOR_ID = 0x0922
 export const DYMO_LW450_PRODUCT_ID = 0x0020
-export const DPI = 300
-export const MAX_BYTES_PER_LINE = 84
-
-const ESC = 0x1b
-const SYN = 0x16
-
-/** Millimetres to printer dots at the head's native resolution. */
-export const mmToDots = (mm: number) => Math.round((mm / 25.4) * DPI)
 
 // --- Minimal WebUSB typings (lib.dom omits these without @types/w3c-web-usb) ---
 interface UsbOutTransferResult {
@@ -89,130 +78,8 @@ export function onUsbDisconnect(cb: (device: UsbDevice) => void): () => void {
   return () => usb.removeEventListener("disconnect", handler)
 }
 
-/**
- * Pack canvas pixels into 1-bit raster lines, MSB = leftmost dot, bit 1 = black.
- * A pixel counts as black when its luminance is below `threshold` (0..255).
- * Width is rounded up to a whole number of bytes.
- */
-export function packToRaster(
-  image: ImageData,
-  threshold = 128,
-): { bytesPerLine: number; lines: Uint8Array } {
-  const { width, height, data } = image
-  const bytesPerLine = Math.ceil(width / 8)
-  const lines = new Uint8Array(bytesPerLine * height)
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4
-      // Luminance; treat transparent pixels as white.
-      const a = data[i + 3]
-      const lum = a === 0 ? 255 : (data[i] + data[i + 1] + data[i + 2]) / 3
-      if (lum < threshold) {
-        lines[y * bytesPerLine + (x >> 3)] |= 0x80 >> (x & 7)
-      }
-    }
-  }
-  return { bytesPerLine, lines }
-}
-
-/**
- * Where to place the label bitmap on the print head (physical calibration),
- * in dots. The label is composited onto a full-head-width bitmap at this
- * position — pure pixels, so it always moves (unlike the ESC B dot-tab, which
- * the LabelWriter 450 ignores in practice).
- */
-export interface HeadOffset {
-  x?: number // left, dots
-  y?: number // top, dots
-}
-
-/** Build the command stream for one label from packed full-width raster lines. */
-export function buildJob(
-  lines: Uint8Array,
-  bytesPerLine: number,
-  height: number,
-): Uint8Array {
-  if (bytesPerLine > MAX_BYTES_PER_LINE) {
-    throw new Error(`bytesPerLine ${bytesPerLine} exceeds head max ${MAX_BYTES_PER_LINE}`)
-  }
-  const out: number[] = []
-
-  // Reset: flush any partial command, then ESC @.
-  for (let i = 0; i < 100; i++) out.push(ESC)
-  out.push(ESC, 0x40)
-
-  // ESC L hi lo — label length in dots.
-  out.push(ESC, 0x4c, (height >> 8) & 0xff, height & 0xff)
-  // ESC D n — bytes per line.
-  out.push(ESC, 0x44, bytesPerLine)
-
-  // One SYN + data per raster line.
-  for (let y = 0; y < height; y++) {
-    out.push(SYN)
-    const start = y * bytesPerLine
-    for (let b = 0; b < bytesPerLine; b++) out.push(lines[start + b])
-  }
-
-  // ESC E — form feed / eject to tear bar.
-  out.push(ESC, 0x45)
-  return Uint8Array.from(out)
-}
-
-/**
- * Composite a label-sized canvas onto a full-head-width bitmap at the head
- * offset, pack it, and return the complete LabelWriter job bytes. This is the
- * single source of the print payload — used both by the WebUSB path
- * (printCanvas) and the remote-bridge path (POST to /api/agents/{id}/print),
- * so "Preview = Print" holds across transports.
- *
- * The label canvas is expected to already be 1-bit (the renderer thresholds
- * it), so the threshold here is just a safety net.
- */
-/** Create a blank canvas. Injectable so this runs in the browser and in Node
- *  (node-canvas) — keeping a single renderer across both hosts. */
-export type CanvasFactory = (w: number, h: number) => HTMLCanvasElement
-
-const browserCanvas: CanvasFactory = (w, h) => {
-  const c = document.createElement("canvas")
-  c.width = w
-  c.height = h
-  return c
-}
-
-export function buildJobFromCanvas(
-  canvas: HTMLCanvasElement,
-  offset: HeadOffset = {},
-  threshold = 128,
-  makeCanvas: CanvasFactory = browserCanvas,
-): Uint8Array {
-  // Offsets may be negative (nudge the label left/up); drawImage clips the
-  // part that falls off the head. Only positive Y needs extra height.
-  const x = Math.round(offset.x ?? 0)
-  const y = Math.round(offset.y ?? 0)
-
-  const head = makeCanvas(MAX_BYTES_PER_LINE * 8, canvas.height + Math.max(0, y)) // full head width (672 dots)
-  const ctx = head.getContext("2d")
-  if (!ctx) throw new Error("no 2d context")
-  ctx.fillStyle = "white"
-  ctx.fillRect(0, 0, head.width, head.height)
-  ctx.drawImage(canvas, x, y)
-
-  const image = ctx.getImageData(0, 0, head.width, head.height)
-  const { bytesPerLine, lines } = packToRaster(image, threshold)
-  return buildJob(lines, bytesPerLine, head.height)
-}
-
-/** Build the job from a canvas and print it on an opened DYMO. ep#2 is bulk OUT. */
-export async function printCanvas(
-  device: UsbDevice,
-  canvas: HTMLCanvasElement,
-  offset: HeadOffset = {},
-  threshold = 128,
-): Promise<void> {
-  const job = buildJobFromCanvas(canvas, offset, threshold)
-  const result = await device.transferOut(2, job)
-  if (result.status !== "ok") {
-    throw new Error(`transferOut status: ${result.status}`)
-  }
+/** Send a backend-built LW450 job to the printer. ep#2 is the bulk OUT endpoint. */
+export async function printBytes(device: UsbDevice, bytes: Uint8Array): Promise<void> {
+  const result = await device.transferOut(2, bytes)
+  if (result.status !== "ok") throw new Error(`transferOut status: ${result.status}`)
 }

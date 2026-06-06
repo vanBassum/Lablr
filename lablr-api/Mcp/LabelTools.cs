@@ -91,9 +91,42 @@ public sealed class LabelTools
         return new { id = draft.Id, url = links.DraftUrl(draft.Id) };
     }
 
-    // The AI never renders or prints — it only produces draft data and returns a
-    // deep link. The user opens that link in the PWA, which is the single renderer
-    // and the only thing that prints (preview = print, by construction).
+    // ---------- Printing (headless / AI-initiated) ----------
+
+    [McpServerTool(Name = "list_bridges")]
+    [Description("List the print bridges (the actual connected printers) you can print on. " +
+                 "Match the user's words (e.g. 'workshop Dymo') to a bridge name, then pass its " +
+                 "id as agentId to print_draft. Only bridges with online=true and ready=true can print.")]
+    public static object ListBridges(PrintAgentStore agents, PrintAgentRegistry registry) =>
+        agents.List().Select(a =>
+        {
+            var live = registry.GetLive(a.Id);
+            return new
+            {
+                id = a.Id,
+                name = a.Name,
+                online = live is not null,
+                ready = live?.PrinterReady ?? false,
+                isDefault = a.IsDefault,
+            };
+        });
+
+    [McpServerTool(Name = "print_draft")]
+    [Description("Render a draft to its label and print it on a connected bridge — this actually " +
+                 "prints a physical label, no app needed. Uses the draft's template (or pass " +
+                 "templateId) and the starred default printer (or pass agentId from list_bridges). " +
+                 "The bitmap is rendered on the backend — the same render the PWA preview shows.")]
+    public static async Task<object> PrintDraft(
+        LabelPrintService print,
+        [Description("Draft id from create_draft.")] string draftId,
+        [Description("Optional template id; defaults to the draft's template or an auto-match.")] string? templateId = null,
+        [Description("Optional bridge id from list_bridges; defaults to the starred default printer.")] string? agentId = null,
+        [Description("Optional orientation ('portrait' or 'landscape'); defaults to the template's.")] string? orientation = null)
+    {
+        var r = await print.PrintDraftAsync(draftId, templateId, agentId, orientation, 0, 0, CancellationToken.None);
+        if (!r.Ok) throw new McpException(r.Error!);
+        return new { ok = true, printer = r.AgentId, bytes = r.Bytes };
+    }
 
     // ---------- Config authoring (validation lives in ConfigService) ----------
 

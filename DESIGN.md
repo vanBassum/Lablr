@@ -400,6 +400,8 @@ Draft → Separate print renderer
 
 **Key principle:** There is exactly one renderer. The bitmap shown on screen is the identical bitmap sent to the printer. No separate preview path.
 
+The renderer runs on the **backend** (C#/SkiaSharp). The frontend fetches the rendered image to preview and the rendered bytes to print — it never builds a second bitmap. This is also what lets the AI print headlessly (no browser in the loop). See CLAUDE.md + memory `backend-canonical-render`.
+
 ---
 
 ## Configuration

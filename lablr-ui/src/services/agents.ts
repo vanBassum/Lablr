@@ -65,13 +65,3 @@ export async function deleteAgent(id: string): Promise<void> {
 export async function setDefaultAgent(id: string): Promise<void> {
   await ok(await fetch(`/api/agents/${encodeURIComponent(id)}/default`, { method: "POST" }))
 }
-
-/** Hand a rendered job (raw printer bytes) to the backend for relay to a bridge. */
-export async function printToAgent(id: string, bytes: Uint8Array): Promise<void> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(id)}/print`, {
-    method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
-    body: bytes as BlobPart,
-  })
-  await ok(res)
-}

@@ -3,8 +3,8 @@ import { configReady, configService } from "@/services/config"
 import { draftsReady, draftService } from "@/services/drafts"
 
 // Kick off the runtime loads once, and expose a readiness gate for the app shell.
-// Pictograms load after the config (chained in pictograms.ts) and previews
-// re-render via usePictogramsReady, so the gate only waits on config + drafts.
+// Rendering (incl. pictograms) happens on the backend now, so the gate only
+// waits on config + drafts.
 
 let started = false
 function start() {

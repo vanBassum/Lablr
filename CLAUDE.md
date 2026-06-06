@@ -29,18 +29,21 @@ Primary use cases: electronics workshop (SMD parts), chemical storage (bottles),
 
 ## Active Decisions (v1)
 
-### Frontend-first — the PWA does everything
-The **React PWA is the canonical renderer**. It loads config, edits a draft, renders the label to a canvas bitmap, shows the preview, and sends that bitmap to the printer. No backend rendering.
+### Backend-canonical rendering — one renderer, on the server
+The **C# backend (`LabelRenderer`, SkiaSharp) is the single renderer**. It turns a draft+template into the 1-bit label bitmap and, from that same bitmap, produces **both** the preview PNG and the DYMO print job. The **PWA does not render** — it fetches the rendered image to show the preview, and fetches the rendered bytes (or asks the backend to relay them) to print. This is what lets the **AI print headlessly** ("make a label and print it" — nothing opens); the frontend is just for checking and the occasional manual tweak.
+
+> Reversal note: an earlier "frontend-first / PWA is the canonical renderer / no backend rendering" decision was reversed on 2026-06-06 — see LOGBOOK + memory `backend-canonical-render`. Don't reintroduce client-side rendering.
 
 ### Preview = Print (hard requirement, invariant)
-There is **exactly one renderer and one bitmap**. The bitmap shown on screen is the identical bitmap sent to the printer. A second rendering path must never exist — this holds by construction, not as a feature to add later.
+There is **exactly one renderer and one bitmap**. Because the frontend displays the backend's rendered image and printing uses the backend's render of the same draft, the preview is the identical bitmap that prints — by construction. A second (client-side) renderer must never exist.
 
-### Rendering pipeline (all client-side)
+### Rendering pipeline (all server-side, C#)
 ```
-draft data + template → canvas at exact dot size → threshold to 1-bit bitmap
-                      → that same bitmap = preview AND print payload
+draft + template → SkiaSharp canvas at exact dot size → threshold to 1-bit bitmap
+   → preview:  PNG of that bitmap  (GET /api/render/preview)
+   → print:    that same bitmap → DYMO LW450 job  (GET /api/render/job → WebUSB, or POST /api/print/draft → bridge)
 ```
-DPI is a property of the **media/printer profile**, passed into the mm→dots step — never hard-coded in the renderer.
+DPI is a property of the **printer profile**, passed into the mm→dots step — never hard-coded in the renderer. The print-head offset (stock calibration + manual nudge) is applied only when building the job, never to the preview.
 
 ### Templates — declarative layout first
 v1 templates are a small **declarative layout** the canvas renderer interprets directly (stacks, text fields, font size/weight/align; barcode/QR later). Claude- and human-editable. **HTML/CSS templates are deferred** to a possible later alternative renderer — decoupled on purpose.
@@ -58,22 +61,24 @@ Labels compose from decoupled concepts:
 The renderer and printer live on the **same device** — the production target is an **Android phone** (Chrome supports PWA install + Web Bluetooth). Transport is **not Bluetooth-only**: it lives behind a single `Printer` interface with swappable implementations. The **first implementation is WebUSB from desktop Chrome**, driving a USB Dymo LabelWriter 450 — chosen to prove the pipeline with no Bluetooth/OTG unknowns. **Web Bluetooth** (for the Niimbot, on Android) is a second implementation added later. The bitmap pipeline is identical across transports; only byte-delivery differs.
 
 ### End-to-end workflow
+Two ways to get a label, both off the one backend renderer:
 ```
-AI calls the MCP create_draft tool → backend stores the draft in RAM → returns a #/d/{id} link
-   → tap link → PWA opens directly on the draft → preview → one tap → print
+Zero-touch (AI prints):   AI create_draft → AI print_draft(agentId) → backend renders → relays to the bridge → label prints
+Check-then-print (human): AI create_draft → #/d/{id} link → PWA shows the backend preview → one tap → print (WebUSB or bridge)
 ```
-The AI never renders or prints — it only produces draft data via MCP and gets back a URL. The hosted backend (not the user's PC) holds drafts, so the flow works with the PC off.
+The AI prints **headlessly** via `print_draft` (no app needed); the PWA flow exists for checking/manual tweaks. The hosted backend (not the user's PC) holds drafts and renders, so both flows work with the PC off.
 
 ### Persistence & the backend (now active)
 
 The **lablr-api** backend is live (no longer dormant). It:
+- is the **single renderer** — `LabelRenderer` (SkiaSharp) turns draft+template into the 1-bit bitmap and serves `GET /api/render/preview` (PNG), `GET /api/render/template-preview` (PNG, sample values), and `GET /api/render/job` (DYMO bytes for WebUSB);
 - holds **drafts in memory** (TTL eviction, never in the DB) — `POST/GET /api/drafts`;
 - stores the **config** (labels, templates, printers, pictograms) in an **embedded SQLite** file (`Db:Path`, a persistent volume in prod). The YAML in `Config:Dir` **seeds the DB on first boot only**; after that **the DB is the source of truth** and is edited at runtime via REST/MCP. (Editing the mounted YAML after first boot does nothing — reseed by starting with an empty DB.) Schema changes ship as **EF Core migrations** (`lablr-api/Data/Migrations/`), applied at startup; a pre-migrations DB is auto-baselined so it isn't recreated. Serves `GET /api/config` and pictogram SVGs (`/pictograms`);
-- relays print jobs to a connected bridge as a **dumb byte forwarder** (`POST /api/agents/{id}/print` → WebSocket) — it forwards the PWA-rendered bytes verbatim and **never renders**;
-- exposes an **MCP server** (Streamable HTTP at `/mcp`): read/author config (`list_templates`, `upsert_*`, …) and `create_draft`, which returns a `#/d/{id}` deep link. There is **no `print_draft`** — the AI never renders or prints;
+- **prints**: `POST /api/print/draft` and the MCP `print_draft` render the job and relay it to a connected bridge over a WebSocket (`/agent/ws`). The bridge is a dumb byte pipe;
+- exposes an **MCP server** (Streamable HTTP at `/mcp`): read/author config (`list_templates`, `upsert_*`, …), `create_draft` (returns a `#/d/{id}` deep link), `list_bridges`, and `print_draft` (renders + prints headlessly — the AI's zero-touch path);
 - **serves the built PWA same-origin** (`wwwroot`).
 
-It **never renders** — the PWA is the single renderer. MCP auth is deferred (generic MCP for now; ChatGPT's OAuth 2.1 + DCR is item 53).
+The backend is the renderer; the PWA fetches its output. MCP auth is deferred (generic MCP for now; ChatGPT's OAuth 2.1 + DCR is item 53).
 
 ---
 
@@ -82,7 +87,8 @@ It **never renders** — the PWA is the single renderer. MCP auth is deferred (g
 - Inventory / stock / BOM tracking, component or product records
 - Complex databases (the embedded SQLite **config** store is fine — it holds labels/templates/printers/pictograms, never inventory; drafts stay in RAM)
 - User accounts, permissions, mandatory setup
-- Backend/headless rendering, Chromium (the backend relays bytes, it never rasterizes — preview = print)
+- A **browser/Chromium** on the server — rendering is C#/SkiaSharp, not a headless browser. (Backend rendering itself is core, not out of scope.)
+- A **second renderer** — the backend renderer is the only one; the frontend must never rasterize (preview = print)
 
 Components, chemicals, and products are optional integrations — never required. Labels are independent objects created on demand.
 
@@ -97,8 +103,8 @@ Runs on the strato-stack homelab at **vanbassum.com**, behind Traefik (HTTPS via
 ## Project Structure
 
 ```
-/lablr-ui      → React PWA — the single renderer; renders + previews + prints (WebUSB or via the bridge relay)
-/lablr-api     → .NET 9 minimal API — SQLite config store + in-memory drafts + MCP + bridge byte-relay; serves the PWA. Never renders.
+/lablr-ui      → React PWA — fetches the backend-rendered PNG to preview; prints backend-built bytes (WebUSB) or asks the backend to relay to a bridge. Does NOT render.
+/lablr-api     → .NET 9 minimal API — the single renderer (LabelRenderer/SkiaSharp) + SQLite config store + in-memory drafts + MCP (incl. print_draft) + bridge relay; serves the PWA
 /lablr-bridge  → ESP32-S3 firmware: a BLE/cloud ⇄ USB-host "dumb pipe" so an Android phone can print to a USB-only Dymo
 /label-config  → seed YAML/SVG (labels, templates, printers, pictograms, drafts) — seeds the SQLite DB on first boot (a mount in prod)
 ```

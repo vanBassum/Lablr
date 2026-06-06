@@ -12,8 +12,7 @@ import {
   getGrantedDymo,
   onUsbDisconnect,
   openDymo,
-  printCanvas,
-  type HeadOffset,
+  printBytes,
   type UsbDevice,
 } from "@/dymo"
 
@@ -24,7 +23,7 @@ interface PrinterApi {
   error: string
   connect: () => Promise<void>
   disconnect: () => Promise<void>
-  print: (canvas: HTMLCanvasElement, offset?: HeadOffset) => Promise<void>
+  print: (bytes: Uint8Array) => Promise<void>
 }
 
 const PrinterContext = createContext<PrinterApi | undefined>(undefined)
@@ -91,7 +90,7 @@ export function PrinterProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const print = useCallback(
-    async (canvas: HTMLCanvasElement, offset?: HeadOffset) => {
+    async (bytes: Uint8Array) => {
       setError("")
       // Connect once on first use (or after a disconnect); reuse thereafter.
       if (!deviceRef.current) await connect()
@@ -99,7 +98,7 @@ export function PrinterProvider({ children }: { children: ReactNode }) {
       if (!d) throw new Error("No printer connected")
       setStatus("printing")
       try {
-        await printCanvas(d, canvas, offset)
+        await printBytes(d, bytes)
         setStatus("connected")
       } catch (e) {
         setStatus("connected")

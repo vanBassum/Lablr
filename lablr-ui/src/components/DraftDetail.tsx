@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import {
   ChevronDown,
   ChevronLeft,
@@ -20,9 +20,8 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer"
 import { configService } from "@/services/config"
-import { renderService } from "@/services/render"
 import { draftService } from "@/services/drafts"
-import { getPictogram, usePictogramsReady } from "@/services/pictograms"
+import { draftPreviewUrl } from "@/services/printApi"
 import type { Orientation } from "@/types"
 
 export function DraftDetail({
@@ -32,7 +31,6 @@ export function DraftDetail({
   draftId: string
   onBack: () => void
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const printTarget = usePrintTarget()
 
   const [offsetX, setOffsetX] = useState(0)
@@ -42,7 +40,6 @@ export function DraftDetail({
 
   const draft = draftService.getDraft(draftId)
   const draftName = draft ? Object.values(draft.fields)[0] : draftId
-  const pictogramsReady = usePictogramsReady()
 
   // Auto-discover matching templates; let the user pick when more than one fits.
   const matchingTemplates = draft ? configService.getMatchingTemplates(draft) : []
@@ -60,38 +57,27 @@ export function DraftDetail({
   const stock = template ? configService.getLabelStock(template.label) : undefined
   const printer = stock ? configService.getPrinterForStock(stock) : undefined
 
-  // Re-render the single bitmap whenever inputs change (incl. once pictograms load).
-  useEffect(() => {
-    if (!canvasRef.current || !template || !draft || !stock || !printer) return
-    const elements = configService.getTemplateElements(template, activeOrientation)
-    renderService.render(canvasRef.current, {
-      draft,
-      elements,
-      orientation: activeOrientation,
-      stock,
-      printer,
-      getPictogram,
-    })
-  }, [template, draft, stock, printer, activeOrientation, pictogramsReady])
+  // The backend is the single renderer — the preview is the exact bitmap it prints.
+  const previewSrc = template
+    ? draftPreviewUrl(draftId, template.id, activeOrientation)
+    : ""
 
   const dotsToMm = (dots: number) => (printer ? ((dots / printer.dpi) * 25.4).toFixed(1) : "0.0")
 
   async function handlePrint() {
-    const canvas = canvasRef.current
-    if (!canvas || !stock || !printer) return
+    if (!template) return
     setBusy(true)
     setStatus({ ok: true, msg: "Printing…" })
     try {
-      // Offset = stock calibration (mm→dots) + manual nudge. Applied only here,
-      // at print time — never baked into the preview bitmap.
-      const mmToDots = printer.dpi / 25.4
-      const x = Math.round((stock.offsetCorrectionMm?.x ?? 0) * mmToDots) + offsetX
-      const y = Math.round((stock.offsetCorrectionMm?.y ?? 0) * mmToDots) + offsetY
-      // The print head feeds the label lengthwise at a fixed width. A landscape
-      // bitmap is wider than the head, so rotate it 90° to the physical media
-      // orientation. Same pixels as the preview — a device mapping, not a re-render.
-      const payload = activeOrientation === "landscape" ? rotate90cw(canvas) : canvas
-      await printTarget.print(payload, { x, y })
+      // Offset nudge (dots) is applied by the backend at print time on top of the
+      // stock calibration — never baked into the preview.
+      await printTarget.print({
+        draftId,
+        templateId: template.id,
+        orientation: activeOrientation,
+        nudgeX: offsetX,
+        nudgeY: offsetY,
+      })
       setStatus({ ok: true, msg: `Printed "${draftName}"` })
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message })
@@ -116,7 +102,7 @@ export function DraftDetail({
               stock={stock}
               orientation={activeOrientation}
               printer={printer}
-              canvasRef={canvasRef}
+              src={previewSrc}
             />
             {matchingTemplates.length > 1 ? (
               <OptionGroup label="Template">
@@ -221,23 +207,6 @@ export function DraftDetail({
       </div>
     </>
   )
-}
-
-/**
- * Rotate a canvas 90° clockwise into a new canvas (dimensions swapped).
- * Used to map a landscape preview onto the printer's physical media orientation.
- * If a landscape print comes out upside-down/mirrored, flip to a CCW rotation.
- */
-function rotate90cw(src: HTMLCanvasElement): HTMLCanvasElement {
-  const out = document.createElement("canvas")
-  out.width = src.height
-  out.height = src.width
-  const ctx = out.getContext("2d")
-  if (!ctx) throw new Error("no 2d context")
-  ctx.translate(out.width, 0)
-  ctx.rotate(Math.PI / 2)
-  ctx.drawImage(src, 0, 0)
-  return out
 }
 
 /** A labeled row of choice buttons (e.g. Template, Orientation). */
