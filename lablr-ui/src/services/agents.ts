@@ -1,13 +1,22 @@
-// Live print-bridge agents: ESP devices connected to the backend over WebSocket
-// (Option C). The backend relays the rendered job bytes to a chosen agent, which
-// streams them to its USB printer. Distinct from config "printers" (profiles).
+// Registered print bridges (Option C). Each is a persistent record with a secret
+// token; the device connects to the backend with it and its live state appears
+// here. The backend relays rendered job bytes to a chosen bridge.
 
 export interface PrintAgent {
   id: string
   name: string
-  status: "ready" | "no-printer" | string
-  connectedAt: string
-  lastSeen: string
+  online: boolean
+  status: "ready" | "no-printer" | "offline" | string
+  deviceId?: string | null
+  lastSeen?: string | null
+  createdAt: string
+}
+
+/** Returned only by create — the token is shown to the user once. */
+export interface PrintAgentCreated {
+  id: string
+  name: string
+  token: string
 }
 
 async function ok(res: Response): Promise<void> {
@@ -22,14 +31,37 @@ async function ok(res: Response): Promise<void> {
   throw new Error(message)
 }
 
-export function listAgents(): Promise<PrintAgent[]> {
-  return fetch("/api/agents").then(async (r) => {
-    await ok(r)
-    return r.json() as Promise<PrintAgent[]>
-  })
+async function json<T>(res: Response): Promise<T> {
+  await ok(res)
+  return res.json() as Promise<T>
 }
 
-/** Hand a rendered job (raw printer bytes) to the backend for relay to an agent. */
+export function listAgents(): Promise<PrintAgent[]> {
+  return fetch("/api/agents").then((r) => json<PrintAgent[]>(r))
+}
+
+export function createAgent(name: string): Promise<PrintAgentCreated> {
+  return fetch("/api/agents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  }).then((r) => json<PrintAgentCreated>(r))
+}
+
+export function renameAgent(id: string, name: string): Promise<PrintAgent> {
+  return fetch(`/api/agents/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  }).then((r) => json<PrintAgent>(r))
+}
+
+export async function deleteAgent(id: string): Promise<void> {
+  const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" })
+  if (!res.ok && res.status !== 404) throw new Error(`${res.status}`)
+}
+
+/** Hand a rendered job (raw printer bytes) to the backend for relay to a bridge. */
 export async function printToAgent(id: string, bytes: Uint8Array): Promise<void> {
   const res = await fetch(`/api/agents/${encodeURIComponent(id)}/print`, {
     method: "POST",

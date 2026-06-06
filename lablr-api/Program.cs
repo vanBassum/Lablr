@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,12 +17,9 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ConfigService>();
 builder.Services.AddSingleton<DraftStore>();
 builder.Services.AddSingleton<LinkService>();
+builder.Services.AddSingleton<PrintAgentStore>();
 builder.Services.AddSingleton<PrintAgentRegistry>();
 builder.Services.AddHostedService<DraftSweeper>();
-
-// Optional shared token guarding the agent WebSocket (/agent/ws). Unset = open
-// (dev). In prod set Agents__Token; the bridge sends it as ?token= or Bearer.
-var agentsToken = builder.Configuration["Agents:Token"];
 
 // MCP server (Streamable HTTP at /mcp): an AI reads + authors config and creates drafts.
 builder.Services.AddMcpServer().WithHttpTransport().WithTools<LabelTools>();
@@ -88,33 +83,32 @@ var mcp = app.MapMcp("/mcp");
 if (mcpAuth.Enabled)
     mcp.RequireAuthorization();
 
-// Print-bridge agents connect here (wss in prod, terminated at Traefik). Guard
-// with the optional shared token. Must be exempt from interactive forward-auth
+// Print bridges connect here (wss in prod, terminated at Traefik). The device
+// presents its per-printer token (?token= or Bearer); we resolve it to a
+// registered agent record. Must be exempt from interactive forward-auth
 // upstream — devices authenticate with the token, not a browser login.
-app.Map("/agent/ws", async (HttpContext ctx, PrintAgentRegistry registry, ILoggerFactory lf) =>
+app.Map("/agent/ws", async (HttpContext ctx, PrintAgentStore store, PrintAgentRegistry registry, ILoggerFactory lf) =>
 {
     if (!ctx.WebSockets.IsWebSocketRequest)
     {
         ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
         return;
     }
-    if (!string.IsNullOrEmpty(agentsToken))
+    var auth = ctx.Request.Headers.Authorization.ToString();
+    var token = auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? auth["Bearer ".Length..].Trim()
+        : ctx.Request.Query["token"].ToString();
+
+    var agent = store.FindByToken(token);
+    if (agent is null)
     {
-        var auth = ctx.Request.Headers.Authorization.ToString();
-        var provided = auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-            ? auth["Bearer ".Length..].Trim()
-            : ctx.Request.Query["token"].ToString();
-        if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(agentsToken)))
-        {
-            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return;
-        }
+        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
     }
 
     using var socket = await ctx.WebSockets.AcceptWebSocketAsync();
     await AgentSocketHandler.HandleAsync(
-        socket, registry, lf.CreateLogger("Agent"), ctx.RequestAborted);
+        socket, registry, agent.Id, lf.CreateLogger("Agent"), ctx.RequestAborted);
 });
 
 // REST endpoints (Controllers/): config, drafts, pictograms, health, agents.

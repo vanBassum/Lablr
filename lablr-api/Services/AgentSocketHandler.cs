@@ -5,17 +5,20 @@ using System.Text.Json;
 namespace Lablr.Api.Services;
 
 /// <summary>
-/// Drives one agent WebSocket: reads the agent's JSON control messages
-/// (<c>hello</c>, <c>status</c>) and keeps the registry up to date. Print bytes
-/// flow the other way (registry -> socket) and are sent from the controller.
+/// Drives one agent WebSocket. The agent id has already been resolved from the
+/// device's token (see Program.cs). We read the device's JSON control messages
+/// (<c>hello</c>, <c>status</c>) to mark it online and track printer readiness.
+/// Print bytes flow the other way (registry -> socket), sent from the controller.
 /// </summary>
 public static class AgentSocketHandler
 {
     public static async Task HandleAsync(
-        WebSocket socket, PrintAgentRegistry registry, ILogger log, CancellationToken ct)
+        WebSocket socket, PrintAgentRegistry registry, string agentId, ILogger log, CancellationToken ct)
     {
         var buffer = new byte[2048];
-        string? agentId = null;
+        // Mark online immediately; hello refines the reported details.
+        registry.SetOnline(agentId, socket, deviceId: null, printerReady: false);
+        log.LogInformation("Agent online: {Id}", agentId);
         try
         {
             while (socket.State == WebSocketState.Open && !ct.IsCancellationRequested)
@@ -25,7 +28,7 @@ public static class AgentSocketHandler
 
                 JsonElement root;
                 try { root = JsonDocument.Parse(msg).RootElement; }
-                catch (JsonException) { continue; } // ignore malformed control frames
+                catch (JsonException) { continue; }
 
                 var type = root.TryGetProperty("type", out var t) ? t.GetString() : null;
                 var ready = root.TryGetProperty("printerReady", out var pr)
@@ -33,14 +36,12 @@ public static class AgentSocketHandler
 
                 if (type == "hello")
                 {
-                    agentId = root.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
-                    if (string.IsNullOrEmpty(agentId)) { continue; }
-                    var name = root.TryGetProperty("name", out var n) ? n.GetString() ?? agentId : agentId;
-                    registry.Register(agentId, name, ready, socket);
-                    log.LogInformation("Agent connected: {Id} ({Name}), printer {Ready}",
-                        agentId, name, ready ? "ready" : "absent");
+                    var deviceId = root.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                    registry.SetOnline(agentId, socket, deviceId, ready);
+                    log.LogInformation("Agent hello: {Id} device={Device} printer {Ready}",
+                        agentId, deviceId, ready ? "ready" : "absent");
                 }
-                else if (type == "status" && agentId is not null)
+                else if (type == "status")
                 {
                     registry.Update(agentId, ready);
                 }
@@ -51,11 +52,8 @@ public static class AgentSocketHandler
         catch (Exception ex) { log.LogWarning(ex, "Agent socket error ({Id})", agentId); }
         finally
         {
-            if (agentId is not null)
-            {
-                registry.Remove(agentId, socket);
-                log.LogInformation("Agent disconnected: {Id}", agentId);
-            }
+            registry.SetOffline(agentId, socket);
+            log.LogInformation("Agent offline: {Id}", agentId);
         }
     }
 

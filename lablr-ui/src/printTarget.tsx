@@ -63,7 +63,8 @@ export function PrintTargetProvider({ children }: { children: ReactNode }) {
       list.push({ kind: "usb", id: USB_ID, name: "USB (this device)", ready })
     }
     for (const a of agents)
-      list.push({ kind: "agent", id: a.id, name: a.name, ready: a.status === "ready" })
+      if (a.online) // only connected bridges can receive a job
+        list.push({ kind: "agent", id: a.id, name: a.name, ready: a.status === "ready" })
     return list
   }, [agents, usb.status])
 

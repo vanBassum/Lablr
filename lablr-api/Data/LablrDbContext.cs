@@ -13,6 +13,7 @@ public sealed class LablrDbContext(DbContextOptions<LablrDbContext> options) : D
     public DbSet<LabelTemplate> Templates => Set<LabelTemplate>();
     public DbSet<Printer> Printers => Set<Printer>();
     public DbSet<Pictogram> Pictograms => Set<Pictogram>();
+    public DbSet<PrintAgent> PrintAgents => Set<PrintAgent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) =>
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(LablrDbContext).Assembly);
