@@ -67,6 +67,11 @@ void UsbHostManager::Init()
     clientTask_.SetHandler([this]() { ClientTaskLoop(); });
     clientTask_.Run();
 
+    // Test-print task — drains testTrigger_ and prints from its own context.
+    testTask_.Init("usb_testprint", 4, 4096);
+    testTask_.SetHandler([this]() { TestTaskLoop(); });
+    testTask_.Run();
+
     init.SetReady();
     ESP_LOGI(TAG, "Initialized (USB host, waiting for printer)");
 }
@@ -207,6 +212,12 @@ bool UsbHostManager::OpenAndClaim(uint8_t devAddr)
     printerReady_ = true;
     ESP_LOGI(TAG, "Printer ready: iface %u, EP OUT 0x%02x (mps %u), EP IN 0x%02x",
              ifaceNum_, epOutAddr_, epOutMps_, epInAddr_);
+
+    // Don't print from here — this runs in the client-event task. Signal the
+    // dedicated test task instead.
+    if (PRINT_TEST_ON_CONNECT)
+        testTrigger_.Give();
+
     return true;
 }
 
@@ -282,4 +293,68 @@ int UsbHostManager::SendToPrinter(const uint8_t* data, size_t len, uint32_t time
     }
 
     return (int)sent;
+}
+
+// ── Test print ────────────────────────────────────────────────
+
+void UsbHostManager::TestTaskLoop()
+{
+    while (true)
+    {
+        testTrigger_.Take();        // blocks until RequestTestPrint()/connect
+        if (printerReady_)
+            PrintTestPattern();
+    }
+}
+
+// Build the exact LabelWriter 450 raster job that lablr-ui/src/dymo.ts sends
+// over WebUSB, and print a recognisable bring-up pattern: a solid frame with
+// 16-dot horizontal stripes. Full head width (672 dots), ~1 inch tall.
+//
+// The job is assembled into a fixed static buffer — no std::vector / heap /
+// exceptions (a failed allocation aborts the firmware when C++ exceptions are
+// disabled, as they are in IDF).
+void UsbHostManager::PrintTestPattern()
+{
+    constexpr uint8_t ESC = 0x1b;
+    constexpr uint8_t SYN = 0x16;
+    constexpr int     BYTES_PER_LINE = 84;      // 672 dots @ 300 DPI (head max)
+    constexpr int     HEIGHT = 300;             // ~1 inch
+    constexpr int     JOB_MAX = 109 + HEIGHT * (1 + BYTES_PER_LINE) + 2;
+
+    static uint8_t job[JOB_MAX];   // ~25.6 KB in .bss; test task is the only user
+    int n = 0;
+
+    // Reset: flush any partial command, then ESC @.
+    for (int i = 0; i < 100; i++) job[n++] = ESC;
+    job[n++] = ESC; job[n++] = 0x40;
+    // ESC L hi lo — label length in dots.
+    job[n++] = ESC; job[n++] = 0x4c;
+    job[n++] = (HEIGHT >> 8) & 0xff; job[n++] = HEIGHT & 0xff;
+    // ESC D n — bytes per line.
+    job[n++] = ESC; job[n++] = 0x44; job[n++] = BYTES_PER_LINE;
+
+    for (int y = 0; y < HEIGHT; y++)
+    {
+        job[n++] = SYN;
+        const bool border = (y < 8) || (y >= HEIGHT - 8);
+        const bool stripe = ((y / 16) & 1) == 0;   // 16-dot black/white bands
+        for (int b = 0; b < BYTES_PER_LINE; b++)
+        {
+            uint8_t v = border ? 0xff : (stripe ? 0xff : 0x00);
+            if (b == 0)                  v |= 0x80;   // left edge column
+            if (b == BYTES_PER_LINE - 1) v |= 0x01;   // right edge column
+            job[n++] = v;
+        }
+    }
+
+    // ESC E — form feed / eject to tear bar.
+    job[n++] = ESC; job[n++] = 0x45;
+
+    ESP_LOGI(TAG, "Sending test print (%d bytes)...", n);
+    int sent = SendToPrinter(job, n, 8000);
+    if (sent == n)
+        ESP_LOGI(TAG, "Test print sent OK");
+    else
+        ESP_LOGE(TAG, "Test print failed: sent %d/%d", sent, n);
 }

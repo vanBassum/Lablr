@@ -26,8 +26,14 @@ CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
 CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
 
 # ── USB OTG in HOST mode — bridge <-> Dymo ─────────────────────
-# The espressif/usb component (idf_component.yml) provides the host library;
-# no extra Kconfig is required here for basic bulk transfers.
+# The espressif/usb component (idf_component.yml) provides the host library.
+# Enumeration timing: the stock 30ms reset-hold/recovery is too short for some
+# self-powered devices (the Dymo failed CHECK_SHORT_DEV_DESC on the first EP0
+# transfer). Give the printer more time to be ready after bus reset.
+CONFIG_USB_HOST_DEBOUNCE_DELAY_MS=500
+CONFIG_USB_HOST_RESET_HOLD_MS=100
+CONFIG_USB_HOST_RESET_RECOVERY_MS=100
+CONFIG_USB_HOST_SET_ADDR_RECOVERY_MS=20
 
 # OTA rollback — pairs with esp_ota_mark_app_valid_cancel_rollback() in main.cpp
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

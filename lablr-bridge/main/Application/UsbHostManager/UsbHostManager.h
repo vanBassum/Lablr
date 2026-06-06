@@ -47,6 +47,14 @@ public:
     /// Returns the number of bytes accepted, or -1 on error / no printer.
     int SendToPrinter(const uint8_t* data, size_t len, uint32_t timeoutMs = 5000);
 
+    /// Print a self-contained test pattern (bring-up: proves the USB path
+    /// without the phone). Runs on its own task — safe to call from anywhere.
+    void RequestTestPrint() { testTrigger_.Give(); }
+
+    // Bring-up convenience: auto-print the test pattern when a printer is first
+    // detected. Set to false once the BLE path is the real driver.
+    static constexpr bool PRINT_TEST_ON_CONNECT = true;
+
 private:
     ServiceProvider& serviceProvider_;
     InitState initState_;
@@ -58,6 +66,11 @@ private:
     // Daemon (library event) + client event pumps
     Task daemonTask_;
     Task clientTask_;
+
+    // Test-print runs on its own task so SendToPrinter never blocks inside the
+    // USB client-event task (which must stay free to dispatch the OUT callback).
+    Task      testTask_;
+    Semaphore testTrigger_;
 
     // Claimed printer interface / endpoints
     bool     printerReady_   = false;
@@ -74,6 +87,8 @@ private:
 
     void DaemonTaskLoop();
     void ClientTaskLoop();
+    void TestTaskLoop();
+    void PrintTestPattern();
 
     bool OpenAndClaim(uint8_t devAddr);
     void CloseDevice();
