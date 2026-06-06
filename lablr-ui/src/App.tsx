@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Home, LayoutTemplate, Loader2, Moon, Printer, Settings, Sun, Tag } from "lucide-react"
+import { LayoutTemplate, Loader2, Moon, Printer, Settings, Sun, Tag } from "lucide-react"
 import { DropdownMenu } from "radix-ui"
 import { useTheme } from "@/components/theme-provider"
 import { usePrintTarget } from "@/printTarget"
@@ -112,20 +112,17 @@ export function App() {
     <div className="mx-auto flex min-h-svh max-w-md flex-col">
       <header className="bg-background/80 sticky top-0 z-10 flex items-center justify-between border-b px-4 py-3 backdrop-blur">
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Home"
+          <button
+            type="button"
+            aria-label="Lablr — home"
             onClick={() => (window.location.hash = "")}
+            className="focus-visible:ring-ring -m-1 flex items-center rounded-md p-1 hover:opacity-80 focus-visible:ring-2 focus-visible:outline-none"
           >
-            <Home />
-          </Button>
-          <span className="flex items-center gap-2 font-semibold">
-            <Tag className="size-4" />
-            Lablr
-            <span className="text-muted-foreground text-[10px] font-normal" title="build">
-              {VERSION}
-            </span>
+            <img src="/logo-light.png" alt="Lablr" className="h-6 w-auto dark:hidden" />
+            <img src="/logo-dark.png" alt="Lablr" className="hidden h-6 w-auto dark:block" />
+          </button>
+          <span className="text-muted-foreground text-[10px] font-normal" title="build">
+            {VERSION}
           </span>
         </div>
         <div className="flex items-center gap-1">
