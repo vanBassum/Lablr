@@ -35,47 +35,41 @@ export class RenderService {
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = "black"
 
-    // Margins define a safe area (a blank border). Element boxes are clamped to
-    // it so text shrinks to fit inside, and we clip to it as a hard guarantee
-    // that nothing prints in the border.
+    // Margins define a safe area (a blank border). TEXT boxes are clamped to it
+    // so text shrinks to fit within the border. Pictograms are graphics placed by
+    // the template, so they keep their authored size (clamping would resize them
+    // unevenly) — position them inside the margins in the template if needed.
     const m = stock.marginsMm
-    const safe = {
-      x: (m?.left ?? 0) * mmToDots,
-      y: (m?.top ?? 0) * mmToDots,
-      w: canvas.width - ((m?.left ?? 0) + (m?.right ?? 0)) * mmToDots,
-      h: canvas.height - ((m?.top ?? 0) + (m?.bottom ?? 0)) * mmToDots,
-    }
-
-    ctx.save()
-    if (safe.w > 0 && safe.h > 0) {
-      ctx.beginPath()
-      ctx.rect(safe.x, safe.y, safe.w, safe.h)
-      ctx.clip()
-    }
+    const safeX0 = (m?.left ?? 0) * mmToDots
+    const safeY0 = (m?.top ?? 0) * mmToDots
+    const safeX1 = canvas.width - (m?.right ?? 0) * mmToDots
+    const safeY1 = canvas.height - (m?.bottom ?? 0) * mmToDots
 
     for (const el of elements) {
       const value = draft.fields[el.field] ?? ""
       if (!value) continue
 
-      // Clamp the element's box to the safe area.
-      const x0 = Math.max(el.rect.x * mmToDots, safe.x)
-      const y0 = Math.max(el.rect.y * mmToDots, safe.y)
-      const x1 = Math.min((el.rect.x + el.rect.width) * mmToDots, safe.x + safe.w)
-      const y1 = Math.min((el.rect.y + el.rect.height) * mmToDots, safe.y + safe.h)
-      const rectX = x0
-      const rectY = y0
-      const rectW = x1 - x0
-      const rectH = y1 - y0
-      if (rectW <= 0 || rectH <= 0) continue
-
       if (el.type === "pictogram") {
-        drawPictogram(ctx, value, rectX, rectY, rectW, rectH)
-      } else {
-        drawText(ctx, value, el, rectX, rectY, rectW, rectH, mmToDots)
+        drawPictogram(
+          ctx,
+          value,
+          el.rect.x * mmToDots,
+          el.rect.y * mmToDots,
+          el.rect.width * mmToDots,
+          el.rect.height * mmToDots,
+        )
+        continue
       }
-    }
 
-    ctx.restore()
+      // Text: clamp the box to the safe area so shrink-to-fit keeps it inside.
+      const x0 = Math.max(el.rect.x * mmToDots, safeX0)
+      const y0 = Math.max(el.rect.y * mmToDots, safeY0)
+      const x1 = Math.min((el.rect.x + el.rect.width) * mmToDots, safeX1)
+      const y1 = Math.min((el.rect.y + el.rect.height) * mmToDots, safeY1)
+      if (x1 - x0 <= 0 || y1 - y0 <= 0) continue
+
+      drawText(ctx, value, el, x0, y0, x1 - x0, y1 - y0, mmToDots)
+    }
   }
 }
 
