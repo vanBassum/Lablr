@@ -1,11 +1,16 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ChevronLeft, Loader2, Trash2 } from "lucide-react"
 import type { Template } from "@/types"
 import { deleteTemplate, listTemplates } from "@/services/templatesApi"
+import { renderService } from "@/services/render"
+import { configService } from "@/services/config"
+import { usePictogramsReady } from "@/services/pictograms"
 import { Button } from "@/components/ui/button"
 
-// Lists templates with delete. Authoring is done via the AI (MCP upsert_template);
-// here you can see what exists and remove ones you don't want — like label stocks.
+// Lists templates with a live preview + delete. Authoring is done via the AI
+// (MCP upsert_template); here you see what each looks like and remove unwanted
+// ones. The preview uses the canonical renderer with sample field values, so
+// it matches a real print's layout.
 export function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -43,6 +48,7 @@ export function TemplatesPage() {
         <ul className="flex flex-col gap-2">
           {templates.map((t) => (
             <li key={t.id} className="bg-card flex items-center gap-3 rounded-lg border p-3">
+              <TemplateThumb template={t} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{t.name || t.id}</div>
                 <div className="text-muted-foreground truncate text-xs">
@@ -71,5 +77,52 @@ export function TemplatesPage() {
         </ul>
       )}
     </main>
+  )
+}
+
+// A small test render of a template, using placeholder field values: field
+// names as sample text, and a real pictogram for any pictogram slots.
+function TemplateThumb({ template }: { template: Template }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const picReady = usePictogramsReady()
+  const W = 104
+  const H = 72
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+    ctx.fillStyle = "white"
+    ctx.fillRect(0, 0, W, H)
+
+    const stock = configService.getLabelStock(template.label)
+    if (!stock) return
+    const orientation = configService.getTemplateOrientations(template)[0] ?? "portrait"
+    const printer = configService.getPrinterForStock(stock)
+    const elements = configService.getTemplateElements(template, orientation)
+
+    const picNames = Object.keys(configService.getPictogramRegistry())
+    const fields: Record<string, string> = {}
+    for (const el of elements)
+      fields[el.field] = el.type === "pictogram" ? (picNames[0] ?? "") : el.field
+
+    const off = document.createElement("canvas")
+    renderService.render(off, { draft: { id: "preview", fields }, elements, orientation, stock, printer })
+
+    const scale = Math.min(W / off.width, H / off.height)
+    const sw = off.width * scale
+    const sh = off.height * scale
+    ctx.drawImage(off, (W - sw) / 2, (H - sh) / 2, sw, sh)
+  }, [template, picReady])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={W}
+      height={H}
+      style={{ width: W, height: H, imageRendering: "pixelated" }}
+      className="shrink-0 rounded border bg-white"
+    />
   )
 }
