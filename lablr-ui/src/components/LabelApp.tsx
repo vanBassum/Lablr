@@ -6,7 +6,17 @@ import type { Draft } from "@/types"
 
 export function LabelApp() {
   const [selected, setSelected] = useState<string | null>(null)
-  const drafts = draftService.getDrafts()
+  const [drafts, setDrafts] = useState<Draft[]>(() => draftService.getDrafts())
+
+  // Refresh the list (newest-first from the API) whenever the grid is shown,
+  // so a just-created/deep-linked draft appears at the top.
+  useEffect(() => {
+    if (selected) return
+    draftService
+      .load()
+      .then(() => setDrafts(draftService.getDrafts()))
+      .catch(() => {})
+  }, [selected])
 
   // Deep link: #/d/{id} opens straight into a stored draft (the AI handoff).
   useEffect(() => {
