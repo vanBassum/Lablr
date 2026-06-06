@@ -1,5 +1,9 @@
 import type { Draft, LabelStock, Orientation, Printer, TemplateElement } from "@/types"
-import { getPictogram } from "@/services/pictograms"
+
+/** Resolve a pictogram name to a drawable image. Injected so this renderer runs
+ *  in both the browser (preloaded <img>) and Node (node-canvas Image) — one
+ *  renderer, two hosts. */
+export type PictogramGetter = (name: string) => CanvasImageSource | null | undefined
 
 export interface RenderInput {
   draft: Draft
@@ -7,6 +11,7 @@ export interface RenderInput {
   orientation: Orientation
   stock: LabelStock
   printer: Printer
+  getPictogram: PictogramGetter
 }
 
 /**
@@ -17,7 +22,7 @@ export interface RenderInput {
  */
 export class RenderService {
   render(canvas: HTMLCanvasElement, input: RenderInput): void {
-    const { draft, elements, orientation, stock, printer } = input
+    const { draft, elements, orientation, stock, printer, getPictogram } = input
 
     const ctx = canvas.getContext("2d")
     if (!ctx) throw new Error("Could not get canvas context")
@@ -52,6 +57,7 @@ export class RenderService {
       if (el.type === "pictogram") {
         drawPictogram(
           ctx,
+          getPictogram,
           value,
           el.rect.x * mmToDots,
           el.rect.y * mmToDots,
@@ -75,6 +81,7 @@ export class RenderService {
 
 function drawPictogram(
   ctx: CanvasRenderingContext2D,
+  getPictogram: PictogramGetter,
   name: string,
   rectX: number,
   rectY: number,

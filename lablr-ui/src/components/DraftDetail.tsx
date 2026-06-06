@@ -22,7 +22,7 @@ import {
 import { configService } from "@/services/config"
 import { renderService } from "@/services/render"
 import { draftService } from "@/services/drafts"
-import { usePictogramsReady } from "@/services/pictograms"
+import { getPictogram, usePictogramsReady } from "@/services/pictograms"
 import type { Orientation } from "@/types"
 
 export function DraftDetail({
@@ -70,6 +70,7 @@ export function DraftDetail({
       orientation: activeOrientation,
       stock,
       printer,
+      getPictogram,
     })
   }, [template, draft, stock, printer, activeOrientation, pictogramsReady])
 

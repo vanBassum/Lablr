@@ -169,19 +169,29 @@ export function buildJob(
  * The label canvas is expected to already be 1-bit (the renderer thresholds
  * it), so the threshold here is just a safety net.
  */
+/** Create a blank canvas. Injectable so this runs in the browser and in Node
+ *  (node-canvas) — keeping a single renderer across both hosts. */
+export type CanvasFactory = (w: number, h: number) => HTMLCanvasElement
+
+const browserCanvas: CanvasFactory = (w, h) => {
+  const c = document.createElement("canvas")
+  c.width = w
+  c.height = h
+  return c
+}
+
 export function buildJobFromCanvas(
   canvas: HTMLCanvasElement,
   offset: HeadOffset = {},
   threshold = 128,
+  makeCanvas: CanvasFactory = browserCanvas,
 ): Uint8Array {
   // Offsets may be negative (nudge the label left/up); drawImage clips the
   // part that falls off the head. Only positive Y needs extra height.
   const x = Math.round(offset.x ?? 0)
   const y = Math.round(offset.y ?? 0)
 
-  const head = document.createElement("canvas")
-  head.width = MAX_BYTES_PER_LINE * 8 // full head width (672 dots)
-  head.height = canvas.height + Math.max(0, y)
+  const head = makeCanvas(MAX_BYTES_PER_LINE * 8, canvas.height + Math.max(0, y)) // full head width (672 dots)
   const ctx = head.getContext("2d")
   if (!ctx) throw new Error("no 2d context")
   ctx.fillStyle = "white"

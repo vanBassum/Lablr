@@ -4,7 +4,7 @@ import type { Template } from "@/types"
 import { deleteTemplate, listTemplates } from "@/services/templatesApi"
 import { renderService } from "@/services/render"
 import { configService } from "@/services/config"
-import { usePictogramsReady } from "@/services/pictograms"
+import { getPictogram, usePictogramsReady } from "@/services/pictograms"
 import { Button } from "@/components/ui/button"
 
 // Lists templates with a live preview + delete. Authoring is done via the AI
@@ -167,7 +167,7 @@ function TemplateRender({ template, w, h }: { template: Template; w: number; h: 
       fields[el.field] = el.type === "pictogram" ? (picNames[0] ?? "") : el.field
 
     const off = document.createElement("canvas")
-    renderService.render(off, { draft: { id: "preview", fields }, elements, orientation, stock, printer })
+    renderService.render(off, { draft: { id: "preview", fields }, elements, orientation, stock, printer, getPictogram })
 
     const scale = Math.min(w / off.width, h / off.height)
     const sw = off.width * scale

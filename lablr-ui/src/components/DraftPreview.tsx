@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { renderService } from "@/services/render"
 import { configService } from "@/services/config"
-import { usePictogramsReady } from "@/services/pictograms"
+import { getPictogram, usePictogramsReady } from "@/services/pictograms"
 import type { Draft } from "@/types"
 
 export function DraftPreview({
@@ -31,7 +31,7 @@ export function DraftPreview({
 
     // Render the real bitmap offscreen, then scale it into the thumbnail.
     const offscreen = document.createElement("canvas")
-    renderService.render(offscreen, { draft, elements, orientation, stock, printer })
+    renderService.render(offscreen, { draft, elements, orientation, stock, printer, getPictogram })
 
     const ctx = canvasRef.current.getContext("2d")
     if (!ctx) return
