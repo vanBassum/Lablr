@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { Loader2, Moon, Printer, Settings, Sun, Tag } from "lucide-react"
+import { DropdownMenu } from "radix-ui"
 import { useTheme } from "@/components/theme-provider"
 import { usePrintTarget } from "@/printTarget"
 import { LabelApp } from "@/components/LabelApp"
@@ -19,18 +20,45 @@ import {
 // or "dev" locally.
 const VERSION = import.meta.env.VITE_COMMIT_SHA?.slice(0, 7) || "dev"
 
-function ThemeToggle() {
+// Settings gear → menu: Label stocks, Printers, and the dark-mode toggle.
+function SettingsMenu() {
   const { theme, setTheme } = useTheme()
+  const dark = theme === "dark"
+  const item =
+    "flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none cursor-default select-none data-[highlighted]:bg-accent"
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      aria-label="Toggle theme"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-    >
-      <Sun className="hidden dark:block" />
-      <Moon className="dark:hidden" />
-    </Button>
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Settings">
+          <Settings />
+        </Button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={4}
+          className="bg-popover text-popover-foreground z-50 min-w-44 rounded-md border p-1 shadow-md"
+        >
+          <DropdownMenu.Item className={item} onSelect={() => (window.location.hash = "#/labels")}>
+            <Tag className="size-4" /> Label stocks
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={item} onSelect={() => (window.location.hash = "#/printers")}>
+            <Printer className="size-4" /> Printers
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator className="bg-border my-1 h-px" />
+          <DropdownMenu.Item
+            className={item}
+            onSelect={(e) => {
+              e.preventDefault() // keep the menu open while toggling
+              setTheme(dark ? "light" : "dark")
+            }}
+          >
+            {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            {dark ? "Light mode" : "Dark mode"}
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   )
 }
 
@@ -79,31 +107,21 @@ export function App() {
     <div className="mx-auto flex min-h-svh max-w-md flex-col">
       <header className="bg-background/80 sticky top-0 z-10 flex items-center justify-between border-b px-4 py-3 backdrop-blur">
         <span className="flex items-center gap-2 font-semibold">
-          <Tag className="size-4" />
-          Lablr
+          <button
+            className="flex items-center gap-2"
+            aria-label="Home"
+            onClick={() => (window.location.hash = "")}
+          >
+            <Tag className="size-4" />
+            Lablr
+          </button>
           <span className="text-muted-foreground text-[10px] font-normal" title="build">
             {VERSION}
           </span>
         </span>
         <div className="flex items-center gap-1">
           <PrinterSelect />
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Connected printers"
-            onClick={() => (window.location.hash = "#/printers")}
-          >
-            <Printer className={onPrintersPage ? "text-foreground" : "text-muted-foreground"} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Manage label stocks"
-            onClick={() => (window.location.hash = "#/labels")}
-          >
-            <Settings className={onLabelsPage ? "text-foreground" : "text-muted-foreground"} />
-          </Button>
-          <ThemeToggle />
+          <SettingsMenu />
         </div>
       </header>
       {!ready ? (
