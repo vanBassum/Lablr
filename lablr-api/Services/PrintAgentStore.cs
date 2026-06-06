@@ -14,19 +14,9 @@ public sealed class PrintAgentStore
 
     public PrintAgentStore(IDbContextFactory<LablrDbContext> dbf)
     {
+        // The schema (print_agents incl. IsDefault) is owned by EF migrations,
+        // applied at startup by ConfigService before any request is served.
         _dbf = dbf;
-        using var db = _dbf.CreateDbContext();
-        // ConfigService uses EnsureCreated(), which does NOT add a new table to an
-        // already-existing DB. Create ours explicitly so it appears on upgrades too.
-        db.Database.ExecuteSqlRaw(
-            "CREATE TABLE IF NOT EXISTS print_agents (" +
-            "Id TEXT NOT NULL CONSTRAINT PK_print_agents PRIMARY KEY, " +
-            "Name TEXT NOT NULL, Token TEXT NOT NULL, " +
-            "IsDefault INTEGER NOT NULL DEFAULT 0, CreatedAt TEXT NOT NULL)");
-        // Add the column to tables created before it existed (SQLite has no
-        // ADD COLUMN IF NOT EXISTS; ignore the "duplicate column" error).
-        try { db.Database.ExecuteSqlRaw("ALTER TABLE print_agents ADD COLUMN IsDefault INTEGER NOT NULL DEFAULT 0"); }
-        catch { /* column already exists */ }
     }
 
     /// <summary>Mark one agent as the shared default (clears the flag on the rest).</summary>
