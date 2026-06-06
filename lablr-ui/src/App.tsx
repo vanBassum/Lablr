@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Loader2, Moon, Sun, Tag, Usb } from "lucide-react"
+import { Loader2, Moon, Settings, Sun, Tag, Usb } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
 import { usePrinter } from "@/printer"
 import { LabelApp } from "@/components/LabelApp"
@@ -70,6 +70,14 @@ export function App() {
         </span>
         <div className="flex items-center gap-1">
           <PrinterChip />
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Manage label stocks"
+            onClick={() => (window.location.hash = "#/labels")}
+          >
+            <Settings className={onLabelsPage ? "text-foreground" : "text-muted-foreground"} />
+          </Button>
           <ThemeToggle />
         </div>
       </header>
