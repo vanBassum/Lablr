@@ -68,11 +68,17 @@ export function PrintTargetProvider({ children }: { children: ReactNode }) {
     return list
   }, [agents, usb.status])
 
-  // If the selected target disappears (bridge offline), fall back to the first.
+  // When there's no valid explicit selection, prefer the server-marked default
+  // bridge (if online), else the local USB printer, else the first target.
   useEffect(() => {
-    if (targets.length > 0 && !targets.some((t) => t.id === selectedId))
-      setSelectedIdState(targets[0].id)
-  }, [targets, selectedId])
+    if (targets.length === 0 || targets.some((t) => t.id === selectedId)) return
+    const def = agents.find((a) => a.isDefault && a.online)
+    const pick =
+      (def && targets.find((t) => t.id === def.id)) ??
+      targets.find((t) => t.id === USB_ID) ??
+      targets[0]
+    setSelectedIdState(pick.id)
+  }, [targets, selectedId, agents])
 
   const setSelectedId = useCallback((id: string) => {
     setSelectedIdState(id)

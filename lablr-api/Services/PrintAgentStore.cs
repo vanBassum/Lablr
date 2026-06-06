@@ -21,7 +21,25 @@ public sealed class PrintAgentStore
         db.Database.ExecuteSqlRaw(
             "CREATE TABLE IF NOT EXISTS print_agents (" +
             "Id TEXT NOT NULL CONSTRAINT PK_print_agents PRIMARY KEY, " +
-            "Name TEXT NOT NULL, Token TEXT NOT NULL, CreatedAt TEXT NOT NULL)");
+            "Name TEXT NOT NULL, Token TEXT NOT NULL, " +
+            "IsDefault INTEGER NOT NULL DEFAULT 0, CreatedAt TEXT NOT NULL)");
+        // Add the column to tables created before it existed (SQLite has no
+        // ADD COLUMN IF NOT EXISTS; ignore the "duplicate column" error).
+        try { db.Database.ExecuteSqlRaw("ALTER TABLE print_agents ADD COLUMN IsDefault INTEGER NOT NULL DEFAULT 0"); }
+        catch { /* column already exists */ }
+    }
+
+    /// <summary>Mark one agent as the shared default (clears the flag on the rest).</summary>
+    public bool SetDefault(string id)
+    {
+        using var db = _dbf.CreateDbContext();
+        var target = db.PrintAgents.Find(id);
+        if (target is null) return false;
+        foreach (var a in db.PrintAgents.Where(a => a.IsDefault))
+            a.IsDefault = false;
+        target.IsDefault = true;
+        db.SaveChanges();
+        return true;
     }
 
     public List<PrintAgent> List()

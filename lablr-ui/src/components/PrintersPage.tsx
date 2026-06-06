@@ -7,6 +7,7 @@ import {
   Pencil,
   Plus,
   Printer as PrinterIcon,
+  Star,
   Trash2,
   Usb,
 } from "lucide-react"
@@ -15,6 +16,7 @@ import {
   deleteAgent,
   listAgents,
   renameAgent,
+  setDefaultAgent,
   type PrintAgent,
   type PrintAgentCreated,
 } from "@/services/agents"
@@ -223,6 +225,28 @@ function AgentRow({
         </div>
       </div>
       <span className={"rounded-full px-2 py-0.5 text-xs " + badgeClass}>{badge}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-8"
+        aria-label={agent.isDefault ? "Default printer" : "Set as default"}
+        title={agent.isDefault ? "Default printer" : "Set as default"}
+        onClick={async () => {
+          if (agent.isDefault) return
+          try {
+            await setDefaultAgent(agent.id)
+            onChanged()
+          } catch (e) {
+            onError((e as Error).message)
+          }
+        }}
+      >
+        <Star
+          className={
+            agent.isDefault ? "size-4 fill-amber-400 text-amber-400" : "text-muted-foreground size-4"
+          }
+        />
+      </Button>
       <Button
         variant="ghost"
         size="icon"

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Loader2, Moon, Printer, Settings, Sun, Tag } from "lucide-react"
+import { Home, Loader2, Moon, Printer, Settings, Sun, Tag } from "lucide-react"
 import { DropdownMenu } from "radix-ui"
 import { useTheme } from "@/components/theme-provider"
 import { usePrintTarget } from "@/printTarget"
@@ -107,19 +107,23 @@ export function App() {
     <div className="mx-auto flex min-h-svh max-w-md flex-col">
       <header className="bg-background/80 sticky top-0 z-10 flex items-center justify-between border-b px-4 py-3 backdrop-blur">
         <span className="flex items-center gap-2 font-semibold">
-          <button
-            className="flex items-center gap-2"
-            aria-label="Home"
-            onClick={() => (window.location.hash = "")}
-          >
-            <Tag className="size-4" />
-            Lablr
-          </button>
+          <Tag className="size-4" />
+          Lablr
           <span className="text-muted-foreground text-[10px] font-normal" title="build">
             {VERSION}
           </span>
         </span>
         <div className="flex items-center gap-1">
+          {hash && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Home"
+              onClick={() => (window.location.hash = "")}
+            >
+              <Home />
+            </Button>
+          )}
           <PrinterSelect />
           <SettingsMenu />
         </div>

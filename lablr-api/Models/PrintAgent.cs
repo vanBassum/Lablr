@@ -17,6 +17,7 @@ public sealed class PrintAgent
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string Token { get; set; } = "";
+    public bool IsDefault { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -26,6 +27,7 @@ public sealed record PrintAgentDto(
     string Name,
     bool Online,
     string Status,                 // "ready" | "no-printer" | "offline"
+    bool IsDefault,
     string? DeviceId,              // hardware id the bridge reports once connected
     DateTimeOffset? LastSeen,
     DateTimeOffset CreatedAt);

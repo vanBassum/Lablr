@@ -7,6 +7,7 @@ export interface PrintAgent {
   name: string
   online: boolean
   status: "ready" | "no-printer" | "offline" | string
+  isDefault: boolean
   deviceId?: string | null
   lastSeen?: string | null
   createdAt: string
@@ -59,6 +60,10 @@ export function renameAgent(id: string, name: string): Promise<PrintAgent> {
 export async function deleteAgent(id: string): Promise<void> {
   const res = await fetch(`/api/agents/${encodeURIComponent(id)}`, { method: "DELETE" })
   if (!res.ok && res.status !== 404) throw new Error(`${res.status}`)
+}
+
+export async function setDefaultAgent(id: string): Promise<void> {
+  await ok(await fetch(`/api/agents/${encodeURIComponent(id)}/default`, { method: "POST" }))
 }
 
 /** Hand a rendered job (raw printer bytes) to the backend for relay to a bridge. */

@@ -42,6 +42,11 @@ public sealed class AgentsController(PrintAgentStore store, PrintAgentRegistry r
         return store.Delete(id) ? NoContent() : NotFound();
     }
 
+    /// <summary>Mark this agent as the shared default print target.</summary>
+    [HttpPost("{id}/default")]
+    public IActionResult SetDefault(string id) =>
+        store.SetDefault(id) ? NoContent() : NotFound();
+
     /// <summary>Relay a rendered print job (raw bytes) to the bridge.</summary>
     [HttpPost("{id}/print")]
     public async Task<IActionResult> Print(string id, CancellationToken ct)
@@ -64,6 +69,6 @@ public sealed class AgentsController(PrintAgentStore store, PrintAgentRegistry r
     {
         var live = registry.GetLive(a.Id);
         var status = live is null ? "offline" : live.PrinterReady ? "ready" : "no-printer";
-        return new PrintAgentDto(a.Id, a.Name, live is not null, status, live?.DeviceId, live?.LastSeen, a.CreatedAt);
+        return new PrintAgentDto(a.Id, a.Name, live is not null, status, a.IsDefault, live?.DeviceId, live?.LastSeen, a.CreatedAt);
     }
 }
