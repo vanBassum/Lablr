@@ -2,9 +2,23 @@
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# Flash size and speed (8 MB S3 module; see partitions.csv if yours is 4 MB)
-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+# Flash size and speed (ESP32-S3-WROOM-1 N16R8 = 16 MB flash)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# ── PSRAM (N16R8 = 8 MB OCTAL SPIRAM) ──────────────────────────
+# Without this, WiFi + NimBLE + USB host + mbedTLS exhaust internal RAM:
+# TLS setup, the HTTP server task, and USB EP alloc all fail with NO_MEM.
+# Routing WiFi/LWIP + large (TLS) allocations to PSRAM frees internal RAM.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# Allocations larger than this go to PSRAM; smaller stay internal.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=8192
+# Let mbedTLS pull its big buffers from PSRAM-capable heap.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 
 # HTTP server WebSocket support
 CONFIG_HTTPD_WS_SUPPORT=y
