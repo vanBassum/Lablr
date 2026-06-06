@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,7 +19,12 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ConfigService>();
 builder.Services.AddSingleton<DraftStore>();
 builder.Services.AddSingleton<LinkService>();
+builder.Services.AddSingleton<PrintAgentRegistry>();
 builder.Services.AddHostedService<DraftSweeper>();
+
+// Optional shared token guarding the agent WebSocket (/agent/ws). Unset = open
+// (dev). In prod set Agents__Token; the bridge sends it as ?token= or Bearer.
+var agentsToken = builder.Configuration["Agents:Token"];
 
 // MCP server (Streamable HTTP at /mcp): an AI reads + authors config and creates drafts.
 builder.Services.AddMcpServer().WithHttpTransport().WithTools<LabelTools>();
@@ -55,6 +62,7 @@ app.Services.GetRequiredService<ConfigService>();
 
 app.UseExceptionHandler(); // maps ConfigValidationException -> 400
 app.UseForwardedHeaders();
+app.UseWebSockets();
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
@@ -80,7 +88,36 @@ var mcp = app.MapMcp("/mcp");
 if (mcpAuth.Enabled)
     mcp.RequireAuthorization();
 
-// REST endpoints (Controllers/): config, drafts, pictograms, health.
+// Print-bridge agents connect here (wss in prod, terminated at Traefik). Guard
+// with the optional shared token. Must be exempt from interactive forward-auth
+// upstream — devices authenticate with the token, not a browser login.
+app.Map("/agent/ws", async (HttpContext ctx, PrintAgentRegistry registry, ILoggerFactory lf) =>
+{
+    if (!ctx.WebSockets.IsWebSocketRequest)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+    }
+    if (!string.IsNullOrEmpty(agentsToken))
+    {
+        var auth = ctx.Request.Headers.Authorization.ToString();
+        var provided = auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? auth["Bearer ".Length..].Trim()
+            : ctx.Request.Query["token"].ToString();
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(agentsToken)))
+        {
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+    }
+
+    using var socket = await ctx.WebSockets.AcceptWebSocketAsync();
+    await AgentSocketHandler.HandleAsync(
+        socket, registry, lf.CreateLogger("Agent"), ctx.RequestAborted);
+});
+
+// REST endpoints (Controllers/): config, drafts, pictograms, health, agents.
 app.MapControllers();
 
 // SPA fallback: client-side routes (and #/d/{id}) resolve to index.html.

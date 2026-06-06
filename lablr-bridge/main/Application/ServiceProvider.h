@@ -1,6 +1,7 @@
 #pragma once
 
 class BleManager;
+class CloudLinkManager;
 class CommandManager;
 class ConsoleManager;
 class DeviceManager;
@@ -14,6 +15,7 @@ class ServiceProvider
 {
 public:
     virtual BleManager& getBleManager() = 0;
+    virtual CloudLinkManager& getCloudLinkManager() = 0;
     virtual CommandManager& getCommandManager() = 0;
     virtual ConsoleManager& getConsoleManager() = 0;
     virtual DeviceManager& getDeviceManager() = 0;

@@ -1,6 +1,7 @@
 #pragma once
 #include "ServiceProvider.h"
 #include "BleManager/BleManager.h"
+#include "CloudLinkManager/CloudLinkManager.h"
 #include "CommandManager/CommandManager.h"
 #include "ConsoleManager/ConsoleManager.h"
 #include "DeviceManager/DeviceManager.h"
@@ -19,6 +20,7 @@ public:
     ApplicationContext& operator=(const ApplicationContext&) = delete;
 
     BleManager& getBleManager() override { return m_bleManager; }
+    CloudLinkManager& getCloudLinkManager() override { return m_cloudLinkManager; }
     CommandManager& getCommandManager() override { return m_commandManager; }
     ConsoleManager& getConsoleManager() override { return m_consoleManager; }
     DeviceManager& getDeviceManager() override { return m_deviceManager; }
@@ -36,6 +38,7 @@ private:
     // UsbHost before Ble: the BLE gateway forwards received bytes into the USB host.
     UsbHostManager m_usbHostManager{*this};
     BleManager m_bleManager{*this};
+    CloudLinkManager m_cloudLinkManager{*this};
     DeviceManager m_deviceManager{*this};
     UpdateManager m_updateManager{*this};
     WebServerManager m_webServerManager{*this};

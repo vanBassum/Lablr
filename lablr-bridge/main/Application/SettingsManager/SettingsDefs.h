@@ -14,6 +14,11 @@ inline constexpr SettingDef SETTINGS_DEFS[] = {
     // Device — name is also the BLE advertised name and the mDNS hostname.
     { "device.name",    SettingType::String, "Device Name",    "lablr-bridge" },
     { "device.pin",     SettingType::String, "Device PIN",     "" },
+
+    // Cloud link (Option C) — outbound wss to the backend that relays print jobs.
+    { "cloud.enabled",  SettingType::Bool,   "Cloud Enabled",  "0" },
+    { "cloud.url",      SettingType::String, "Cloud WS URL",   "wss://label.vanbassum.com/agent/ws" },
+    { "cloud.token",    SettingType::String, "Cloud Token",    "" },
 };
 
 inline constexpr int SETTINGS_DEFS_COUNT = sizeof(SETTINGS_DEFS) / sizeof(SETTINGS_DEFS[0]);

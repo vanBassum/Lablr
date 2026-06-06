@@ -6,3 +6,5 @@ dependencies:
   espressif/usb: "*"
   # WS2812 RGB driver — used only to blank the over-bright on-board LED.
   espressif/led_strip: "*"
+  # WebSocket client — outbound wss link to the backend (Option C).
+  espressif/esp_websocket_client: "*"

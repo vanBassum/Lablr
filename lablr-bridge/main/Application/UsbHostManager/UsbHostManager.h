@@ -52,8 +52,9 @@ public:
     void RequestTestPrint() { testTrigger_.Give(); }
 
     // Bring-up convenience: auto-print the test pattern when a printer is first
-    // detected. Set to false once the BLE path is the real driver.
-    static constexpr bool PRINT_TEST_ON_CONNECT = true;
+    // detected. Off now that real print transports (cloud/BLE) drive printing;
+    // RequestTestPrint() is still available on demand.
+    static constexpr bool PRINT_TEST_ON_CONNECT = false;
 
 private:
     ServiceProvider& serviceProvider_;

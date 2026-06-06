@@ -15,8 +15,9 @@ extern "C" void app_main(void)
     g_appContext.getSettingsManager().Init();
     g_appContext.getNetworkManager().Init();
     g_appContext.getCommandManager().Init();
-    g_appContext.getUsbHostManager().Init();   // USB host link to the Dymo — start before BLE
+    g_appContext.getUsbHostManager().Init();   // USB host link to the Dymo — start before transports
     g_appContext.getBleManager().Init();        // BLE peripheral the phone connects to
+    g_appContext.getCloudLinkManager().Init();  // wss link to the backend (Option C)
     g_appContext.getDeviceManager().Init();
     g_appContext.getUpdateManager().Init();
     g_appContext.getWebServerManager().Init();

@@ -161,16 +161,19 @@ export function buildJob(
 
 /**
  * Composite a label-sized canvas onto a full-head-width bitmap at the head
- * offset, pack it, and print on an opened DYMO. ep#2 is bulk OUT. The label
- * canvas is expected to already be 1-bit (the renderer thresholds it), so a
- * mid threshold here is just a safety net.
+ * offset, pack it, and return the complete LabelWriter job bytes. This is the
+ * single source of the print payload — used both by the WebUSB path
+ * (printCanvas) and the remote-bridge path (POST to /api/agents/{id}/print),
+ * so "Preview = Print" holds across transports.
+ *
+ * The label canvas is expected to already be 1-bit (the renderer thresholds
+ * it), so the threshold here is just a safety net.
  */
-export async function printCanvas(
-  device: UsbDevice,
+export function buildJobFromCanvas(
   canvas: HTMLCanvasElement,
   offset: HeadOffset = {},
   threshold = 128,
-): Promise<void> {
+): Uint8Array {
   // Offsets may be negative (nudge the label left/up); drawImage clips the
   // part that falls off the head. Only positive Y needs extra height.
   const x = Math.round(offset.x ?? 0)
@@ -187,7 +190,17 @@ export async function printCanvas(
 
   const image = ctx.getImageData(0, 0, head.width, head.height)
   const { bytesPerLine, lines } = packToRaster(image, threshold)
-  const job = buildJob(lines, bytesPerLine, head.height)
+  return buildJob(lines, bytesPerLine, head.height)
+}
+
+/** Build the job from a canvas and print it on an opened DYMO. ep#2 is bulk OUT. */
+export async function printCanvas(
+  device: UsbDevice,
+  canvas: HTMLCanvasElement,
+  offset: HeadOffset = {},
+  threshold = 128,
+): Promise<void> {
+  const job = buildJobFromCanvas(canvas, offset, threshold)
   const result = await device.transferOut(2, job)
   if (result.status !== "ok") {
     throw new Error(`transferOut status: ${result.status}`)

@@ -7,7 +7,7 @@ import {
   Printer,
   Settings2,
 } from "lucide-react"
-import { usePrinter } from "@/printer"
+import { usePrintTarget } from "@/printTarget"
 import { LabelPreviewContainer } from "@/components/LabelPreviewContainer"
 import { WebUsbProbe } from "@/WebUsbProbe"
 import { Button } from "@/components/ui/button"
@@ -33,7 +33,7 @@ export function DraftDetail({
   onBack: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const printerApi = usePrinter()
+  const printTarget = usePrintTarget()
 
   const [offsetX, setOffsetX] = useState(0)
   const [offsetY, setOffsetY] = useState(0)
@@ -90,7 +90,7 @@ export function DraftDetail({
       // bitmap is wider than the head, so rotate it 90° to the physical media
       // orientation. Same pixels as the preview — a device mapping, not a re-render.
       const payload = activeOrientation === "landscape" ? rotate90cw(canvas) : canvas
-      await printerApi.print(payload, { x, y })
+      await printTarget.print(payload, { x, y })
       setStatus({ ok: true, msg: `Printed "${draftName}"` })
     } catch (e) {
       setStatus({ ok: false, msg: (e as Error).message })

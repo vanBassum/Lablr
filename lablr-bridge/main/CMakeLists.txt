@@ -14,6 +14,7 @@ set(SOURCE_FILES_LIST
     "Application/DeviceManager/DeviceManager.cpp"
     "Application/BleManager/BleManager.cpp"
     "Application/UsbHostManager/UsbHostManager.cpp"
+    "Application/CloudLinkManager/CloudLinkManager.cpp"
     "lib/system/DateTime.cpp"
     "lib/system/TimeSpan.cpp"
 )
@@ -30,6 +31,7 @@ set(INCLUDE_DIRS_LIST
     "Application/DeviceManager"
     "Application/BleManager"
     "Application/UsbHostManager"
+    "Application/CloudLinkManager"
     "hardware"
     "lib"
     "lib/common"
@@ -55,6 +57,8 @@ set(COMPONENT_REQUIRES
     bt                  # NimBLE host — phone <-> bridge link
     espressif__usb      # USB Host Library — bridge <-> Dymo (registry component in IDF 6.0)
     espressif__led_strip # WS2812 driver — blank the over-bright on-board RGB LED
+    espressif__esp_websocket_client # outbound wss link to backend (Option C)
+    esp-tls             # esp_crt_bundle for wss:// TLS
 )
 
 # Register component with ESP-IDF
