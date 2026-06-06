@@ -45,6 +45,28 @@ public sealed class LabelTools
             compatiblePrinters = l.CompatiblePrinters ?? [],
         });
 
+    [McpServerTool(Name = "get_label")]
+    [Description("Get one label stock in full (sizes, margins, offset, compatible printers) — useful before editing it.")]
+    public static object GetLabel(ConfigService config, string id) =>
+        config.GetLabel(id) ?? throw new McpException($"Unknown label '{id}'.");
+
+    [McpServerTool(Name = "list_printers")]
+    [Description("List the printer profiles (id, name, dpi). A template's label targets one of these.")]
+    public static object ListPrinters(ConfigService config) =>
+        config.GetPrinters().Select(p => new { id = p.Id, name = p.Name, dpi = p.Dpi });
+
+    [McpServerTool(Name = "get_printer")]
+    [Description("Get one printer profile by id.")]
+    public static object GetPrinter(ConfigService config, string id) =>
+        config.GetPrinter(id) ?? throw new McpException($"Unknown printer '{id}'.");
+
+    [McpServerTool(Name = "get_pictogram")]
+    [Description("Get one pictogram by name, including its raw SVG markup — useful before editing it.")]
+    public static object GetPictogram(ConfigService config, string name) =>
+        config.GetPictogram(name) is { } p
+            ? new { name = p.Name, image = p.Image, svg = p.Svg }
+            : throw new McpException($"Unknown pictogram '{name}'.");
+
     [McpServerTool(Name = "list_pictograms")]
     [Description("List the available pictogram names (e.g. flammable, corrosive, oxidizing). " +
                  "Use these as the values for a template's pictogram1..N fields.")]
