@@ -23,8 +23,17 @@ builder.Services.AddSingleton<LabelRenderer>();   // the single (backend) render
 builder.Services.AddSingleton<LabelPrintService>();
 builder.Services.AddHostedService<DraftSweeper>();
 
-// MCP server (Streamable HTTP at /mcp): an AI reads + authors config and creates drafts.
-builder.Services.AddMcpServer().WithHttpTransport().WithTools<LabelTools>();
+// MCP server (Streamable HTTP at /mcp): an AI reads + authors config, creates drafts, and PRINTS.
+builder.Services.AddMcpServer(o => o.ServerInstructions =
+        "Lablr creates and prints physical labels. When the user asks to make and/or print a label " +
+        "(e.g. \"make a label for this resistor and print it\"), do it end-to-end over these tools — " +
+        "do NOT just hand back a link: (1) list_templates to pick the matching template; " +
+        "(2) create_draft with the field values; (3) print_draft to print it on a connected bridge " +
+        "(list_bridges to choose one, or omit agentId to use the default). The backend renders the label " +
+        "(the same image the app preview shows) and sends it to the printer. create_draft returns a preview " +
+        "link — only give that to the user if they explicitly want to preview or adjust it on their phone " +
+        "first; otherwise print. You can also author config (upsert_template/upsert_label/upsert_pictogram/etc.).")
+    .WithHttpTransport().WithTools<LabelTools>();
 
 // Optional OAuth 2.1 protection for /mcp, federated to Authentik (see Mcp/McpAuth.cs).
 // Disabled by default so local/dev runs need no IdP; prod sets Auth__* env vars.

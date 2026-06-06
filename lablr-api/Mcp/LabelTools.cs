@@ -76,8 +76,10 @@ public sealed class LabelTools
     // ---------- Drafts ----------
 
     [McpServerTool(Name = "create_draft")]
-    [Description("Create a label draft from a template and field values, and return a URL " +
-                 "the user opens on their phone to preview and print. Fill every required field.")]
+    [Description("Step 1 of printing: create a label draft from a template and field values. Returns the " +
+                 "draft id and a preview link. This does NOT print. To actually print, call print_draft with " +
+                 "the returned id. Only give the preview link to the user if they explicitly want to preview " +
+                 "or tweak it on their phone first — otherwise just print. Fill every required field.")]
     public static object CreateDraft(
         ConfigService config,
         DraftStore store,
