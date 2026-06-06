@@ -152,6 +152,11 @@ function fitText(
   const wrap = !!el.wrap
   const maxLines = el.maxLines
 
+  // minSizeMm is the *preferred* floor. shrink-to-fit may go below it (down to a
+  // tiny absolute floor) so text fits rather than overflowing/being clipped.
+  const ABS_FLOOR = 0.8 * mmToDots
+  const floorPx = el.fit === "shrink" ? Math.min(minPx, ABS_FLOOR) : minPx
+
   // Assumes ctx.font is already set to the size being measured.
   const layout = () => (wrap ? wrapText(ctx, text, rectW) : [text])
 
@@ -160,7 +165,7 @@ function fitText(
     return { size: maxPx, lines: clampLines(layout(), maxLines), lineH: maxPx * LINE_HEIGHT }
   }
 
-  for (let size = maxPx; size >= minPx; size -= 0.5) {
+  for (let size = maxPx; size >= floorPx; size -= 0.5) {
     ctx.font = fontString(el, size)
     const lines = layout()
     const widthOk = lines.every((l) => ctx.measureText(l).width <= rectW)
@@ -169,8 +174,8 @@ function fitText(
     if (widthOk && linesOk && heightOk) return { size, lines, lineH: size * LINE_HEIGHT }
   }
 
-  ctx.font = fontString(el, minPx)
-  return { size: minPx, lines: clampLines(layout(), maxLines), lineH: minPx * LINE_HEIGHT }
+  ctx.font = fontString(el, floorPx)
+  return { size: floorPx, lines: clampLines(layout(), maxLines), lineH: floorPx * LINE_HEIGHT }
 }
 
 /** Cap to maxLines, ellipsising the last kept line if content was dropped. */
