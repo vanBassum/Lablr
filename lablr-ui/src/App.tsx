@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react"
-import { Home, Loader2, Moon, Printer, Settings, Sun, Tag } from "lucide-react"
+import { Home, LayoutTemplate, Loader2, Moon, Printer, Settings, Sun, Tag } from "lucide-react"
 import { DropdownMenu } from "radix-ui"
 import { useTheme } from "@/components/theme-provider"
 import { usePrintTarget } from "@/printTarget"
 import { LabelApp } from "@/components/LabelApp"
 import { LabelStocksPage } from "@/components/LabelStocksPage"
 import { PrintersPage } from "@/components/PrintersPage"
+import { TemplatesPage } from "@/components/TemplatesPage"
 import { useAppReady } from "@/services/bootstrap"
 import { Button } from "@/components/ui/button"
 import {
@@ -41,6 +42,9 @@ function SettingsMenu() {
         >
           <DropdownMenu.Item className={item} onSelect={() => (window.location.hash = "#/labels")}>
             <Tag className="size-4" /> Label stocks
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={item} onSelect={() => (window.location.hash = "#/templates")}>
+            <LayoutTemplate className="size-4" /> Templates
           </DropdownMenu.Item>
           <DropdownMenu.Item className={item} onSelect={() => (window.location.hash = "#/printers")}>
             <Printer className="size-4" /> Printers
@@ -102,6 +106,7 @@ export function App() {
   const ready = useAppReady()
   const hash = useHash()
   const onLabelsPage = hash.startsWith("#/labels")
+  const onTemplatesPage = hash.startsWith("#/templates")
   const onPrintersPage = hash.startsWith("#/printers")
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col">
@@ -135,6 +140,8 @@ export function App() {
         </div>
       ) : onLabelsPage ? (
         <LabelStocksPage />
+      ) : onTemplatesPage ? (
+        <TemplatesPage />
       ) : onPrintersPage ? (
         <PrintersPage />
       ) : (
