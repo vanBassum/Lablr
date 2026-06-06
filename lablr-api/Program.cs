@@ -19,8 +19,8 @@ builder.Services.AddSingleton<DraftStore>();
 builder.Services.AddSingleton<LinkService>();
 builder.Services.AddSingleton<PrintAgentStore>();
 builder.Services.AddSingleton<PrintAgentRegistry>();
-builder.Services.AddSingleton<LabelRenderer>();
 builder.Services.AddSingleton<LabelPrintService>();
+builder.Services.AddHttpClient(); // LabelPrintService -> lablr-render
 builder.Services.AddHostedService<DraftSweeper>();
 
 // MCP server (Streamable HTTP at /mcp): an AI reads + authors config and creates drafts.
