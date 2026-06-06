@@ -106,24 +106,24 @@ export function App() {
   return (
     <div className="mx-auto flex min-h-svh max-w-md flex-col">
       <header className="bg-background/80 sticky top-0 z-10 flex items-center justify-between border-b px-4 py-3 backdrop-blur">
-        <span className="flex items-center gap-2 font-semibold">
-          <Tag className="size-4" />
-          Lablr
-          <span className="text-muted-foreground text-[10px] font-normal" title="build">
-            {VERSION}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Home"
+            onClick={() => (window.location.hash = "")}
+          >
+            <Home />
+          </Button>
+          <span className="flex items-center gap-2 font-semibold">
+            <Tag className="size-4" />
+            Lablr
+            <span className="text-muted-foreground text-[10px] font-normal" title="build">
+              {VERSION}
+            </span>
           </span>
-        </span>
+        </div>
         <div className="flex items-center gap-1">
-          {hash && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Home"
-              onClick={() => (window.location.hash = "")}
-            >
-              <Home />
-            </Button>
-          )}
           <PrinterSelect />
           <SettingsMenu />
         </div>

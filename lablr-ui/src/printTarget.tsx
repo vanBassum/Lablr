@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -29,7 +30,6 @@ interface PrintTargetApi {
 }
 
 const Ctx = createContext<PrintTargetApi | undefined>(undefined)
-const STORAGE_KEY = "lablr.printTarget"
 const USB_ID = "usb"
 const webUsbAvailable =
   typeof navigator !== "undefined" && "usb" in (navigator as object)
@@ -37,9 +37,11 @@ const webUsbAvailable =
 export function PrintTargetProvider({ children }: { children: ReactNode }) {
   const usb = usePrinter()
   const [agents, setAgents] = useState<PrintAgent[]>([])
-  const [selectedId, setSelectedIdState] = useState<string>(
-    () => localStorage.getItem(STORAGE_KEY) ?? (webUsbAvailable ? USB_ID : ""),
-  )
+  // The default target is the starred bridge (server isDefault) — NOT USB. The
+  // dropdown is an in-session override only; on reload we re-default, so the
+  // printers-list choice stays authoritative.
+  const explicitRef = useRef(false)
+  const [selectedId, setSelectedIdState] = useState<string>("")
 
   // Poll the backend for connected bridges so they appear/disappear live.
   useEffect(() => {
@@ -68,21 +70,23 @@ export function PrintTargetProvider({ children }: { children: ReactNode }) {
     return list
   }, [agents, usb.status])
 
-  // When there's no valid explicit selection, prefer the server-marked default
-  // bridge (if online), else the local USB printer, else the first target.
+  // Auto-select the default unless the user made an explicit pick this session.
+  // Preference: the starred default bridge (when online) > USB > first target.
   useEffect(() => {
-    if (targets.length === 0 || targets.some((t) => t.id === selectedId)) return
+    if (targets.length === 0) return
+    const valid = targets.some((t) => t.id === selectedId)
+    if (explicitRef.current && valid) return
     const def = agents.find((a) => a.isDefault && a.online)
     const pick =
       (def && targets.find((t) => t.id === def.id)) ??
       targets.find((t) => t.id === USB_ID) ??
       targets[0]
-    setSelectedIdState(pick.id)
+    if (pick && pick.id !== selectedId) setSelectedIdState(pick.id)
   }, [targets, selectedId, agents])
 
   const setSelectedId = useCallback((id: string) => {
+    explicitRef.current = true // explicit choice overrides the auto-default (this session)
     setSelectedIdState(id)
-    localStorage.setItem(STORAGE_KEY, id)
   }, [])
 
   const print = useCallback(
