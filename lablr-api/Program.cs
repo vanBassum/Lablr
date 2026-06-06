@@ -52,7 +52,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Eager-init: creates + seeds the SQLite DB at startup so failures surface now.
+// Eager-init: migrates + seeds the SQLite DB at startup so failures surface now.
 app.Services.GetRequiredService<ConfigService>();
 
 app.UseExceptionHandler(); // maps ConfigValidationException -> 400

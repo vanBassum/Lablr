@@ -1,5 +1,8 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Storage;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -37,8 +40,29 @@ public sealed class ConfigService
         _seedDir = Path.IsPathRooted(dir) ? dir : Path.GetFullPath(dir, env.ContentRootPath);
 
         using var db = _dbf.CreateDbContext();
-        db.Database.EnsureCreated();
+        MigrateToLatest(db);
         SeedIfEmpty(db);
+    }
+
+    /// <summary>
+    /// Bring the schema up to date via EF migrations. A DB created by the old
+    /// <c>EnsureCreated()</c> path has our tables but no <c>__EFMigrationsHistory</c>;
+    /// stamp the existing migrations as already-applied (a one-time baseline) so
+    /// <see cref="RelationalDatabaseFacadeExtensions.Migrate"/> won't try to recreate
+    /// them. A fresh/empty DB has no baseline to do and is built straight from migrations.
+    /// </summary>
+    private void MigrateToLatest(LablrDbContext db)
+    {
+        var creator = db.GetService<IRelationalDatabaseCreator>();
+        if (creator.Exists() && creator.HasTables() && !db.Database.GetAppliedMigrations().Any())
+        {
+            var history = db.GetService<IHistoryRepository>();
+            db.Database.ExecuteSqlRaw(history.GetCreateIfNotExistsScript());
+            foreach (var id in db.Database.GetMigrations())
+                db.Database.ExecuteSqlRaw(history.GetInsertScript(new HistoryRow(id, ProductInfo.GetVersion())));
+            _log.LogInformation("Baselined pre-migrations config DB onto EF migrations");
+        }
+        db.Database.Migrate();
     }
 
     // ---------- Reads ----------

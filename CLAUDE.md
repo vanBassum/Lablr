@@ -68,7 +68,7 @@ The AI never renders or prints — it only produces draft data via MCP and gets 
 
 The **lablr-api** backend is live (no longer dormant). It:
 - holds **drafts in memory** (TTL eviction, never in the DB) — `POST/GET /api/drafts`;
-- stores the **config** (labels, templates, printers, pictograms) in an **embedded SQLite** file (`Db:Path`, a persistent volume in prod). The YAML in `Config:Dir` **seeds the DB on first boot only**; after that **the DB is the source of truth** and is edited at runtime via REST/MCP. (Editing the mounted YAML after first boot does nothing — reseed by starting with an empty DB.) Serves `GET /api/config` and pictogram SVGs (`/pictograms`);
+- stores the **config** (labels, templates, printers, pictograms) in an **embedded SQLite** file (`Db:Path`, a persistent volume in prod). The YAML in `Config:Dir` **seeds the DB on first boot only**; after that **the DB is the source of truth** and is edited at runtime via REST/MCP. (Editing the mounted YAML after first boot does nothing — reseed by starting with an empty DB.) Schema changes ship as **EF Core migrations** (`lablr-api/Data/Migrations/`), applied at startup; a pre-migrations DB is auto-baselined so it isn't recreated. Serves `GET /api/config` and pictogram SVGs (`/pictograms`);
 - relays print jobs to a connected bridge as a **dumb byte forwarder** (`POST /api/agents/{id}/print` → WebSocket) — it forwards the PWA-rendered bytes verbatim and **never renders**;
 - exposes an **MCP server** (Streamable HTTP at `/mcp`): read/author config (`list_templates`, `upsert_*`, …) and `create_draft`, which returns a `#/d/{id}` deep link. There is **no `print_draft`** — the AI never renders or prints;
 - **serves the built PWA same-origin** (`wwwroot`).

@@ -475,3 +475,11 @@ Everything decided lives in CLAUDE.md (active model) + ROADMAP.md (phased, stabl
 **Config persistence clarified (doc fix, not a behavior change).** YAML in `Config:Dir` **seeds the SQLite DB on first boot only**; the DB (persistent volume, `Db:Path`) is the **source of truth** thereafter, edited at runtime via REST/MCP. CLAUDE.md/DESIGN.md previously implied "edit the mounted YAML to change config," which is false post-seed — corrected.
 
 **Known follow-up (not done here):** the SQLite store uses `EnsureCreated()` with **no EF migrations**, so a future entity/column change won't apply to an existing prod DB (you'd reseed from an empty DB). Acceptable for a homelab single-file store; revisit if the config schema starts changing often.
+
+---
+
+## 2026-06-06 — Config DB now uses EF migrations (resolves the prior follow-up)
+
+Replaced `Database.EnsureCreated()` with **EF Core migrations** (`lablr-api/Data/Migrations/`, first migration `InitialCreate`). Startup runs a `MigrateToLatest` routine: a brand-new/empty DB is built straight from migrations; a **pre-migrations DB** (created by the old `EnsureCreated`, so it has our tables but no `__EFMigrationsHistory`) is **auto-baselined** — the existing migrations are stamped as applied so `Migrate()` won't try to recreate the tables and clobber data. Added a `IDesignTimeDbContextFactory` so `dotnet ef` scaffolds without booting the app/seed. Both paths verified locally (fresh → applies `InitialCreate` + seeds; existing dev DB → baselines, no-op migrate, data preserved). Schema changes now ship as migrations instead of silently not applying to a persisted prod volume.
+
+Also: removed the stray root `package-lock.json` (npm) and generated `pnpm-lock.yaml` — the repo is pnpm everywhere.
