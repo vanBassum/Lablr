@@ -425,12 +425,11 @@ label-config/
 
 **ConfigService responsibilities:**
 
-- Load YAML files from disk
+- Seed an empty embedded **SQLite** store from the YAML on first boot; the DB is the source of truth thereafter (edited at runtime via REST/MCP)
 - Validate that templates reference existing labels and printers
 - Validate that templates declare required fields
 - Provide template, label, printer lookups
 - Find compatible templates for a draft (field matching)
-- Reload configuration during development
 
 ---
 
@@ -563,7 +562,7 @@ Bitmap → Printer-specific byte sequence
 
 ✅ **Avoid inventory management.** It is not this system's job.
 
-✅ **Avoid databases unless truly needed.** In-memory storage at first.
+✅ **Avoid databases unless truly needed.** Drafts stay in memory; the only DB is an embedded SQLite **config** store (labels/templates/printers/pictograms), seeded from YAML — never inventory.
 
 ---
 

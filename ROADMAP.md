@@ -90,6 +90,7 @@
 
 ## Dropped / superseded
 
+- ~~Server-side renderer (`lablr-render`) + headless print (`print_draft` / `/api/print/draft`)~~ — **removed 2026-06-06**: a Node/node-canvas service re-rendered the label so the AI could print without a browser. That is a **second renderer** — its bitmap can differ from the browser preview, breaking "preview = print." Reverted to one renderer: the PWA renders, and the backend only relays the PWA's bytes to a bridge. The AI creates a draft + link; the human previews and prints. (Settles item **29** as *rejected*, not deferred. See LOGBOOK 2026-06-06.)
 - ~~**6.** Minimal label editor~~ — **dropped**: the PWA renders/prints, it doesn't author; values come from AI-created drafts.
 - ~~**45.** Remove presets~~ — **reverted, settled**: presets are KEPT. A use case ("Aida box", "Vial", "Bucket") is a named template+media; presets give consistency (same thing → same output). The print page (46) is the override. Don't relitigate — see CLAUDE.md.
 - ~~**35.** Auto-fit text (initial idea)~~ — **folded into 39/40/43**.

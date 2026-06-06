@@ -45,17 +45,14 @@ DPI is a property of the **media/printer profile**, passed into the mm→dots st
 ### Templates — declarative layout first
 v1 templates are a small **declarative layout** the canvas renderer interprets directly (stacks, text fields, font size/weight/align; barcode/QR later). Claude- and human-editable. **HTML/CSS templates are deferred** to a possible later alternative renderer — decoupled on purpose.
 
-### The model — Draft / Template / Media / Preset / Printer
-> ⚠ **Stale — pending reconciliation.** The shipped code (the "wireframe" render model, see LOGBOOK 2026-06-05 + memory `render-model-wireframe`) dropped **presets** and `designSize`; it uses `LabelStock` (not "Media"), **absolute mm**, and per-template **orientation variants**. The section below describes the older design and is kept until this is reconciled.
+### The model — Draft / Template / Label / Printer (the "wireframe" model)
+> This is the **shipped** model (see LOGBOOK 2026-06-05/06-06 + memory `render-model-wireframe`). Presets, "Media", and `designSize` were **dropped** — see [DESIGN.md](DESIGN.md) for the full spec. Don't reintroduce presets without logging a reversal.
 
 Labels compose from decoupled concepts:
-- **Draft** — the data: a **preset** + field values (`fields`). Created by the AI — it picks the preset (use case) and fills the fields.
-- **Template** — declarative layout + field schema + `designSize` (a coordinate space, not physical size). Owns which fields exist; renders any draft that supplies them.
-- **Media** — the physical roll (size, material, SKU) + calibrated head offset. *What's loaded* determines the media at print time — physical runtime state, never baked into a draft.
-- **Preset** — a named **(template + media + orientation)** **use case**: "Aida box", "Chemical vial", "Chemical bucket". **Presets are the decided entry point and the consistency layer — SETTLED, do not relitigate** (we oscillated ~3×). Why: the same thing always prints the same way — a transistor for the Aida box always uses that template + that roll — and it's how you/the AI express intent ("a label for my Aida box"), not "template X on media Y". If presets ever feel doubtful again, re-read this and the LOGBOOK entry rather than re-debating.
-- **Printer** — a YAML profile (`config/printers/`), currently just **identity** (id, name) so media can link to it via `media.printers`. (DPI + head width still live in the driver while there's a single printer; they move here with item 24.) The print-placement **offset lives on the media** — a roll is always loaded on a specific printer, so the (printer + roll) calibration is uniquely the media's. Applied only at print time, never to the preview.
-
-Note: a draft references **one** preset (its use case); the **print page can override** template/media/orientation — the escape hatch for "print this on whatever roll is actually loaded."
+- **Draft** — data only: field values (`fields`), no references. The AI fills the fields. A draft matches any **template** whose `requiredFields` it supplies; the PWA auto-discovers the matches and lets the user pick when more than one fits.
+- **Template** — a handcrafted layout for one **label** (+ orientation): `requiredFields`, a `label` reference, and `elements` in **absolute millimetres** (`rect { x, y, width, height }`). Orientation is either a single `orientation` + `elements`, or per-orientation `variants` (`portrait`/`landscape`). No `designSize`, no responsive scaling — many simple templates over a few clever ones.
+- **Label** (`LabelStock`) — the physical roll: `widthMm`/`heightMm`, material, SKU, `marginsMm` (safe area), `offsetCorrectionMm` (head calibration), and `compatiblePrinters`. Margins/offsets live here so every template on that roll inherits them. Never carries DPI.
+- **Printer** — a profile (`id`, `name`, `dpi`). A label's `compatiblePrinters` selects one; the renderer reads `dpi` for the mm→dots step. The print-placement **offset lives on the label** (a roll is calibrated against the head); applied only at print time, never baked into the preview.
 
 ### Platform & transport
 The renderer and printer live on the **same device** — the production target is an **Android phone** (Chrome supports PWA install + Web Bluetooth). Transport is **not Bluetooth-only**: it lives behind a single `Printer` interface with swappable implementations. The **first implementation is WebUSB from desktop Chrome**, driving a USB Dymo LabelWriter 450 — chosen to prove the pipeline with no Bluetooth/OTG unknowns. **Web Bluetooth** (for the Niimbot, on Android) is a second implementation added later. The bitmap pipeline is identical across transports; only byte-delivery differs.
@@ -70,21 +67,22 @@ The AI never renders or prints — it only produces draft data via MCP and gets 
 ### Persistence & the backend (now active)
 
 The **lablr-api** backend is live (no longer dormant). It:
-- holds **drafts in memory** (TTL eviction, no database) — `POST/GET /api/drafts`;
-- serves the **config** (`GET /api/config`) and pictogram SVGs (`/pictograms`), read from a directory on disk (`Config:Dir`) that is a **mount point** in prod (edit config without rebuilding);
-- exposes an **MCP server** (Streamable HTTP at `/mcp`) with `list_templates` + `create_draft` so an AI creates a draft and gets a `#/d/{id}` deep link;
+- holds **drafts in memory** (TTL eviction, never in the DB) — `POST/GET /api/drafts`;
+- stores the **config** (labels, templates, printers, pictograms) in an **embedded SQLite** file (`Db:Path`, a persistent volume in prod). The YAML in `Config:Dir` **seeds the DB on first boot only**; after that **the DB is the source of truth** and is edited at runtime via REST/MCP. (Editing the mounted YAML after first boot does nothing — reseed by starting with an empty DB.) Serves `GET /api/config` and pictogram SVGs (`/pictograms`);
+- relays print jobs to a connected bridge as a **dumb byte forwarder** (`POST /api/agents/{id}/print` → WebSocket) — it forwards the PWA-rendered bytes verbatim and **never renders**;
+- exposes an **MCP server** (Streamable HTTP at `/mcp`): read/author config (`list_templates`, `upsert_*`, …) and `create_draft`, which returns a `#/d/{id}` deep link. There is **no `print_draft`** — the AI never renders or prints;
 - **serves the built PWA same-origin** (`wwwroot`).
 
-It **never renders** — the PWA remains the canonical renderer. MCP auth is deferred (generic MCP for now; ChatGPT's OAuth 2.1 + DCR is item 53).
+It **never renders** — the PWA is the single renderer. MCP auth is deferred (generic MCP for now; ChatGPT's OAuth 2.1 + DCR is item 53).
 
 ---
 
 ## Out of Scope (now and likely forever)
 
 - Inventory / stock / BOM tracking, component or product records
-- Complex databases
+- Complex databases (the embedded SQLite **config** store is fine — it holds labels/templates/printers/pictograms, never inventory; drafts stay in RAM)
 - User accounts, permissions, mandatory setup
-- Backend/headless rendering, Chromium
+- Backend/headless rendering, Chromium (the backend relays bytes, it never rasterizes — preview = print)
 
 Components, chemicals, and products are optional integrations — never required. Labels are independent objects created on demand.
 
@@ -92,14 +90,15 @@ Components, chemicals, and products are optional integrations — never required
 
 ## Deployment
 
-Runs on the strato-stack homelab at **vanbassum.com**, behind Traefik (HTTPS via Let's Encrypt). The **lablr-api** container serves everything **same-origin**: the PWA (built into `wwwroot`), `/api`, `/pictograms`, and `/mcp`. Config is a **read-only mounted directory** (`Config__Dir=/config`); deep-link URLs derive from Traefik's forwarded headers. GitHub Pages is retired. A fresh deployment should become functional without manual admin/config forms.
+Runs on the strato-stack homelab at **vanbassum.com**, behind Traefik (HTTPS via Let's Encrypt). The **lablr-api** container serves everything **same-origin**: the PWA (built into `wwwroot`), `/api`, `/pictograms`, and `/mcp`. The config YAML is a **read-only mounted directory** (`Config__Dir=/config`) that **seeds an empty SQLite DB on first boot**; the DB lives on a **writable persistent volume** (`Db__Path=/data/lablr.db`) so runtime edits survive restarts. Deep-link URLs derive from Traefik's forwarded headers. GitHub Pages is retired. A fresh deployment becomes functional without manual admin/config forms.
 
 ---
 
 ## Project Structure
 
 ```
-/lablr-ui      → React PWA — the canonical renderer; fetches config + drafts from the API
-/lablr-api     → .NET 9 minimal API (active) — config + in-memory drafts + MCP; serves the PWA
-/label-config  → configuration (labels, templates, printers, pictograms, drafts) — read by the API from disk (a mount in prod)
+/lablr-ui      → React PWA — the single renderer; renders + previews + prints (WebUSB or via the bridge relay)
+/lablr-api     → .NET 9 minimal API — SQLite config store + in-memory drafts + MCP + bridge byte-relay; serves the PWA. Never renders.
+/lablr-bridge  → ESP32-S3 firmware: a BLE/cloud ⇄ USB-host "dumb pipe" so an Android phone can print to a USB-only Dymo
+/label-config  → seed YAML/SVG (labels, templates, printers, pictograms, drafts) — seeds the SQLite DB on first boot (a mount in prod)
 ```

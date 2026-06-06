@@ -459,3 +459,19 @@ Everything decided lives in CLAUDE.md (active model) + ROADMAP.md (phased, stabl
 - **Item 31** (GitHub Pages hosting) is **superseded** by same-origin homelab hosting behind Traefik.
 
 **Phased plan:** (1) backend config endpoints + in-memory draft store (TTL); (2) UI fetches config at runtime with a ready-gate + `#/d/{id}` deep-link route, served same-origin; (3) MCP server (`ModelContextProtocol.AspNetCore`, `MapMcp()` Streamable HTTP at `/mcp`) — `list_templates` + `create_draft` tools + config resources; (4) ChatGPT OAuth hardening (later); (5) retire `build-catalog.mjs`/`llms.txt` + GH Pages, update Dockerfile/compose + docs.
+
+---
+
+## 2026-06-06 — Reverted server-side rendering: one renderer, restored (preview = print)
+
+**Decision (with the user): there is exactly one renderer — the PWA — and the backend never rasterizes.** Removed the `lablr-render` Node/node-canvas service, `LabelPrintService`, the `/api/print/draft` REST endpoint, and the MCP `print_draft` + `list_bridges` tools.
+
+**Why.** A recent change had added a headless renderer so the AI could print directly (`print_draft` → render in Node → relay to a bridge). It ran *the PWA's exact render code*, but in a **different rasterizer** (node-canvas/Cairo+Pango vs. the browser's canvas). Same code, two engines → font metrics, anti-aliasing, and the 1-bit threshold can differ, so the bytes the user previews are **not** guaranteed to be the bytes printed. That is precisely the "second renderer" the original design forbids (see 2026-06-04 LOGBOOK: *"server-side rendering … violates 'preview = print' (no second renderer)"*). Code-sharing made it *look* like one renderer; output identity is what the invariant actually requires.
+
+**What stays.** The PWA renders the canvas and prints it — over **WebUSB** (`printCanvas`) or, for a remote bridge, by building the job from **that same canvas** (`buildJobFromCanvas`) and POSTing the bytes to `/api/agents/{id}/print`. The backend is a **dumb byte relay** (`PrintAgentRegistry.SendAsync` → WebSocket); it forwards verbatim and never renders. Preview = print holds across both transports, by construction. Bonus: deleting `LabelPrintService` also removed the C#/TS duplicate of the template-match / orientation / element-selection logic.
+
+**AI flow (restored to the documented design).** The AI only `create_draft`s and returns a `#/d/{id}` link; the human opens it in the PWA, previews, and prints. The AI cannot print headlessly — and shouldn't, because there is no preview without the browser.
+
+**Config persistence clarified (doc fix, not a behavior change).** YAML in `Config:Dir` **seeds the SQLite DB on first boot only**; the DB (persistent volume, `Db:Path`) is the **source of truth** thereafter, edited at runtime via REST/MCP. CLAUDE.md/DESIGN.md previously implied "edit the mounted YAML to change config," which is false post-seed — corrected.
+
+**Known follow-up (not done here):** the SQLite store uses `EnsureCreated()` with **no EF migrations**, so a future entity/column change won't apply to an existing prod DB (you'd reseed from an empty DB). Acceptable for a homelab single-file store; revisit if the config schema starts changing often.
