@@ -1,0 +1,11 @@
+# ESP-IDF Partition Table — sized for an 8 MB ESP32-S3 module.
+# WiFi + NimBLE + USB host + dual-OTA needs roomier app slots than the 4 MB
+# Strux default, so OTA slots are 2 MB each. If your S3 has only 4 MB flash,
+# shrink ota_0/ota_1 to 0x180000 and set CONFIG_ESPTOOLPY_FLASHSIZE_4MB.
+# Name,     Type,   SubType,    Offset,     Size,       Flags
+nvs,        data,   nvs,        0x9000,     0x6000,
+otadata,    data,   ota,        0xf000,     0x2000,
+phy_init,   data,   phy,        0x11000,    0x1000,
+ota_0,      app,    ota_0,      0x20000,    0x200000,
+ota_1,      app,    ota_1,      0x220000,   0x200000,
+www,        data,   fat,        0x420000,   0xC0000,

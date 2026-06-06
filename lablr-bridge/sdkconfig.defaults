@@ -1,0 +1,33 @@
+# Partition table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Flash size and speed (8 MB S3 module; see partitions.csv if yours is 4 MB)
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# HTTP server WebSocket support
+CONFIG_HTTPD_WS_SUPPORT=y
+
+# Increase timer task stack (default 2048 too small for WiFi calls in timer callbacks)
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096
+
+# FAT long filename support (needed for React build output)
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+
+# ── Bluetooth LE (NimBLE host) — phone <-> bridge ──────────────
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+# Peripheral only: we advertise and accept connections, we never scan/connect.
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+
+# ── USB OTG in HOST mode — bridge <-> Dymo ─────────────────────
+# The espressif/usb component (idf_component.yml) provides the host library;
+# no extra Kconfig is required here for basic bulk transfers.
+
+# OTA rollback — pairs with esp_ota_mark_app_valid_cancel_rollback() in main.cpp
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

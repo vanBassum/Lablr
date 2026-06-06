@@ -1,0 +1,8 @@
+dependencies:
+  idf:
+    version: ">=6.0.0"
+  espressif/mdns: ^1
+  # USB Host Library — moved out of core IDF into the registry in 6.0.
+  espressif/usb: "*"
+  # WS2812 RGB driver — used only to blank the over-bright on-board LED.
+  espressif/led_strip: "*"
