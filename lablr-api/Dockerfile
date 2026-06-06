@@ -23,6 +23,10 @@ RUN dotnet publish -c Release -o /app/publish --no-restore
 # --- Runtime: API serves /api, /pictograms, and the PWA (wwwroot) same-origin ---
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 WORKDIR /app
+# SkiaSharp needs fontconfig + a real font for server-side label rendering.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libfontconfig1 fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish ./
 COPY --from=ui /ui/dist ./wwwroot
 # SQLite DB dir — a volume should overlay this for persistence (see docker-compose).
