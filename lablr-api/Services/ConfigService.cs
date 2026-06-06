@@ -23,6 +23,10 @@ public sealed class ConfigService
     private readonly IDbContextFactory<LablrDbContext> _dbf;
     private readonly string _seedDir;
     private readonly ILogger<ConfigService> _log;
+
+    // Bumped on every config write; used to invalidate render caches/ETags.
+    private long _version;
+    public long ConfigVersion => Interlocked.Read(ref _version);
     private readonly IDeserializer _yaml = new DeserializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .IgnoreUnmatchedProperties()
@@ -206,6 +210,7 @@ public sealed class ConfigService
             dbSet.Add(entity);
         }
         db.SaveChanges();
+        Interlocked.Increment(ref _version);
     }
 
     private bool Delete<T>(string id) where T : class
@@ -215,6 +220,7 @@ public sealed class ConfigService
         if (entity is null) return false;
         db.Set<T>().Remove(entity);
         db.SaveChanges();
+        Interlocked.Increment(ref _version);
         return true;
     }
 

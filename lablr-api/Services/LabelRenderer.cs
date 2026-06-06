@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using SkiaSharp;
 using Svg.Skia;
 
@@ -18,6 +19,11 @@ public sealed class LabelRenderer
     private readonly ConfigService _config;
     private readonly SKTypeface _sans;
     private readonly SKTypeface _sansBold;
+
+    // Parsing an SVG is the slow part of a pictogram render (~hundreds of ms),
+    // so cache the parsed picture keyed by the SVG markup itself — self-invalidating
+    // when a pictogram is edited (the new markup is a new key).
+    private readonly ConcurrentDictionary<string, SKSvg> _svgCache = new();
 
     public LabelRenderer(ConfigService config)
     {
@@ -141,8 +147,13 @@ public sealed class LabelRenderer
     {
         var svg = _config.GetPictogram(name)?.Svg;
         if (string.IsNullOrEmpty(svg)) return;
-        using var pic = new SKSvg();
-        if (pic.FromSvg(svg) is null || pic.Picture is null) return;
+        var pic = _svgCache.GetOrAdd(svg, markup =>
+        {
+            var s = new SKSvg();
+            try { s.FromSvg(markup); } catch { /* leave Picture null */ }
+            return s;
+        });
+        if (pic.Picture is null) return;
 
         var bounds = pic.Picture.CullRect;
         if (bounds.Width <= 0 || bounds.Height <= 0) return;

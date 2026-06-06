@@ -20,6 +20,7 @@ builder.Services.AddSingleton<LinkService>();
 builder.Services.AddSingleton<PrintAgentStore>();
 builder.Services.AddSingleton<PrintAgentRegistry>();
 builder.Services.AddSingleton<LabelRenderer>();   // the single (backend) renderer
+builder.Services.AddSingleton<RenderCache>();     // caches rendered bytes (preview snappiness)
 builder.Services.AddSingleton<LabelPrintService>();
 builder.Services.AddHostedService<DraftSweeper>();
 
