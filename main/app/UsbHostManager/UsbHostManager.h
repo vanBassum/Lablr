@@ -7,6 +7,7 @@
 #include "Semaphore.h"
 #include "Task.h"
 #include "usb/usb_host.h"
+#include <atomic>
 #include <cstdint>
 #include <cstddef>
 
@@ -60,10 +61,6 @@ class UsbHostManager
     /// marker on bulk, and one mid-stream is how a job gets truncated).
     static constexpr size_t OUT_XFER_BUF = 4096;
 
-    /// The IN transfer, for status. Printer status is one byte; this is
-    /// generous because an endpoint's MPS is 64 and the buffer must hold one.
-    static constexpr size_t IN_XFER_BUF = 64;
-
     /// Longest IEEE-1284 device ID we will ask for. The reply is
     /// [len_hi][len_lo][ascii...] and real ones are a few hundred bytes.
     static constexpr size_t DEVICE_ID_MAX = 512;
@@ -80,15 +77,44 @@ public:
 
     void Init();
 
+    /// A flat record of every endpoint seen on the claimed interface, kept only
+    /// so `usb status` can report it without re-walking descriptors.
+    struct EndpointInfo { uint8_t addr; uint8_t attributes; uint16_t mps; uint8_t interval; };
+
+    /// Everything enumeration learned about the attached device.
+    ///
+    /// One struct rather than twenty members because it is read from command
+    /// tasks while the client-event task may be clearing it: a reader takes a
+    /// consistent COPY in one assignment under the state lock, instead of
+    /// racing field by field and reporting half of one device and half of none.
+    struct Attached
+    {
+        bool     ready        = false;
+        bool     printerClass = false;   ///< the claimed interface is bInterfaceClass 7
+        uint16_t vid = 0, pid = 0, bcdDevice = 0;
+        uint8_t  devAddr = 0;
+
+        char manufacturer[64] = {};
+        char product[64]      = {};
+        char serial[64]       = {};
+
+        uint8_t  ifaceNum = 0, altSet = 0;
+        uint8_t  ifaceClass = 0, ifaceSubClass = 0, ifaceProto = 0;
+        uint8_t  epOutAddr = 0, epInAddr = 0;
+        uint16_t epOutMps = 64, epInMps = 64;
+
+        EndpointInfo endpoints[MAX_ENDPOINTS_LOGGED] = {};
+        size_t       endpointCount = 0;
+    };
+
     /// True once a device is enumerated and a bulk OUT endpoint is claimed.
-    bool IsReady() const { return ready_; }
+    /// Advisory only - it can go false the instant after it is read, so it
+    /// answers "is a printer plugged in" and never guards a transfer. The
+    /// authoritative check is inside Send/ControlTransfer, under the lock.
+    bool IsReady() const { return ready_.load(); }
 
-    /// Vendor and product of the attached device, 0 when nothing is attached.
-    uint16_t VendorId()  const { return vid_; }
-    uint16_t ProductId() const { return pid_; }
-
-    /// The product string the device reported, or "" if it gave none.
-    const char* ProductName() const { return product_; }
+    /// A consistent copy of what is attached. False when nothing is.
+    bool Snapshot(Attached& out) const;
 
     /// Push bytes at the bulk OUT endpoint, blocking until they are all gone.
     /// Returns bytes accepted, or -1 on error / nothing attached. Serialised:
@@ -115,44 +141,86 @@ private:
     Task daemonTask_;
     Task clientTask_;
 
-    // ── What is attached, filled during enumeration ──
-    bool     ready_        = false;
-    bool     printerClass_ = false;   ///< the claimed interface is bInterfaceClass 7
-    uint16_t vid_          = 0;
-    uint16_t pid_          = 0;
-    uint16_t bcdDevice_    = 0;
-    uint8_t  devAddr_      = 0;
-    char     manufacturer_[64] = {};
-    char     product_[64]      = {};
-    char     serial_[64]       = {};
+    // ── One transfer's completion ──
+    //
+    // Heap-allocated per attempt rather than shared, and owned JOINTLY by the
+    // waiter and the transfer callback, because the two can race at exactly one
+    // moment: the waiter's timeout.
+    //
+    // A timeout is not hypothetical here. usb_transfer_t::timeout_ms is
+    // documented "currently not supported yet" in the USB host component this
+    // builds against, so the driver never times a transfer out by itself - a
+    // transfer that does not complete stays queued forever and OUR wait is the
+    // only limit. Abandoning one is therefore a state that has to be designed,
+    // not an edge case.
+    //
+    // `claimed` is the agreement. Whichever side finds it ALREADY true knows
+    // the other got there first and has gone, so that side owns the cleanup.
+    // Both interleavings are safe, and neither can free twice.
+    struct Xfer
+    {
+        Semaphore         done;
+        int               status = -1;
+        std::atomic<bool> claimed{false};
+        /// Set by an abandoning waiter, before it claims: the transfer object
+        /// the callback must free along with this, or null when the transfer is
+        /// a reusable one the manager keeps.
+        usb_transfer_t*   orphan = nullptr;
+    };
 
-    uint8_t  ifaceNum_  = 0;
-    uint8_t  altSet_    = 0;
-    uint8_t  ifaceClass_ = 0, ifaceSubClass_ = 0, ifaceProto_ = 0;
-    uint8_t  epOutAddr_ = 0;
-    uint8_t  epInAddr_  = 0;
-    uint16_t epOutMps_  = 64;
-    uint16_t epInMps_   = 64;
-
-    /// A flat record of every endpoint seen on the claimed interface, kept only
-    /// so `usb status` can report it without re-walking descriptors.
-    struct EndpointInfo { uint8_t addr; uint8_t attributes; uint16_t mps; uint8_t interval; };
-    EndpointInfo endpoints_[MAX_ENDPOINTS_LOGGED] = {};
-    size_t       endpointCount_ = 0;
+    // ── What is attached ──
+    //
+    // `dev_`, `devHdl_`, `inFlight_` and `closePending_` are all guarded by
+    // stateMutex_, which is held only for the moments it takes to read or
+    // publish them - never across a transfer. `ready_` is a lock-free echo of
+    // dev_.ready for IsReady().
+    //
+    // Lock order where both are taken: sendMutex_ THEN stateMutex_, never the
+    // reverse. CloseDevice runs on the client-event pump and takes only
+    // stateMutex_, so a 30-second print cannot block a disconnect.
+    std::atomic<bool> ready_{false};
+    mutable Mutex     stateMutex_;
+    Attached          dev_;
+    int               inFlight_     = 0;   ///< transfers using devHdl_ right now
+    bool              closePending_ = false;
 
     usb_transfer_t* outXfer_ = nullptr;
-    usb_transfer_t* inXfer_  = nullptr;
-    Semaphore       xferDone_;
-    int             xferStatus_ = -1;
-    mutable Mutex   sendMutex_;
+    mutable Mutex   sendMutex_;            ///< one transfer buffer, one printer
 
     void DaemonTaskLoop();
     void ClientTaskLoop();
 
     bool OpenAndClaim(uint8_t devAddr);
     void CloseDevice();
+    void DoClose();                        ///< stateMutex_ must be held
 
-    void LogDeviceDescriptor();
+    /// Take a reference on the attached device so it cannot be closed out from
+    /// under a transfer, and copy its facts. False when nothing is attached or
+    /// a disconnect is already being drained. Every success must be paired with
+    /// ReleaseDevice().
+    bool AcquireDevice(Attached& snap, usb_device_handle_t& devOut);
+    void ReleaseDevice();
+
+    /// Wait for one transfer to complete.
+    ///
+    /// True: the completion landed, `statusOut` is valid, and the transfer
+    /// object is the caller's again. False: it is STILL QUEUED in the driver -
+    /// `x` and `oneShot` now belong to the callback and the caller must touch
+    /// neither. Freeing a transfer the driver still owns is what corrupted the
+    /// internal heap before this existed.
+    static bool AwaitXfer(Xfer* x, uint32_t timeoutMs,
+                          usb_transfer_t* oneShot, int& statusOut);
+
+    /// Halt, flush and clear the bulk OUT endpoint, which is the only way to
+    /// force a stuck transfer to complete. Flush is legal only on a halted
+    /// endpoint and clear is what makes it carry traffic again.
+    void RecoverOutEndpoint(usb_device_handle_t dev, uint8_t ep);
+
+    /// Allocate the reusable OUT transfer if there is not one. Called at Init
+    /// and again after a stuck transfer was handed to its callback.
+    bool AllocOutXfer();
+
+    void LogDeviceDescriptor(Attached& a);
     void LogConfiguration(const usb_config_desc_t* cfg);
 
     /// One blocking control transfer on the default pipe. Returns the number of

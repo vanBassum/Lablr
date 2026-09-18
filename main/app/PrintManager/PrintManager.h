@@ -153,6 +153,30 @@ private:
     /// from head column 0, because ESC D is a count and not an origin.
     static uint32_t BytesPerLine(const Placement& p);
 
+    // ── Job framing, in one place ──
+    //
+    // Every job - a label, the test pattern, the calibration grid - opens with
+    // the same ESC sequence and closes with the same form feed. It used to be
+    // written out three times, and its length appeared once as an expression
+    // and twice as the literal 109, which is two chances for a size to stop
+    // agreeing with what is written into it.
+
+    /// What WriteJobHeader emits: ESC x100, ESC @, ESC L hi lo, ESC D n.
+    static constexpr size_t HEADER_BYTES = 100 + 2 + 4 + 3;
+
+    /// The trailing ESC E.
+    static constexpr size_t FEED_BYTES = 2;
+
+    /// How many bytes a job of `lines` raster lines of `bytesPerLine` each
+    /// occupies, form feed included.
+    static constexpr size_t JobSize(uint32_t lines, uint32_t bytesPerLine)
+    {
+        return HEADER_BYTES + static_cast<size_t>(lines) * (1 + bytesPerLine) + FEED_BYTES;
+    }
+
+    /// Open a job. Returns the bytes written, which is always HEADER_BYTES.
+    static size_t WriteJobHeader(uint8_t* job, uint32_t lines, uint32_t bytesPerLine);
+
     /// One design row into one already-blanked raster line. Returns ink dots set.
     static uint32_t RasteriseRow(const uint32_t* row, uint32_t width, uint8_t* line,
                                  uint32_t bytesPerLine, int32_t offsetX,

@@ -51,19 +51,15 @@ void UsbHostManager::Init()
         return;
     }
 
-    // One OUT transfer and one IN transfer, allocated once. The USB host library
-    // needs DMA-capable memory for these and allocates it itself, which is
-    // another reason not to hand it a buffer of ours.
-    if (usb_host_transfer_alloc(OUT_XFER_BUF, 0, &outXfer_) != ESP_OK ||
-        usb_host_transfer_alloc(IN_XFER_BUF, 0, &inXfer_) != ESP_OK)
-    {
-        ESP_LOGE(TAG, "usb_host_transfer_alloc failed");
+    // The OUT transfer, allocated once and reused for every chunk of every job.
+    // The USB host library needs DMA-capable memory for it and allocates that
+    // itself, which is another reason not to hand it a buffer of ours.
+    //
+    // There is no IN transfer: the only thing ever read back is the printer's
+    // one-byte status, and that is a control request on the default pipe with a
+    // transfer of its own.
+    if (!AllocOutXfer())
         return;
-    }
-    outXfer_->callback = &UsbHostManager::TransferCallback;
-    outXfer_->context  = this;
-    inXfer_->callback  = &UsbHostManager::TransferCallback;
-    inXfer_->context   = this;
 
     daemonTask_.Init("usb_daemon", 4, 4096);
     daemonTask_.SetHandler([this]() { DaemonTaskLoop(); });
@@ -127,6 +123,12 @@ void UsbHostManager::ClientEventCallback(const usb_host_client_event_msg_t* msg,
 
 bool UsbHostManager::OpenAndClaim(uint8_t devAddr)
 {
+    // Assembled locally and published in one assignment at the end. Nothing can
+    // read it meanwhile: ready_ is false, so AcquireDevice refuses, so no
+    // transfer can be looking at half-filled facts.
+    Attached a;
+    a.devAddr = devAddr;
+
     esp_err_t err = usb_host_device_open(clientHdl_, devAddr, &devHdl_);
     if (err != ESP_OK)
     {
@@ -134,9 +136,8 @@ bool UsbHostManager::OpenAndClaim(uint8_t devAddr)
         devHdl_ = nullptr;
         return false;
     }
-    devAddr_ = devAddr;
 
-    LogDeviceDescriptor();
+    LogDeviceDescriptor(a);
 
     const usb_config_desc_t* cfg = nullptr;
     err = usb_host_get_active_config_descriptor(devHdl_, &cfg);
@@ -201,18 +202,18 @@ bool UsbHostManager::OpenAndClaim(uint8_t devAddr)
                 continue;
             }
 
-            ifaceNum_      = intf->bInterfaceNumber;
-            altSet_        = intf->bAlternateSetting;
-            ifaceClass_    = intf->bInterfaceClass;
-            ifaceSubClass_ = intf->bInterfaceSubClass;
-            ifaceProto_    = intf->bInterfaceProtocol;
-            epOutAddr_     = epOut;
-            epInAddr_      = epIn;
-            epOutMps_      = mpsOut ? mpsOut : 64;
-            epInMps_       = mpsIn ? mpsIn : 64;
-            printerClass_  = (intf->bInterfaceClass == PRINTER_CLASS);
-            endpointCount_ = seenCount;
-            memcpy(endpoints_, seen, sizeof(seen));
+            a.ifaceNum      = intf->bInterfaceNumber;
+            a.altSet        = intf->bAlternateSetting;
+            a.ifaceClass    = intf->bInterfaceClass;
+            a.ifaceSubClass = intf->bInterfaceSubClass;
+            a.ifaceProto    = intf->bInterfaceProtocol;
+            a.epOutAddr     = epOut;
+            a.epInAddr      = epIn;
+            a.epOutMps      = mpsOut ? mpsOut : 64;
+            a.epInMps       = mpsIn ? mpsIn : 64;
+            a.printerClass  = (intf->bInterfaceClass == PRINTER_CLASS);
+            a.endpointCount = seenCount;
+            memcpy(a.endpoints, seen, sizeof(seen));
             found = true;
         }
     }
@@ -224,17 +225,24 @@ bool UsbHostManager::OpenAndClaim(uint8_t devAddr)
         return false;
     }
 
-    ready_ = true;
+    a.ready = true;
+    {
+        LOCK(stateMutex_);
+        dev_ = a;
+        closePending_ = false;
+    }
+    ready_.store(true);
+
     ESP_LOGI(TAG, "claimed interface %u alt %u (class %02x/%02x/%02x), "
                   "EP OUT 0x%02x mps %u, EP IN 0x%02x mps %u",
-             ifaceNum_, altSet_, ifaceClass_, ifaceSubClass_, ifaceProto_,
-             epOutAddr_, epOutMps_, epInAddr_, epInMps_);
+             a.ifaceNum, a.altSet, a.ifaceClass, a.ifaceSubClass, a.ifaceProto,
+             a.epOutAddr, a.epOutMps, a.epInAddr, a.epInMps);
 
     // Ask the printer to name itself. This runs on the client-event task, which
     // must not block - but a control transfer on the default pipe is dispatched
     // by the same pump we are inside, so waiting here would deadlock. Log a
     // pointer to the command instead and let a caller ask on its own task.
-    if (printerClass_)
+    if (a.printerClass)
         ESP_LOGI(TAG, "printer-class interface - run 'usb status' for its IEEE-1284 device ID");
 
     return true;
@@ -242,19 +250,63 @@ bool UsbHostManager::OpenAndClaim(uint8_t devAddr)
 
 void UsbHostManager::CloseDevice()
 {
-    ready_        = false;
-    printerClass_ = false;
+    LOCK(stateMutex_);
+
+    // Stop new transfers first, so the count below can only fall.
+    ready_.store(false);
+    dev_.ready    = false;
+    closePending_ = true;
+
+    // Closing the device while a transfer is still using its handle is what
+    // made unplugging mid-job a race. If one is in flight, the library will
+    // complete it with a no-device status in a moment and its waiter does the
+    // closing on the way out - see ReleaseDevice. This runs on the client-event
+    // pump, which must not block, and it does not: stateMutex_ is never held
+    // across a transfer.
+    if (inFlight_ == 0)
+        DoClose();
+    else
+        ESP_LOGW(TAG, "disconnect while %d transfer(s) in flight - deferring the close",
+                 inFlight_);
+}
+
+void UsbHostManager::DoClose()
+{
     if (devHdl_)
     {
-        usb_host_interface_release(clientHdl_, devHdl_, ifaceNum_);
+        // Only give back what was actually claimed. OpenAndClaim comes here on
+        // its own failure paths too, before there is an interface to release.
+        if (dev_.epOutAddr) usb_host_interface_release(clientHdl_, devHdl_, dev_.ifaceNum);
         usb_host_device_close(clientHdl_, devHdl_);
         devHdl_ = nullptr;
     }
-    vid_ = pid_ = bcdDevice_ = 0;
-    devAddr_ = 0;
-    epOutAddr_ = epInAddr_ = 0;
-    endpointCount_ = 0;
-    manufacturer_[0] = product_[0] = serial_[0] = '\0';
+    dev_          = Attached{};
+    closePending_ = false;
+    ready_.store(false);
+}
+
+bool UsbHostManager::AcquireDevice(Attached& snap, usb_device_handle_t& devOut)
+{
+    LOCK(stateMutex_);
+    if (!dev_.ready || !devHdl_ || closePending_) return false;
+    snap   = dev_;
+    devOut = devHdl_;
+    ++inFlight_;
+    return true;
+}
+
+void UsbHostManager::ReleaseDevice()
+{
+    LOCK(stateMutex_);
+    if (--inFlight_ == 0 && closePending_)
+        DoClose();
+}
+
+bool UsbHostManager::Snapshot(Attached& out) const
+{
+    LOCK(stateMutex_);
+    out = dev_;
+    return out.ready;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -280,7 +332,7 @@ void UsbHostManager::CopyStringDesc(const usb_str_desc_t* desc, char* out, size_
     out[n] = '\0';
 }
 
-void UsbHostManager::LogDeviceDescriptor()
+void UsbHostManager::LogDeviceDescriptor(Attached& a)
 {
     const usb_device_desc_t* dev = nullptr;
     if (usb_host_get_device_descriptor(devHdl_, &dev) != ESP_OK || !dev)
@@ -289,24 +341,24 @@ void UsbHostManager::LogDeviceDescriptor()
         return;
     }
 
-    vid_       = dev->idVendor;
-    pid_       = dev->idProduct;
-    bcdDevice_ = dev->bcdDevice;
+    a.vid       = dev->idVendor;
+    a.pid       = dev->idProduct;
+    a.bcdDevice = dev->bcdDevice;
 
     usb_device_info_t info = {};
     if (usb_host_device_info(devHdl_, &info) == ESP_OK)
     {
-        CopyStringDesc(info.str_desc_manufacturer, manufacturer_, sizeof(manufacturer_));
-        CopyStringDesc(info.str_desc_product,      product_,      sizeof(product_));
-        CopyStringDesc(info.str_desc_serial_num,   serial_,       sizeof(serial_));
+        CopyStringDesc(info.str_desc_manufacturer, a.manufacturer, sizeof(a.manufacturer));
+        CopyStringDesc(info.str_desc_product,      a.product,      sizeof(a.product));
+        CopyStringDesc(info.str_desc_serial_num,   a.serial,       sizeof(a.serial));
     }
 
     ESP_LOGI(TAG, "device %04x:%04x rev %04x  class %02x/%02x/%02x  ep0 mps %u  configs %u",
-             vid_, pid_, bcdDevice_,
+             a.vid, a.pid, a.bcdDevice,
              dev->bDeviceClass, dev->bDeviceSubClass, dev->bDeviceProtocol,
              dev->bMaxPacketSize0, dev->bNumConfigurations);
     ESP_LOGI(TAG, "  manufacturer '%s'  product '%s'  serial '%s'",
-             manufacturer_, product_, serial_);
+             a.manufacturer, a.product, a.serial);
 }
 
 const char* UsbHostManager::XferTypeName(uint8_t attributes)
@@ -357,51 +409,131 @@ void UsbHostManager::LogConfiguration(const usb_config_desc_t* cfg)
 // Transfers
 // ──────────────────────────────────────────────────────────────
 
+bool UsbHostManager::AllocOutXfer()
+{
+    if (outXfer_) return true;
+    if (usb_host_transfer_alloc(OUT_XFER_BUF, 0, &outXfer_) != ESP_OK)
+    {
+        outXfer_ = nullptr;
+        ESP_LOGE(TAG, "usb_host_transfer_alloc failed - the printer cannot be written to");
+        return false;
+    }
+    outXfer_->callback = &UsbHostManager::TransferCallback;
+    // context is per-submit: it points at that attempt's completion record.
+    return true;
+}
+
 void UsbHostManager::TransferCallback(usb_transfer_t* transfer)
 {
-    auto* self = static_cast<UsbHostManager*>(transfer->context);
-    self->xferStatus_ = transfer->status;
-    self->xferDone_.Give();
+    auto* x = static_cast<Xfer*>(transfer->context);
+    x->status = transfer->status;
+
+    // Whichever side finds the flag ALREADY set knows the other got here first
+    // and has gone, so that side owns the cleanup. See the comment on Xfer.
+    if (x->claimed.exchange(true))
+    {
+        if (x->orphan) usb_host_transfer_free(x->orphan);
+        delete x;
+        return;
+    }
+    x->done.Give();
+}
+
+bool UsbHostManager::AwaitXfer(Xfer* x, uint32_t timeoutMs,
+                               usb_transfer_t* oneShot, int& statusOut)
+{
+    if (!x->done.Take(pdMS_TO_TICKS(timeoutMs)))
+    {
+        // Published before the claim, so a callback that observes the claim
+        // also observes this.
+        x->orphan = oneShot;
+        if (!x->claimed.exchange(true))
+            return false;      // still queued - x and oneShot are the callback's now
+
+        // It completed in the gap between the timeout expiring and the claim,
+        // so the cleanup came back to us after all.
+    }
+    statusOut = x->status;
+    delete x;
+    return true;
+}
+
+void UsbHostManager::RecoverOutEndpoint(usb_device_handle_t dev, uint8_t ep)
+{
+    // Halt, then flush - which cancels everything queued and runs its callbacks
+    // - then clear, which is what lets the pipe carry traffic again. Flush is
+    // legal only on a halted endpoint, so the order is not a preference.
+    if (usb_host_endpoint_halt(dev, ep) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "endpoint halt failed - the OUT pipe stays wedged until replug");
+        return;
+    }
+    if (usb_host_endpoint_flush(dev, ep) != ESP_OK)
+        ESP_LOGW(TAG, "endpoint flush failed");
+    if (usb_host_endpoint_clear(dev, ep) != ESP_OK)
+        ESP_LOGW(TAG, "endpoint clear failed");
 }
 
 int UsbHostManager::Send(const uint8_t* data, size_t len, uint32_t timeoutMs)
 {
-    if (!ready_ || !outXfer_ || !data || len == 0) return -1;
+    if (!data || len == 0) return -1;
 
     LOCK(sendMutex_);
+
+    Attached snap;
+    usb_device_handle_t dev = nullptr;
+    if (!outXfer_ || !AcquireDevice(snap, dev)) return -1;
 
     // Chunk on a max-packet-size boundary. A bulk transfer that is not a
     // multiple of MPS ends with a short packet, which the printer reads as
     // "that was the end" - fine for the last chunk, a truncated job anywhere
     // else.
-    const size_t chunkMax = (OUT_XFER_BUF / epOutMps_) * epOutMps_;
-    size_t sent = 0;
+    const size_t chunkMax = (OUT_XFER_BUF / snap.epOutMps) * snap.epOutMps;
+    size_t sent   = 0;
+    bool   failed = false;
 
     while (sent < len)
     {
         const size_t chunk = (len - sent) < chunkMax ? (len - sent) : chunkMax;
         memcpy(outXfer_->data_buffer, data + sent, chunk);
         outXfer_->num_bytes        = chunk;
-        outXfer_->device_handle    = devHdl_;
-        outXfer_->bEndpointAddress = epOutAddr_;
-        outXfer_->timeout_ms       = timeoutMs;
+        outXfer_->device_handle    = dev;
+        outXfer_->bEndpointAddress = snap.epOutAddr;
 
-        xferStatus_ = -1;
+        auto* x = new Xfer();
+        outXfer_->context = x;
+
         if (usb_host_transfer_submit(outXfer_) != ESP_OK)
         {
             ESP_LOGE(TAG, "transfer_submit failed at offset %u", (unsigned)sent);
-            return -1;
+            delete x;                       // never queued, so nobody else has it
+            failed = true;
+            break;
         }
 
-        if (!xferDone_.Take(pdMS_TO_TICKS(timeoutMs + 500)))
+        int status = -1;
+        if (!AwaitXfer(x, timeoutMs, outXfer_, status))
         {
-            ESP_LOGE(TAG, "transfer timed out at offset %u", (unsigned)sent);
-            return -1;
+            // Still queued. The host library does not implement per-transfer
+            // timeouts, so it will never end by itself and outXfer_->data_buffer
+            // would never be ours to overwrite again. The endpoint has to be
+            // halted and flushed to force the completion, and the transfer goes
+            // with it: the callback frees it when the flush finally fires, and a
+            // fresh one is allocated here so the next job still has a buffer.
+            ESP_LOGE(TAG, "transfer stuck at offset %u - halting the endpoint",
+                     (unsigned)sent);
+            outXfer_ = nullptr;
+            RecoverOutEndpoint(dev, snap.epOutAddr);
+            AllocOutXfer();
+            failed = true;
+            break;
         }
-        if (xferStatus_ != USB_TRANSFER_STATUS_COMPLETED)
+
+        if (status != USB_TRANSFER_STATUS_COMPLETED)
         {
-            ESP_LOGE(TAG, "transfer status %d at offset %u", xferStatus_, (unsigned)sent);
-            return -1;
+            ESP_LOGE(TAG, "transfer status %d at offset %u", status, (unsigned)sent);
+            failed = true;
+            break;
         }
 
         sent += outXfer_->actual_num_bytes;
@@ -413,18 +545,24 @@ int UsbHostManager::Send(const uint8_t* data, size_t len, uint32_t timeoutMs)
         }
     }
 
-    return static_cast<int>(sent);
+    ReleaseDevice();
+    return failed ? -1 : static_cast<int>(sent);
 }
 
 int UsbHostManager::ControlTransfer(uint8_t bmRequestType, uint8_t bRequest,
                                     uint16_t wValue, uint16_t wIndex,
                                     uint8_t* data, uint16_t wLength, uint32_t timeoutMs)
 {
-    if (!devHdl_) return -1;
+    Attached snap;
+    usb_device_handle_t dev = nullptr;
+    if (!AcquireDevice(snap, dev)) return -1;
 
     usb_transfer_t* xfer = nullptr;
     if (usb_host_transfer_alloc(sizeof(usb_setup_packet_t) + wLength, 0, &xfer) != ESP_OK)
+    {
+        ReleaseDevice();
         return -1;
+    }
 
     auto* setup = reinterpret_cast<usb_setup_packet_t*>(xfer->data_buffer);
     setup->bmRequestType = bmRequestType;
@@ -433,18 +571,40 @@ int UsbHostManager::ControlTransfer(uint8_t bmRequestType, uint8_t bRequest,
     setup->wIndex        = wIndex;
     setup->wLength       = wLength;
 
-    xfer->device_handle    = devHdl_;
+    auto* x = new Xfer();
+    xfer->device_handle    = dev;
     xfer->bEndpointAddress = 0;
     xfer->num_bytes        = sizeof(usb_setup_packet_t) + wLength;
-    xfer->timeout_ms       = timeoutMs;
     xfer->callback         = &UsbHostManager::TransferCallback;
-    xfer->context          = this;
+    xfer->context          = x;
 
-    xferStatus_ = -1;
+    if (usb_host_transfer_submit_control(clientHdl_, xfer) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "control request %02x/%02x could not be submitted",
+                 bmRequestType, bRequest);
+        delete x;
+        usb_host_transfer_free(xfer);
+        ReleaseDevice();
+        return -1;
+    }
+
+    int status   = -1;
     int received = -1;
-    if (usb_host_transfer_submit_control(clientHdl_, xfer) == ESP_OK &&
-        xferDone_.Take(pdMS_TO_TICKS(timeoutMs + 500)) &&
-        xferStatus_ == USB_TRANSFER_STATUS_COMPLETED)
+
+    if (!AwaitXfer(x, timeoutMs, xfer, status))
+    {
+        // Still queued on the DEFAULT pipe, which has no halt or flush of its
+        // own - so there is nothing to force it and no moment at which this
+        // task may free it. The transfer and its record belong to the callback
+        // now. Freeing one here, while the driver still owned it, is what used
+        // to corrupt the internal heap.
+        ESP_LOGW(TAG, "control request %02x/%02x abandoned after %u ms",
+                 bmRequestType, bRequest, (unsigned)timeoutMs);
+        ReleaseDevice();
+        return -1;
+    }
+
+    if (status == USB_TRANSFER_STATUS_COMPLETED)
     {
         received = xfer->actual_num_bytes - static_cast<int>(sizeof(usb_setup_packet_t));
         if (received < 0) received = 0;
@@ -455,20 +615,23 @@ int UsbHostManager::ControlTransfer(uint8_t bmRequestType, uint8_t bRequest,
     else
     {
         ESP_LOGW(TAG, "control request %02x/%02x failed (status %d)",
-                 bmRequestType, bRequest, xferStatus_);
+                 bmRequestType, bRequest, status);
     }
 
     usb_host_transfer_free(xfer);
+    ReleaseDevice();
     return received;
 }
 
 bool UsbHostManager::GetPortStatus(uint8_t& statusOut)
 {
-    if (!ready_ || !printerClass_) return false;
+    Attached snap;
+    if (!Snapshot(snap) || !snap.printerClass) return false;
+
     LOCK(sendMutex_);
     uint8_t s = 0;
     const int n = ControlTransfer(RT_CLASS_IFACE_IN, REQ_GET_PORT_STATUS,
-                                  0, ifaceNum_, &s, 1, 1000);
+                                  0, snap.ifaceNum, &s, 1, 1000);
     if (n < 1) return false;
     statusOut = s;
     return true;
@@ -478,13 +641,14 @@ bool UsbHostManager::GetDeviceId(char* out, size_t outSize)
 {
     if (!out || outSize == 0) return false;
     out[0] = '\0';
-    if (!ready_ || !printerClass_) return false;
+    Attached snap;
+    if (!Snapshot(snap) || !snap.printerClass) return false;
 
     LOCK(sendMutex_);
 
     uint8_t buf[DEVICE_ID_MAX] = {};
     // wValue is the config index, wIndex is (interface << 8) | alternate setting.
-    const uint16_t wIndex = static_cast<uint16_t>((ifaceNum_ << 8) | altSet_);
+    const uint16_t wIndex = static_cast<uint16_t>((snap.ifaceNum << 8) | snap.altSet);
     const int n = ControlTransfer(RT_CLASS_IFACE_IN, REQ_GET_DEVICE_ID,
                                   0, wIndex, buf, sizeof(buf), 1000);
     if (n < 3) return false;
@@ -510,49 +674,55 @@ RequestError UsbHostManager::Cmd_UsbStatus(CommandContext& ctx)
 {
     RETURN_IF_ERROR(ctx.readArgs());
 
+    // One consistent copy of the device, taken once. Reading the live state
+    // field by field could report a vendor id from the printer that was just
+    // unplugged next to an endpoint list from nothing at all.
+    Attached a;
+    const bool attached = Snapshot(a);
+
     auto resp = ctx.reply.object();
     resp.field("ok", true);
-    resp.field("attached", ready_);
+    resp.field("attached", attached);
 
-    if (!ready_)
+    if (!attached)
     {
         resp.field("note", "nothing enumerated on the USB host port");
         return RequestError::Ok;
     }
 
     char vidpid[16];
-    snprintf(vidpid, sizeof(vidpid), "%04x:%04x", vid_, pid_);
+    snprintf(vidpid, sizeof(vidpid), "%04x:%04x", a.vid, a.pid);
     resp.field("id", vidpid);
-    resp.field("vendorId", static_cast<uint32_t>(vid_));
-    resp.field("productId", static_cast<uint32_t>(pid_));
-    resp.field("deviceRelease", static_cast<uint32_t>(bcdDevice_));
-    resp.field("address", static_cast<uint32_t>(devAddr_));
-    resp.field("manufacturer", manufacturer_);
-    resp.field("product", product_);
-    resp.field("serial", serial_);
-    resp.field("printerClass", printerClass_);
+    resp.field("vendorId", static_cast<uint32_t>(a.vid));
+    resp.field("productId", static_cast<uint32_t>(a.pid));
+    resp.field("deviceRelease", static_cast<uint32_t>(a.bcdDevice));
+    resp.field("address", static_cast<uint32_t>(a.devAddr));
+    resp.field("manufacturer", a.manufacturer);
+    resp.field("product", a.product);
+    resp.field("serial", a.serial);
+    resp.field("printerClass", a.printerClass);
 
     {
         auto iface = resp.object("interface");
-        iface.field("number", static_cast<uint32_t>(ifaceNum_));
-        iface.field("alternateSetting", static_cast<uint32_t>(altSet_));
-        iface.field("class", static_cast<uint32_t>(ifaceClass_));
-        iface.field("subClass", static_cast<uint32_t>(ifaceSubClass_));
-        iface.field("protocol", static_cast<uint32_t>(ifaceProto_));
+        iface.field("number", static_cast<uint32_t>(a.ifaceNum));
+        iface.field("alternateSetting", static_cast<uint32_t>(a.altSet));
+        iface.field("class", static_cast<uint32_t>(a.ifaceClass));
+        iface.field("subClass", static_cast<uint32_t>(a.ifaceSubClass));
+        iface.field("protocol", static_cast<uint32_t>(a.ifaceProto));
     }
 
     {
         auto arr = resp.array("endpoints");
-        for (size_t i = 0; i < endpointCount_; ++i)
+        for (size_t i = 0; i < a.endpointCount; ++i)
         {
             auto ep = arr.object();
             char addr[8];
-            snprintf(addr, sizeof(addr), "0x%02x", endpoints_[i].addr);
+            snprintf(addr, sizeof(addr), "0x%02x", a.endpoints[i].addr);
             ep.field("address", addr);
-            ep.field("direction", (endpoints_[i].addr & 0x80) ? "in" : "out");
-            ep.field("type", XferTypeName(endpoints_[i].attributes));
-            ep.field("maxPacketSize", static_cast<uint32_t>(endpoints_[i].mps));
-            ep.field("interval", static_cast<uint32_t>(endpoints_[i].interval));
+            ep.field("direction", (a.endpoints[i].addr & 0x80) ? "in" : "out");
+            ep.field("type", XferTypeName(a.endpoints[i].attributes));
+            ep.field("maxPacketSize", static_cast<uint32_t>(a.endpoints[i].mps));
+            ep.field("interval", static_cast<uint32_t>(a.endpoints[i].interval));
         }
     }
 

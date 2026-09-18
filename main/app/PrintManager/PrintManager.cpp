@@ -1,4 +1,5 @@
 #include "PrintManager.h"
+#include "Raster.h"
 #include "StruxProvider.h"
 #include "CommandManager.h"
 #include "RenderManager.h"
@@ -37,54 +38,31 @@ void PrintManager::Init()
 // Geometry
 // ──────────────────────────────────────────────────────────────
 
+size_t PrintManager::WriteJobHeader(uint8_t* job, uint32_t lines, uint32_t bytesPerLine)
+{
+    size_t n = 0;
+    // A printer interrupted mid-command is still waiting for its operands; 100
+    // ESCs are swallowed as no-ops in any state and put it back at a boundary.
+    memset(job + n, ESC, 100); n += 100;
+    job[n++] = ESC; job[n++] = 0x40;                                  // reset
+    job[n++] = ESC; job[n++] = 0x4c;                                  // label length, dots
+    job[n++] = static_cast<uint8_t>((lines >> 8) & 0xff);
+    job[n++] = static_cast<uint8_t>(lines & 0xff);
+    job[n++] = ESC; job[n++] = 0x44;                                  // bytes per line
+    job[n++] = static_cast<uint8_t>(bytesPerLine);
+    return n;
+}
+
 uint32_t PrintManager::BytesPerLine(const Placement& p)
 {
-    if (p.fullHead) return (HEAD_DOTS + 7u) / 8u;
-
-    // The rightmost head column the design touches, measured from column 0
-    // because ESC D counts from there and cannot be given an origin.
-    const int64_t right = static_cast<int64_t>(p.offsetX) + p.width;
-    if (right <= 0) return 1;
-
-    uint32_t bytes = static_cast<uint32_t>((right + 7) / 8);
-    const uint32_t max = (HEAD_DOTS + 7u) / 8u;
-    return bytes > max ? max : bytes;
+    return raster::BytesPerLine(p.offsetX, p.width, HEAD_DOTS, p.fullHead);
 }
 
 uint32_t PrintManager::RasteriseRow(const uint32_t* row, uint32_t width, uint8_t* line,
                                     uint32_t bytesPerLine, int32_t offsetX,
                                     uint32_t threshold, bool invert)
 {
-    const int64_t headDots = static_cast<int64_t>(bytesPerLine) * 8;
-    uint32_t black = 0;
-
-    for (uint32_t x = 0; x < width; ++x)
-    {
-        const int64_t dot = static_cast<int64_t>(offsetX) + x;
-        if (dot < 0) continue;            // off the left of the head
-        if (dot >= headDots) break;       // past what this line carries
-
-        // ARGB8888S is one little-endian 32-bit word per pixel, so the bytes
-        // are B,G,R,A and the word reads as 0xAARRGGBB here.
-        const uint32_t px = row[x];
-        const uint32_t a = (px >> 24) & 0xff;
-        const uint32_t r = (px >> 16) & 0xff;
-        const uint32_t g = (px >>  8) & 0xff;
-        const uint32_t b =  px        & 0xff;
-
-        // Transparent is paper, not black: an SVG that does not cover its whole
-        // box would otherwise print a solid rectangle. Luminance is the cheap
-        // integer approximation, which is all a 1-bit threshold can justify.
-        const uint32_t lum = (a == 0) ? 255 : (r * 77 + g * 151 + b * 28) >> 8;
-
-        bool ink = lum < threshold;
-        if (invert) ink = !ink;
-        if (!ink) continue;
-
-        line[dot >> 3] |= static_cast<uint8_t>(0x80u >> (dot & 7u));   // MSB is leftmost
-        ++black;
-    }
-    return black;
+    return raster::RasteriseRow(row, width, line, bytesPerLine, offsetX, threshold, invert);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -106,9 +84,7 @@ const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, Jo
     const uint32_t lines        = static_cast<uint32_t>(total);
     const uint32_t bytesPerLine = BytesPerLine(p);
 
-    // ESC x100, ESC @, ESC L hi lo, ESC D n, then the lines, then ESC E.
-    const size_t headerMax = 100 + 2 + 4 + 3;
-    const size_t jobSize   = headerMax + static_cast<size_t>(lines) * (1 + bytesPerLine) + 2;
+    const size_t jobSize = JobSize(lines, bytesPerLine);
 
     // PSRAM: a full-length label is a couple of hundred kilobytes, and the
     // internal heap is what the radios and the USB driver live in.
@@ -116,16 +92,7 @@ const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, Jo
         heap_caps_malloc(jobSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     if (!job) return "no PSRAM for the job";
 
-    size_t n = 0;
-    // A printer interrupted mid-command is still waiting for its operands; 100
-    // ESCs are swallowed as no-ops in any state and put it back at a boundary.
-    memset(job + n, ESC, 100); n += 100;
-    job[n++] = ESC; job[n++] = 0x40;                                  // reset
-    job[n++] = ESC; job[n++] = 0x4c;                                  // label length, dots
-    job[n++] = static_cast<uint8_t>((lines >> 8) & 0xff);
-    job[n++] = static_cast<uint8_t>(lines & 0xff);
-    job[n++] = ESC; job[n++] = 0x44;                                  // bytes per line
-    job[n++] = static_cast<uint8_t>(bytesPerLine);
+    size_t n = WriteJobHeader(job, lines, bytesPerLine);
 
     const int64_t t0 = esp_timer_get_time();
     uint32_t black = 0;
@@ -359,7 +326,7 @@ RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
 
     if (!error)
     {
-        const size_t jobSize = 109 + static_cast<size_t>(height) * (1 + bytesPerLine) + 2;
+        const size_t jobSize = JobSize(height, bytesPerLine);
         job = static_cast<uint8_t*>(
             heap_caps_malloc(jobSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
         if (!job) error = "no PSRAM for the job";
@@ -369,13 +336,7 @@ RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
     {
         LOCK(printLock_);
 
-        memset(job + n, ESC, 100); n += 100;
-        job[n++] = ESC; job[n++] = 0x40;
-        job[n++] = ESC; job[n++] = 0x4c;
-        job[n++] = static_cast<uint8_t>((height >> 8) & 0xff);
-        job[n++] = static_cast<uint8_t>(height & 0xff);
-        job[n++] = ESC; job[n++] = 0x44;
-        job[n++] = static_cast<uint8_t>(bytesPerLine);
+        n = WriteJobHeader(job, height, bytesPerLine);
 
         // A frame with 16-dot stripes inside it. The frame proves the edges of
         // the head, the stripes prove line sync: if bytes-per-line were wrong
@@ -446,7 +407,7 @@ RequestError PrintManager::Cmd_PrintCalibrate(CommandContext& ctx)
 
     if (!error)
     {
-        const size_t jobSize = 109 + static_cast<size_t>(height) * (1 + bytesPerLine) + 2;
+        const size_t jobSize = JobSize(height, bytesPerLine);
         job = static_cast<uint8_t*>(
             heap_caps_malloc(jobSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
         if (!job) error = "no PSRAM for the job";
@@ -456,13 +417,7 @@ RequestError PrintManager::Cmd_PrintCalibrate(CommandContext& ctx)
     {
         LOCK(printLock_);
 
-        memset(job + n, ESC, 100); n += 100;
-        job[n++] = ESC; job[n++] = 0x40;
-        job[n++] = ESC; job[n++] = 0x4c;
-        job[n++] = static_cast<uint8_t>((height >> 8) & 0xff);
-        job[n++] = static_cast<uint8_t>(height & 0xff);
-        job[n++] = ESC; job[n++] = 0x44;
-        job[n++] = static_cast<uint8_t>(bytesPerLine);
+        n = WriteJobHeader(job, height, bytesPerLine);
 
         // A grid in HEAD coordinates, so whatever lands on the paper says where
         // the paper is. The axes at column 0 and line 0 are solid and 4 wide, so
@@ -523,13 +478,18 @@ RequestError PrintManager::Cmd_PrintStatus(CommandContext& ctx)
 
     auto& usb = app_.getUsbHostManager();
 
+    // One copy of what is attached, taken once, so every field below describes
+    // the same device even if it is unplugged halfway through this reply.
+    UsbHostManager::Attached dev;
+    const bool attached = usb.Snapshot(dev);
+
     auto resp = ctx.reply.object();
     resp.field("ok", true);
-    resp.field("ready", usb.IsReady());
+    resp.field("ready", attached);
     resp.field("dpi", DPI);
     resp.field("headDots", HEAD_DOTS);
 
-    if (!usb.IsReady())
+    if (!attached)
     {
         resp.field("note",
                    "no printer on the USB host port. It goes on the S3's native "
@@ -539,9 +499,9 @@ RequestError PrintManager::Cmd_PrintStatus(CommandContext& ctx)
     }
 
     char vidpid[16];
-    snprintf(vidpid, sizeof(vidpid), "%04x:%04x", usb.VendorId(), usb.ProductId());
+    snprintf(vidpid, sizeof(vidpid), "%04x:%04x", dev.vid, dev.pid);
     resp.field("id", vidpid);
-    resp.field("product", usb.ProductName());
+    resp.field("product", dev.product);
 
     char deviceId[256] = {};
     if (usb.GetDeviceId(deviceId, sizeof(deviceId)))
