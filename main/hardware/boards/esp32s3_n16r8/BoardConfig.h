@@ -17,22 +17,23 @@
 
 namespace BoardConfig
 {
-    // LED — DELIBERATELY UNSET.
+    // LED - DELIBERATELY UNSET, and staying that way.
     //
-    // There is no pin here because nobody has said which pin, and a guess
-    // would be the kind that only fails on a bench. The ESP32-S3-DevKitC-1
-    // carries an addressable RGB LED (WS2812) rather than a plain GPIO one,
-    // on GPIO38 or GPIO48 depending on the board revision, and driving it
-    // needs a driver this repository does not have. A clone may have a plain
-    // LED somewhere else entirely, or none.
+    // This product has no LED and wants none: it drives a label printer, and
+    // the only thing an indicator would report is a link state the printer's
+    // own commands already answer. `Led` is a role every board owes
+    // (BoardProvider), so this board binds MockLed - the role is satisfied,
+    // the template's LedManager demo runs and reports its state, and no pin
+    // is touched.
     //
-    // So this board binds MockLed in its BoardContext (see Led.h): the role
-    // is satisfied, the LED demo runs and reports its state, and nothing
-    // lights up. When the real LED is known:
+    // So there is no LED_PIN here, and that is a decision rather than a gap.
+    // The ESP32-S3-DevKitC-1's LED is an addressable WS2812 on GPIO38 or
+    // GPIO48 depending on revision; writing that driver to light up an
+    // example that will be deleted with the rest of LedManager would be
+    // work spent on the copy, not the product.
     //
-    //   plain GPIO LED  ->  add LED_PIN / LED_ACTIVE_HIGH here and swap
-    //                       MockLed for GpioLed in BoardContext.h,
-    //   addressable     ->  write the driver in hardware/drivers/ first.
+    // If some later board genuinely needs one: add LED_PIN and
+    // LED_ACTIVE_HIGH here and swap MockLed for GpioLed in BoardContext.h.
 
     // Add project-specific pin definitions below.
     //

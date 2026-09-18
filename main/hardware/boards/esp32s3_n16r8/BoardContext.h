@@ -47,10 +47,10 @@ private:
 
     // Hardware instances — buses first, then the drivers that use them.
 
-    // A mock rather than a GpioLed, because which pin (if any) carries an
-    // LED on this board is not known yet — see the LED note in BoardConfig.h.
-    // The role is bound, so the application and its LED demo work; nothing
-    // lights up. Swapping in GpioLed later touches this line and BoardConfig.h
-    // and nothing else.
+    // A mock rather than a GpioLed, and permanently: this product has no LED
+    // and wants none - see the LED note in BoardConfig.h. The role is bound,
+    // so the application and the template's LED demo work; nothing lights up.
+    // This member goes away entirely if `Led` ever stops being a role every
+    // board owes.
     MockLed led_;
 };

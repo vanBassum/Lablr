@@ -8,7 +8,7 @@ Lablr is ESP32 firmware (ESP-IDF v6.0, C++, FreeRTOS) with a React web UI, copie
 
 ## Build commands
 
-Firmware (requires ESP-IDF v6.0+ environment). **Two IDF installs, and the tools are not where the docs assume:** `C:\esp6.0\esp-idf` is the framework, while the toolchain is an ESP-IDF Installation Manager layout under `C:\Espressif	ools`, activated by dot-sourcing `C:\Espressif	ools\Microsoft.v6.0.PowerShell_profile.ps1` — `export.ps1`/`export.sh` both fail, because they look for a python env that install never created there.
+Firmware (requires ESP-IDF v6.0+ environment). **Two IDF installs, and the tools are not where the docs assume:** `C:\esp\v6.0\esp-idf` is the framework, while the toolchain is an ESP-IDF Installation Manager layout under `C:\Espressif\tools`, activated by dot-sourcing `C:\Espressif\tools\Microsoft.v6.0.PowerShell_profile.ps1` — `export.ps1`/`export.sh` both fail, because they look for a python env that install never created there.
 
 ```bash
 idf.py set-target esp32s3

@@ -29,6 +29,12 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-16mb.csv"
 # 80 MHz rather than 120: 120 MHz is behind IDF_EXPERIMENTAL_FEATURES on the
 # S3 and carries timing caveats. 80 MHz is the speed the module is specified
 # for and is not a bottleneck for anything here.
+#
+# UNVERIFIED ON HARDWARE. Nothing here has been flashed yet, and this is
+# exactly the setting a build cannot check: quad instead of octal, or a
+# module that is not really an R8, both produce a green build and a boot
+# that simply reports less PSRAM, or none. It counts as confirmed when a
+# real S3 boots this image and the log says 8 MB was found.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
