@@ -102,6 +102,24 @@ public:
         return static_cast<int32_t>((n >= 0 ? n + 12700 : n - 12700) / 25400);
     }
 
+    /// How much of the label can actually be printed, in dots. DERIVED from the
+    /// offsets and never stored - a second copy would be one more thing to keep
+    /// in step, and these change the moment a calibration does.
+    ///
+    /// Both axes lose whatever falls before the head's own origin: the head
+    /// cannot print a negative dot column, and the printer cannot emit a raster
+    /// line before its first. A negative offset therefore means that much of
+    /// the label is unreachable, which is a fact about the paper and the
+    /// machine rather than a bug. On the 25 x 25 mm stock measured here it is
+    /// 1.0 mm at the left edge and 3.1 mm at the leading edge.
+    static int32_t PrintableDots(int32_t sizeUm, int32_t offsetUm, uint32_t dpi)
+    {
+        const int32_t size   = UmToDots(sizeUm, dpi);
+        const int32_t offset = UmToDots(offsetUm, dpi);
+        const int32_t lost   = offset < 0 ? -offset : 0;
+        return size > lost ? size - lost : 0;
+    }
+
 private:
     AppProvider& app_;
     InitState    initState_;

@@ -175,6 +175,8 @@ RequestError MediaManager::Cmd_MediaList(CommandContext& ctx)
             item.field("offsetYUm", m.offsetYUm);
             item.field("widthDots", UmToDots(m.widthUm, dpi));
             item.field("heightDots", UmToDots(m.heightUm, dpi));
+            item.field("printableWidthDots",  PrintableDots(m.widthUm,  m.offsetXUm, dpi));
+            item.field("printableHeightDots", PrintableDots(m.heightUm, m.offsetYUm, dpi));
         }
         closedir(d);
     }
@@ -220,6 +222,11 @@ RequestError MediaManager::Cmd_MediaGet(CommandContext& ctx)
     resp.field("heightDots", UmToDots(m.heightUm, dpi));
     resp.field("offsetXDots", UmToDots(m.offsetXUm, dpi));
     resp.field("offsetYDots", UmToDots(m.offsetYUm, dpi));
+
+    // What a design can actually use. A negative offset puts that much of the
+    // label before the head's origin, where nothing can be printed.
+    resp.field("printableWidthDots",  PrintableDots(m.widthUm,  m.offsetXUm, dpi));
+    resp.field("printableHeightDots", PrintableDots(m.heightUm, m.offsetYUm, dpi));
     return RequestError::Ok;
 }
 
@@ -323,6 +330,8 @@ RequestError MediaManager::Cmd_MediaSet(CommandContext& ctx)
     resp.field("heightDots", UmToDots(m.heightUm, dpi));
     resp.field("offsetXDots", UmToDots(m.offsetXUm, dpi));
     resp.field("offsetYDots", UmToDots(m.offsetYUm, dpi));
+    resp.field("printableWidthDots",  PrintableDots(m.widthUm,  m.offsetXUm, dpi));
+    resp.field("printableHeightDots", PrintableDots(m.heightUm, m.offsetYUm, dpi));
     return RequestError::Ok;
 }
 

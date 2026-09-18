@@ -161,6 +161,11 @@ export default function MediaPage() {
                   offset {mmOf(m.offsetXUm)}, {mmOf(m.offsetYUm)} mm
                 </Badge>
               )}
+              {m.printableWidthDots != null && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  printable {m.printableWidthDots} x {m.printableHeightDots}
+                </span>
+              )}
               <div className="flex gap-1">
                 <Button variant="outline" size="sm" onClick={() => setDraft(draftOf(m))}>
                   Edit

@@ -1049,6 +1049,11 @@ export interface Medium {
   heightDots?: number
   offsetXDots?: number
   offsetYDots?: number
+  /** What a design can actually use. Derived by the device from the offsets: a
+   *  negative offset puts that much of the label before the head's origin,
+   *  where nothing can be printed. */
+  printableWidthDots?: number
+  printableHeightDots?: number
 }
 
 /** A `media set` call. Everything but the id is optional: an update leaves out

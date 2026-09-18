@@ -362,9 +362,10 @@ export default function RenderPage() {
               {(medium.widthUm / 1000).toFixed(1)} x {(medium.heightUm / 1000).toFixed(1)} mm
               {" = "}
               {medium.widthDots} x {medium.heightDots} dots, placed at head (
-              {medium.offsetXDots ?? 0}, {medium.offsetYDots ?? 0}).
-              {(medium.offsetYDots ?? 0) < 0 &&
-                " The negative Y is the printer starting after the label's edge; that much is cropped off the top of the design."}
+              {medium.offsetXDots ?? 0}, {medium.offsetYDots ?? 0}). Printable{" "}
+              {medium.printableWidthDots} x {medium.printableHeightDots} dots.
+              {((medium.offsetXDots ?? 0) < 0 || (medium.offsetYDots ?? 0) < 0) &&
+                " A negative offset is label that sits before the head's origin and cannot be printed at all - keep the design's content clear of it."}
             </p>
           )}
         </div>
