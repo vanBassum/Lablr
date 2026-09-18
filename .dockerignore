@@ -1,9 +1,0 @@
-**/node_modules
-**/bin
-**/obj
-**/dist
-**/wwwroot
-.git
-.github
-**/.vs
-**/*.user

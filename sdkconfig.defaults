@@ -1,0 +1,68 @@
+# Partition table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Flash size and speed
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# HTTP server WebSocket support
+CONFIG_HTTPD_WS_SUPPORT=y
+
+# Increase timer task stack (default 2048 too small for WiFi calls in timer callbacks)
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096
+
+# FAT long filename support (needed for React build output)
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+
+# OTA rollback — pairs with esp_ota_mark_app_valid_cancel_rollback() in main.cpp
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Dynamic frequency scaling: the CPU drops to the XTAL frequency whenever no task
+# holds a power-management lock, which on a device waiting for a request is nearly
+# all the time. DFS_INIT_AUTO configures it from startup code — max = the default
+# CPU frequency, min = XTAL — so no call is needed here; a fork wanting other bounds
+# calls esp_pm_configure() and overrides them. `system info` reports what took.
+#
+# WiFi holds an APB_FREQ_MAX lock (esp_wifi's "wifi" lock, released only by modem
+# sleep) and WIFI_PS_NONE — set deliberately, see WiFiInterface.cpp — never lets it
+# go. APB at 80 MHz needs the PLL, so with the radio up the floor is 80 MHz and not
+# the XTAL's 40; the 160 -> 80 step is still most of the saving, and the XTAL floor
+# applies while the radio is down between station rounds.
+#
+# The cost is a few microseconds of extra interrupt latency and coarser RTOS tick
+# timekeeping. The console is unaffected: esp_pm re-clocks the console UART off
+# REF_TICK/XTAL so its baud rate does not follow APB.
+#
+# NOT enabled: FREERTOS_USE_TICKLESS_IDLE. It reads like a free prerequisite for
+# light sleep and is not one — esp_pm's get_lowest_allowed_mode() never returns
+# PM_MODE_LIGHT_SLEEP while light_sleep_enable is false, so tickless idle without
+# light sleep buys nothing and still costs tick accuracy. The two go together, and
+# together they are a battery-powered fork's decision, not the template's.
+CONFIG_PM_ENABLE=y
+CONFIG_PM_DFS_INIT_AUTO=y
+
+# lwIP socket budget, and the reason it cannot stay at IDF's default of 10.
+#
+# esp_http_server reserves 3 sockets for itself on top of `max_open_sockets`, whose
+# default is 7, and it refuses to start if LWIP_MAX_SOCKETS < max_open_sockets + 3.
+# At the default of 10 that inequality is exactly tight: the web server is entitled
+# to the WHOLE budget, and every other socket on the device — the relay's outbound
+# WebSocket, mDNS, SNTP, the DHCP client — is competing for sockets httpd has already
+# claimed. `accept()` then fails with errno 23 (ENFILE) and the server RESETS whichever
+# connections lose the race.
+#
+# That stayed invisible while a page load asked for two files. It stopped being
+# invisible when the UI briefly shipped as separate module bundles behind an import
+# map: four concurrent requests plus the command WebSocket, and the browser silently
+# lost the stylesheet, so the page came up with no CSS at all. Nothing in the UI could
+# say why — the only evidence was `httpd_accept_conn: error in accept (23)` in the
+# device log.
+#
+# The frontend is one bundle again, so a page load is back to three requests and this
+# would no longer bite. The setting stays at 16 anyway — the option's maximum — because
+# the inequality was always too tight: httpd's 7 + 3 against a budget of 10 leaves
+# nothing for the relay's outbound socket, mDNS, SNTP or DHCP. A fork that adds a
+# second listener should read this before trusting the default again.
+CONFIG_LWIP_MAX_SOCKETS=16
