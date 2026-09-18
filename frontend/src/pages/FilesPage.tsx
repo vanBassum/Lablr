@@ -25,6 +25,7 @@ import {
   SearchIcon,
   Trash2Icon,
   TypeIcon,
+  FilePlusIcon,
   UploadIcon,
   XIcon,
 } from "lucide-react"
@@ -267,6 +268,34 @@ export default function FilesPage() {
     }
   }
 
+  // Create an empty text file and open it in the editor. Upload covers bringing
+  // a file FROM somewhere; this covers the case where the thing you want does
+  // not exist yet anywhere - a medium's /media/<id>.json, most obviously, which
+  // is how a new stock size gets defined now that it is an ordinary file.
+  async function createFile() {
+    const name = window.prompt(
+      "New file, with its folder - e.g. /media/roll54x70.json",
+      "/media/new.json",
+    )
+    if (!name) return
+    const path = name.startsWith("/") ? name : `/${name}`
+    if (rows.some((r) => r.path === path)) {
+      toast.error("That file already exists", { description: path })
+      return
+    }
+    setBusy(true)
+    try {
+      await backend.fsWrite(path, new Blob([""]))
+      toast.success(`Created ${path}`)
+      await refresh()
+      await openFile(path)
+    } catch (err) {
+      toast.error("Create failed", { description: errorMessage(err) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const dirty = editing !== null && editing.text !== editing.original
   const total = info?.total ?? 0
   const used = info?.used ?? 0
@@ -294,6 +323,10 @@ export default function FilesPage() {
           )}
           <Button variant="outline" size="icon" onClick={refresh} disabled={busy} title="Reload">
             <RefreshCwIcon className={"size-4 " + (busy ? "animate-spin" : "")} />
+          </Button>
+          <Button variant="outline" onClick={createFile} disabled={busy}>
+            <FilePlusIcon className="size-4" />
+            New file
           </Button>
           <Button asChild>
             <label>
@@ -532,8 +565,8 @@ export default function FilesPage() {
       <p className="text-xs text-muted-foreground">
         <PlusIcon className="mr-1 inline size-3" />
         Uploads are routed by what the file is: <code>.svg</code> to /labels,{" "}
-        <code>.ttf</code> and <code>.otf</code> to /fonts. Media definitions live in /media and
-        are written through the Media page, not by hand.
+        <code>.ttf</code> and <code>.otf</code> to /fonts. Media definitions are ordinary
+        JSON in /media - edit one here, or make a new stock size with New file.
       </p>
     </div>
   )

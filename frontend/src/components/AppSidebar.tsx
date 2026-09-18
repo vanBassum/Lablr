@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { PrinterIcon, TerminalIcon, SettingsIcon, DownloadIcon, FolderIcon, TagIcon } from "lucide-react"
+import { PrinterIcon, TerminalIcon, SettingsIcon, DownloadIcon, FolderIcon } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -33,8 +33,7 @@ import { DeviceInfoDialog } from "@/components/DeviceInfoDialog"
 // docs/reasoning/2026-09-09-22h00.
 const navItems = [
   { title: "Print", icon: PrinterIcon, page: "home" as const },
-  { title: "Labels", icon: FolderIcon, page: "files" as const },
-  { title: "Media", icon: TagIcon, page: "media" as const },
+  { title: "Files", icon: FolderIcon, page: "files" as const },
   { title: "Console", icon: TerminalIcon, page: "console" as const },
   { title: "Settings", icon: SettingsIcon, page: "settings" as const },
   { title: "Firmware", icon: DownloadIcon, page: "firmware" as const },
