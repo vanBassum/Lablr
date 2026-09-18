@@ -6,10 +6,21 @@
 // `print svg` and of nothing else, so driving this page exercises exactly the
 // interface an external caller (or the relay's MCP surface) drives.
 //
-// The preview is rendered ON THE DEVICE at the selected medium's dot geometry,
+// There are two pictures of a label here, and they are deliberately not the
+// same picture.
+//
+// The STRIP shows the SVG itself, handed to the browser. It costs one `fs read`
+// - which the strip already made, to learn the design's own size - and no
+// device work at all. Eighty labels used to mean eighty device renders queued
+// one behind another at about a second each; now it means eighty small file
+// reads, and the list fills as fast as it can be scrolled.
+//
+// The PREVIEW is rendered ON THE DEVICE at the selected medium's dot geometry,
 // because that is the only preview that is honest: the same rasteriser, the
-// same size, the same fonts. A browser drawing the SVG itself would show text
-// in a font the device does not have.
+// same size, the same fonts, thresholded to the same dots. The browser has none
+// of the device's /fonts, so a design whose text uses one shows a substitute in
+// the strip - close enough to recognise a label by, never close enough to print
+// from. That difference is the whole reason both pictures exist.
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
   backend,
@@ -81,15 +92,14 @@ function svgSize(text: string): { w: number; h: number } | null {
   return null
 }
 
-/** A rendered bitmap as a data URL, for the thumbnail strip. Drawn once per
- *  label per medium and cached by the caller - a thumbnail is a full device
- *  render, so re-doing it on every re-render would hammer the rasteriser. */
-function toDataUrl(bytes: Uint8Array, width: number, height: number): string {
-  const c = document.createElement("canvas")
-  c.width = width
-  c.height = height
-  c.getContext("2d")?.putImageData(toImageData(bytes, width, height), 0, 0)
-  return c.toDataURL("image/png")
+/** The SVG's own bytes as a data URL, for the strip. Base64 of the raw bytes
+ *  rather than of decoded text: the file never has to be a string, and nothing
+ *  has to guess its encoding. A data URL rather than a blob URL so it can live
+ *  in state and be dropped with it - a blob URL would need revoking. */
+function svgDataUrl(bytes: Uint8Array): string {
+  let binary = ""
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return `data:image/svg+xml;base64,${btoa(binary)}`
 }
 
 /** Identifies one preview: a picture is the current one only if it is of this
@@ -100,14 +110,14 @@ function previewKeyOf(path: string, w: number, h: number): string {
 }
 
 /** One unit of device work. There are only two kinds, and the queue below is a
- *  function that picks between them rather than a list anything pushes to. */
+ *  function that picks between them rather than a list anything pushes to.
+ *
+ *  They are no longer the same weight: a `thumb` is one small file read and a
+ *  `preview` is a full rasterisation. That is what lets the order below put the
+ *  expensive one second rather than last. */
 type Job =
   | { kind: "thumb"; path: string }
   | { kind: "preview"; path: string }
-
-/** Thumbnails are 96 px on the long edge - small enough that the device draws
- *  one in well under the time a full preview takes. */
-const THUMB_WIDTH = 96
 
 export default function PrintPage() {
   const connection = useConnectionStatus()
@@ -221,30 +231,20 @@ export default function PrintPage() {
     refresh()
   }, [connection, refresh])
 
-  // One label's own size and its thumbnail. Two device round trips, kept
-  // together because the size is what gives the thumbnail its aspect ratio -
-  // the DESIGN's, not the medium's, so a design drawn for other stock looks
-  // wrong here rather than looking fine and printing wrong.
-  const renderThumb = useCallback(async (path: string) => {
-    let size: { w: number; h: number } | null = null
+  // One label's own size and its strip picture, both out of ONE file read.
+  //
+  // The read was always here - the size comes from the SVG's root element, and
+  // it is the DESIGN's size, not the medium's, so a design drawn for other stock
+  // looks wrong here rather than looking fine and printing wrong. What is gone
+  // is the second round trip that asked the device to rasterise a 96 px bitmap
+  // of a file the browser was already holding.
+  const loadThumb = useCallback(async (path: string) => {
     try {
       const { bytes } = await backend.fsRead(path)
-      size = svgSize(new TextDecoder().decode(bytes))
-      setDims((d) => ({ ...d, [path]: size }))
+      setDims((d) => ({ ...d, [path]: svgSize(new TextDecoder().decode(bytes)) }))
+      setThumbs((t) => ({ ...t, [path]: svgDataUrl(bytes) }))
     } catch {
-      /* unreadable: the row shows its name and no size */
-    }
-
-    const tw = THUMB_WIDTH
-    const th = Math.max(24, Math.round(tw / (size ? size.w / size.h : 1)))
-    try {
-      const res = await backend.renderSvg(path, tw, th)
-      setThumbs((t) => ({
-        ...t,
-        [path]: toDataUrl(res.bytes, res.header.width ?? tw, res.header.height ?? th),
-      }))
-    } catch {
-      /* a label that will not render shows its name and no picture */
+      /* unreadable: the row shows its name, no size and no picture */
     } finally {
       setTried((t) => ({ ...t, [path]: true }))
     }
@@ -320,14 +320,16 @@ export default function PrintPage() {
   // ONE job at a time, chosen fresh each time the previous finishes, in the
   // order the page is actually read:
   //
-  //   1. the selected label's thumbnail  - it stands in for the preview, so it
-  //      is what turns a blank panel into a picture, and it is cheap
-  //   2. the thumbnails of rows on screen - the strip fills in
-  //   3. the selected label's full preview at the medium's real geometry
+  //   1. the selected label's own SVG        - it stands in for the preview, so
+  //      it is what turns a blank panel into a picture, and it is one file read
+  //   2. the selected label's full preview    - the only slow job on the list
+  //   3. the SVGs of the other rows on screen - the strip fills in behind it
   //
-  // The expensive job goes LAST deliberately: by the time it runs the panel is
-  // already showing this label at this shape, so the full render replaces
-  // something correct rather than nothing. Moving it up is moving one block.
+  // The preview used to come last, behind every visible row, because a thumbnail
+  // was a device render too and putting the expensive job first would have made
+  // the strip crawl. Now that a thumbnail is a file read, the preview is the one
+  // thing worth waiting for and everything else can happen behind it. It still
+  // replaces something correct rather than nothing, because step 1 ran first.
   //
   // There is no queue object. `pick` is a pure function of current state, so a
   // change of selection or a scroll re-prioritises what happens next without
@@ -335,8 +337,8 @@ export default function PrintPage() {
   const pick = useCallback((): Job | null => {
     if (!selected) return null
     if (!tried[selected]) return { kind: "thumb", path: selected }
-    for (const path of labels) if (seen[path] && !tried[path]) return { kind: "thumb", path }
     if (drawnKey !== previewKeyOf(selected, w, h)) return { kind: "preview", path: selected }
+    for (const path of labels) if (seen[path] && !tried[path]) return { kind: "thumb", path }
     return null
   }, [selected, labels, seen, tried, drawnKey, w, h])
 
@@ -359,7 +361,7 @@ export default function PrintPage() {
 
     ;(async () => {
       try {
-        if (job.kind === "thumb") await renderThumb(job.path)
+        if (job.kind === "thumb") await loadThumb(job.path)
         else await renderPreview(job.path, seq)
       } finally {
         workerBusy.current = false
@@ -372,7 +374,7 @@ export default function PrintPage() {
     return () => {
       cancelled = true
     }
-  }, [connection, pick, tick, renderThumb, renderPreview])
+  }, [connection, pick, tick, loadThumb, renderPreview])
 
   async function print() {
     if (!selected) return
@@ -624,10 +626,12 @@ export default function PrintPage() {
                 />
                 {!previewCurrent &&
                   (standIn ? (
-                    // The thumbnail the strip already has, in the box the real
-                    // render is about to fill: same width, same dot geometry,
-                    // and object-contain because that is how the device fits a
-                    // design into the medium. So the swap moves nothing.
+                    // The SVG the strip already has, in the box the real render
+                    // is about to fill: same width, same dot geometry, and
+                    // object-contain because that is how the device fits a
+                    // design into the medium. So the swap moves nothing - it
+                    // only replaces the browser's idea of the fonts with the
+                    // device's, and smooth edges with real dots.
                     <img
                       src={standIn}
                       alt=""
