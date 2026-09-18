@@ -312,13 +312,23 @@ void RenderManager::RunJob()
     job_.internalUsed = static_cast<uint32_t>(
         freeInternalBefore > freeInternalAfter ? freeInternalBefore - freeInternalAfter : 0);
 
-    ESP_LOGI(TAG, "render %s %ux%u: psram peak-held %u, internal %u, worker stack left %u",
+    // DEBUG, not INFO: a render is routine and the browser asks for many of them
+    // - one per label thumbnail - so at INFO this one line buried every other
+    // message in the console. The numbers are bring-up numbers (PSRAM held,
+    // stack headroom) and are still one log level away when they matter again.
+    // A render that FAILS still speaks up, below.
+    ESP_LOGD(TAG, "render %s %ux%u: psram peak-held %u, internal %u, worker stack left %u",
              job_.path, (unsigned)job_.width, (unsigned)job_.height,
              (unsigned)job_.psramUsed, (unsigned)job_.internalUsed,
              (unsigned)job_.stackLeft);
 
     if (failure)
     {
+        // The counterpart to the demotion above: with the routine line at DEBUG,
+        // this is the only thing a render leaves in the console, so a label that
+        // will not draw still says so where somebody is looking.
+        ESP_LOGE(TAG, "render %s %ux%u failed: %s",
+                 job_.path, (unsigned)job_.width, (unsigned)job_.height, failure);
         heap_caps_free(pixels);
         job_.error = failure;
         return;
