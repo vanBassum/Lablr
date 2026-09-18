@@ -2,6 +2,8 @@
 #include "StorageManager/StorageManager.h"
 #include "StruxProvider.h"
 #include "CommandManager.h"
+#include "ReplyBody.h"
+#include "PngStream.h"
 
 #include <esp_log.h>
 #include <esp_heap_caps.h>
@@ -393,6 +395,7 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
     char     path[192] = {};
     uint32_t width = 0, height = 0;
     uint32_t background = 0xFFFFFFFFu;
+    char     format[8] = "raw";
 
     RETURN_IF_ERROR(ctx.readArgs(
         Required("path",   path,
@@ -410,7 +413,14 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
         Optional("background", background,
                  "Background colour as 0xAARRGGBB. Defaults to 0xFFFFFFFF, "
                  "opaque white, because a label is printed on white paper. "
-                 "Pass 0 for a transparent background.")
+                 "Pass 0 for a transparent background."),
+        Optional("format", format,
+                 "How to encode the pixels: 'raw' (the default) for ARGB8888S, "
+                 "which is what a canvas and the printer want, or 'png' for an "
+                 "ordinary PNG file. Ask for 'png' if you need to LOOK at the "
+                 "result - it is a quarter the size and anything can display "
+                 "it, while raw is only useful to something that knows the "
+                 "pixel layout.")
     ));
 
     // Everything that can be refused before the worker is woken, is.
@@ -418,6 +428,8 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
     char full[256];
     if (!app_.getStorageManager().IsMounted())                    error = "not mounted";
     else if (!StorageManager::Resolve(path, full, sizeof(full)))  error = "bad path";
+    else if (strcmp(format, "raw") != 0 && strcmp(format, "png") != 0)
+        error = "format must be 'raw' or 'png'";
 
     // Rendering itself is Render(), shared with the printer - a preview that
     // came from a different rasteriser would stop predicting a print.
@@ -435,47 +447,69 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
         return RequestError::Ok;
     }
 
+    const bool png = strcmp(format, "png") == 0;
     const size_t pixelBytes = static_cast<size_t>(width) * height * 4u;
 
-    // ── The reply: header record, newline, raw pixels ─────────
+    // ── The reply: header record, newline, the image ─────────
     {
         auto head = ctx.reply.object();
         head.field("ok", true);
         head.field("path", path);
         head.field("width", width);
         head.field("height", height);
-        // Little-endian 32-bit words, so the bytes on the wire are B,G,R,A.
-        // Un-premultiplied, which is what makes the result inspectable on a PC
-        // without undoing anything first.
-        head.field("format", "ARGB8888S");
-        head.field("stride", width * 4u);
-        head.field("bytes", static_cast<uint32_t>(pixelBytes));
+        // Raw is little-endian 32-bit words, so the bytes on the wire are
+        // B,G,R,A. Un-premultiplied, which is what makes the result inspectable
+        // on a PC without undoing anything first.
+        head.field("format", png ? "png" : "ARGB8888S");
+        if (!png)
+        {
+            head.field("stride", width * 4u);
+            head.field("bytes", static_cast<uint32_t>(pixelBytes));
+        }
         head.field("scale", bmp.scale);
         head.field("psramUsed", bmp.psramUsed);
         head.field("internalUsed", bmp.internalUsed);
         head.field("workerStackLeft", bmp.stackLeft);
-    }
-    ctx.out.write("\n", 1);
 
-    // Straight out of the canvas into the transport's framing buffer.
-    const uint8_t* src = reinterpret_cast<const uint8_t*>(bmp.pixels);
-    size_t sent = 0;
-    if (ctx.out.canLend())
+        // What follows the newline, in terms something that never heard of this
+        // command can act on - a PNG is shown, raw pixels are bytes. See
+        // lib/protocol/ReplyBody.h. A PNG's length is not known until it has
+        // been encoded, because it streams, so only the raw form declares one.
+        if (png) protocol::declareBody(head, "image/png");
+        else     protocol::declareBody(head, "application/octet-stream",
+                                       static_cast<uint32_t>(pixelBytes));
+    }
+    protocol::endHeader(ctx.out);
+
+    if (png)
     {
-        while (sent < pixelBytes)
-        {
-            size_t avail = 0;
-            uint8_t* dst = ctx.out.lendOutput(avail);
-            if (!dst) break;                       // client went away
-            const size_t n = (pixelBytes - sent < avail) ? (pixelBytes - sent) : avail;
-            memcpy(dst, src + sent, n);
-            ctx.out.commitOutput(n);
-            sent += n;
-        }
+        // Encodes and streams in one pass; it holds one scanline, never the
+        // file. A failure here cannot un-send the header, so it is logged by
+        // the encoder and the reply ends short rather than lying.
+        WritePng(ctx.out, bmp.pixels, width, height);
     }
     else
     {
-        ctx.out.write(src, pixelBytes);
+        // Straight out of the canvas into the transport's framing buffer.
+        const uint8_t* src = reinterpret_cast<const uint8_t*>(bmp.pixels);
+        size_t sent = 0;
+        if (ctx.out.canLend())
+        {
+            while (sent < pixelBytes)
+            {
+                size_t avail = 0;
+                uint8_t* dst = ctx.out.lendOutput(avail);
+                if (!dst) break;                       // client went away
+                const size_t n = (pixelBytes - sent < avail) ? (pixelBytes - sent) : avail;
+                memcpy(dst, src + sent, n);
+                ctx.out.commitOutput(n);
+                sent += n;
+            }
+        }
+        else
+        {
+            ctx.out.write(src, pixelBytes);
+        }
     }
 
     heap_caps_free(bmp.pixels);

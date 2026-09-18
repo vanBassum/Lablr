@@ -167,11 +167,13 @@ private:
     inline static CommandEntry commands_[] = {
         { "render", "svg",   &InvokeCommand<&RenderManager::Cmd_RenderSvg>,
           "Render a stored SVG to a bitmap and return it WITHOUT printing. The "
-          "reply is a JSON header line (width, height, format, stride, bytes), "
-          "a newline, then the raw pixels. This is the preview: use it to see "
-          "what a label will look like before committing it. Nothing is "
-          "consumed and no paper moves, so it can be repeated freely - unlike "
-          "'print svg', which spends a label." },
+          "reply is a JSON header line (width, height, format, contentType), a "
+          "newline, then the image. Pass format='png' to get an ordinary PNG "
+          "you can simply look at; the default 'raw' is ARGB8888S pixels, for a "
+          "caller that will draw or print them itself. This is the preview: use "
+          "it to see what a label will look like before committing it. Nothing "
+          "is consumed and no paper moves, so it can be repeated freely - "
+          "unlike 'print svg', which spends a label." },
         { "render", "fonts", &InvokeCommand<&RenderManager::Cmd_Fonts>,
           "List the fonts registered with the renderer. An SVG's font-family "
           "must match one of these names exactly or its text renders as "

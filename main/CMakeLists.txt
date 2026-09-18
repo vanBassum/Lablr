@@ -39,6 +39,7 @@ set(STRUX_SOURCES
 set(APP_SOURCES
     "app/StorageManager/StorageManager.cpp"
     "app/RenderManager/RenderManager.cpp"
+    "app/RenderManager/PngStream.cpp"
     "app/UsbHostManager/UsbHostManager.cpp"
     "app/MediaManager/MediaManager.cpp"
     "app/PrintManager/PrintManager.cpp"

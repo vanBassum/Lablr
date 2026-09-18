@@ -1,6 +1,7 @@
 #include "StorageManager.h"
 #include "StruxProvider.h"
 #include "CommandManager.h"
+#include "ReplyBody.h"
 
 #include <esp_log.h>
 #include <esp_vfs_fat.h>
@@ -198,8 +199,13 @@ RequestError StorageManager::Cmd_Read(CommandContext& ctx)
         head.field("ok", true);
         head.field("path", path);
         head.field("size", size);
+        // What the bytes after the newline ARE, so a caller that did not choose
+        // this path — the relay's MCP surface, say — can tell an SVG it should
+        // show as text from a font it must not. `size` stays for the frontend,
+        // which predates the convention. See lib/protocol/ReplyBody.h.
+        protocol::declareBody(head, protocol::mediaTypeForPath(path), size);
     }
-    ctx.out.write("\n", 1);
+    protocol::endHeader(ctx.out);
 
     // Read straight into the reply frame the transport is about to send, so a
     // large file needs no buffer of ours - the same handoff `partition read`
