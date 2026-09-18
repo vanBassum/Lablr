@@ -40,14 +40,22 @@ endif()
 add_compile_definitions(STRUX_GIT_COMMIT="${GIT_COMMIT}")
 
 # ── Per-board sdkconfig ───────────────────────────────────────
-# Common defaults plus an optional per-board overlay living in the board
-# folder (main/hardware/boards/<board>/sdkconfig.defaults), letting a board
-# change flash size / PSRAM / partitions without touching the shared
-# defaults. sdkconfig fragments cannot include one another, so this list is
-# the composition point: the board file overlays the common one and wins on
-# conflicts. BOARD is the same cache var consumed by main/CMakeLists.txt.
+# Common defaults plus the per-board overlay living in the board folder
+# (main/hardware/boards/<board>/sdkconfig.defaults), which is where a board
+# states its flash size, partition table and PSRAM. sdkconfig fragments cannot
+# include one another, so this list is the composition point: the board file
+# overlays the common one and wins on conflicts. BOARD is the same cache var
+# consumed by main/CMakeLists.txt, and the default here must match the one
+# there — this file runs before main/'s and so cannot read it.
+#
+# The overlay is no longer optional in practice: the root defaults assert
+# neither the flash size nor the partition table, so a board without an
+# overlay builds against IDF's own defaults. The EXISTS check stays because
+# a missing file should not be a CMake error here; the wrong-looking flash
+# map it produces is caught at flash time, and an unknown BOARD is refused
+# by main/CMakeLists.txt with the list of the ones that exist.
 if(NOT DEFINED BOARD)
-    set(BOARD "esp32_devkit")
+    set(BOARD "esp32s3_n16r8")
 endif()
 set(SDKCONFIG_DEFAULTS "sdkconfig.defaults")
 if(EXISTS "${CMAKE_SOURCE_DIR}/main/hardware/boards/${BOARD}/sdkconfig.defaults")

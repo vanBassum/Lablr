@@ -3,10 +3,10 @@
 #include "InitState.h"
 #include "BoardConfig.h"
 #include "interfaces/BoardProvider.h"
-#include "drivers/GpioLed.h"
+#include "drivers/MockLed.h"
 
 // ──────────────────────────────────────────────────────────────
-// The board layer's context for the generic ESP32 DevKit: owns every
+// The board layer's context for an ESP32-S3 N16R8 module: owns every
 // hardware driver instance (and bus host) and answers BoardProvider.
 //
 // The bottom layer, and it depends on nothing above it — not the
@@ -23,9 +23,7 @@
 //     owes every role and binds a Mock* driver when not fitted;
 //   • concrete driver accessors are the escape hatch for when the
 //     application needs a driver's full API. Those stay OFF
-//     BoardProvider and are checked at compile time, which is what
-//     stops the role list becoming the union of every board's
-//     peripherals.
+//     BoardProvider and are checked at compile time.
 // ──────────────────────────────────────────────────────────────
 
 class BoardContext : public BoardProvider
@@ -48,5 +46,11 @@ private:
     InitState initState_;
 
     // Hardware instances — buses first, then the drivers that use them.
-    GpioLed led_{ BoardConfig::LED_PIN, BoardConfig::LED_ACTIVE_HIGH };
+
+    // A mock rather than a GpioLed, because which pin (if any) carries an
+    // LED on this board is not known yet — see the LED note in BoardConfig.h.
+    // The role is bound, so the application and its LED demo work; nothing
+    // lights up. Swapping in GpioLed later touches this line and BoardConfig.h
+    // and nothing else.
+    MockLed led_;
 };

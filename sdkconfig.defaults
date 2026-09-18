@@ -1,9 +1,29 @@
-# Partition table
-CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+# ── What is NOT here: flash size and the partition table ──────
+# Both are board facts, not project facts, and asserting them here made the
+# board overlay unable to disagree. The overlay wins on conflicts, so a 16 MB
+# board setting CONFIG_ESPTOOLPY_FLASHSIZE_16MB left this file's 4 MB line not
+# in effect — and the drift guard in CMakeLists.txt, which checks every line of
+# every composed defaults file, correctly refused the build for it. The guard
+# was right; the assertion was in the wrong file.
+#
+# So each board's sdkconfig.defaults now carries its own
+#   CONFIG_ESPTOOLPY_FLASHSIZE_*MB
+#   CONFIG_PARTITION_TABLE_CUSTOM_FILENAME
+# and every board must set both — there is no default to inherit, which is
+# deliberate: a board that forgets gets IDF's 2 MB default and a table that
+# does not fit, rather than another board's layout by accident.
+#
+# The tables themselves stay at the project root (partitions-16mb.csv) rather
+# than in the board folders: a table can be shared by several boards with the
+# same flash, so what is board-specific is the CHOICE, and that is what the
+# overlay holds.
 
-# Flash size and speed
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+# Custom table for every board; which file is the board's business (above).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+
+# Flash speed, which no board disagrees with yet. A board that needs another
+# one overrides it in its overlay and removes this line from here, the same
+# way the size moved out.
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 
 # HTTP server WebSocket support

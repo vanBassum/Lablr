@@ -9,35 +9,31 @@ Last updated 2026-09-18.
 
 ## Now
 
-**Synced to Strux `050a4b6`.** This repository is still the template plus a name: the
-only files that differ from upstream are `README.md`, `CLAUDE.md`, `CMakeLists.txt`
-(`project(Lablr)`), `.github/workflows/release.yml`, `frontend/src/config.ts` and this
-file. A sync is therefore a re-copy of every tracked file except those, then re-applying
-the identity. `main/strux/` is never edited here; product code goes in `main/app/`, which
-today still holds Strux's LED demo.
+**This firmware is ESP32-S3 only, and the flash map is settled.** `esp32s3_n16r8` is the
+one board: 16 MB flash, 8 MB octal PSRAM at 80 MHz. The template's `esp32_devkit` and
+`esp32c3_supermini` are deleted — 4 MB parts with no PSRAM, which nothing this product
+does will fit on. Flash size and partition table are now stated by the board's
+`sdkconfig.defaults` rather than asserted at the root, which is what made a 16 MB board
+possible at all; the drift guard is untouched and now names the board overlay when a line
+does not take. Builds green at 1,273,696 bytes (1.21 MiB), 60% of a slot free.
 
-**The www partition is gone, which is what the flash plan was waiting for.** Upstream
-packs the built frontend into one blob linked into the app image
-(`main/strux/WebAssets/`), so `partitions.csv` is now nvs + otadata + phy + two OTA slots
-that fill 4 MB exactly. The intent here is the opposite of upstream's: on a 16 MB ESP32-S3,
-give the OTA slots what they need and make **the rest a FAT partition** for `/labels`,
-`/media` and `/fonts`. Three things that removal took with it and this will need back:
-`fatfs` and `wear_levelling` in `COMPONENT_REQUIRES`, and `CONFIG_FATFS_LFN_HEAP` /
-`CONFIG_FATFS_MAX_LFN` in the defaults.
+**Outstanding: the LED role is a `MockLed`.** Nobody has said which pin, if any, carries
+an LED on this board, and the DevKitC-1's is an addressable WS2812 that would need a
+driver this repository does not have. The role is bound so the demo runs and nothing
+lights up. One line in `BoardContext.h` plus two constants in `BoardConfig.h` fixes it
+once the board is known.
 
-**Outstanding: the flash-size assertion will refuse the board that needs it.** The root
-`sdkconfig.defaults` asserts `CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y`, and the drift guard in
-`CMakeLists.txt` walks *every* composed defaults file and fails the build naming any line
-that did not take. A board overlay selecting 16 MB makes the root's line lose, so the
-assertion has to move into the per-board overlays before an S3 board can exist. The same
-applies to `CONFIG_PARTITION_TABLE_CUSTOM_FILENAME` if the S3 wants its own layout.
+**Outstanding: `storage` is reserved, not live.** 9.875 MB at 0x620000, declared FAT in
+the table so the OTA slots cannot grow into it, but nothing mounts it, formats it or
+knows it exists — `fatfs` and `wear_levelling` are deliberately still out of
+`COMPONENT_REQUIRES`. Mounting it is the next piece, and with it the `/labels`, `/media`
+and `/fonts` layout.
 
-**Outstanding: no board, no product code.** Boards are `esp32_devkit` and
-`esp32c3_supermini`. The product is a Strux-connected DYMO LabelWriter: ESP32-S3 driving
-the printer over USB host, SVG labels on FAT rendered on-device (ThorVG is the candidate)
-to a monochrome bitmap, with a render/preview command that returns the bitmap without
-printing. ThorVG and the USB host component go in `main/idf_component.yml` — a board
-fragment cannot add REQUIRES.
+**Outstanding: no product code.** `main/app/` still holds Strux's LED demo. The product is
+a Strux-connected DYMO LabelWriter: the S3 drives the printer over USB host, SVG labels on
+the FAT partition are rendered on-device (ThorVG is the candidate) to a monochrome bitmap,
+and a render/preview command returns that bitmap without printing. ThorVG and the USB host
+component go in `main/idf_component.yml` — a board fragment cannot add REQUIRES.
 
-**Outstanding: not built here.** No `idf.py set-target`, no `pnpm install` in this
-directory since the re-base.
+**Outstanding: nothing has been on hardware.** The build is green and the flash map is
+what the table says; no S3 has been flashed from this tree.

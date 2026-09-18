@@ -10,7 +10,9 @@ void BoardContext::Init()
         return;
     }
 
-    led_.Init();
+    // Nothing to bring up yet: the only role this board binds is the LED, and
+    // it is a MockLed with no hardware behind it (see BoardConfig.h). Drivers
+    // and bus hosts get their Init() calls here as they are added.
 
     init.SetReady();
     ESP_LOGI(TAG, "Initialized");

@@ -1,7 +1,7 @@
 # ──────────────────────────────────────────────────────────────
-# Board fragment: ESP32-C3 SuperMini
-#   ESP32-C3FH4/FN4 (RISC-V, 4 MB flash, no PSRAM) · USB-C on the chip's
-#   native USB Serial/JTAG · blue LED on GPIO8, active LOW
+# Board fragment: ESP32-S3 N16R8
+#   ESP32-S3 (Xtensa LX7, dual core) · 16 MB quad flash · 8 MB OCTAL PSRAM
+#   · native USB on GPIO19/20 · no LED bound (see BoardConfig.h)
 #
 # A board fragment may append to BOARD_SOURCES (extra .cpp files under this
 # folder that need compiling). Component deps are NOT set here — see the note

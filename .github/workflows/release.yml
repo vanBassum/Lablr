@@ -24,10 +24,8 @@ jobs:
       fail-fast: false          # a broken board should not hide the other one
       matrix:
         include:
-          - board: esp32_devkit
-            target: esp32
-          - board: esp32c3_supermini
-            target: esp32c3
+          - board: esp32s3_n16r8
+            target: esp32s3
 
     steps:
       - name: Checkout
@@ -124,7 +122,7 @@ jobs:
           body: |
             ### Firmware files
 
-            One set per board: `esp32_devkit` (ESP32-WROOM-32) and `esp32c3_supermini` (ESP32-C3).
+            One board: `esp32s3_n16r8` (ESP32-S3, 16 MB flash, 8 MB octal PSRAM).
 
             - **`${{ env.PROJECT_NAME }}-<board>-factory.bin`** — full image (bootloader + partition table + app, the web UI linked into it). For a first flash or a recovery, from offset zero: `esptool write-flash 0x0 <file>`.
             - **`${{ env.PROJECT_NAME }}-<board>-app.bin`** — application only. Upload it to the inactive `ota_0`/`ota_1` partition from the device's Firmware page.

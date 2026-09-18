@@ -99,11 +99,18 @@ set(COMPONENT_REQUIRES
 )
 
 # ── Board selection ────────────────────────────────────────────
-# Pick the target board with -DBOARD=<name>; defaults to the generic ESP32
-# DevKit. Each board lives in main/hardware/boards/<name>/ with its own
-# BoardConfig.h and a board.cmake fragment that may append extra files to
-# BOARD_SOURCES. Shared, board-independent drivers live in hardware/drivers/.
-set(BOARD "esp32_devkit" CACHE STRING "Target board (folder under main/hardware/boards/)")
+# Pick the target board with -DBOARD=<name>. Each board lives in
+# main/hardware/boards/<name>/ with its own BoardConfig.h, a board.cmake
+# fragment that may append extra files to BOARD_SOURCES, and an
+# sdkconfig.defaults overlay carrying its flash size and partition table.
+# Shared, board-independent drivers live in hardware/drivers/.
+#
+# One board today, and it is the product's hardware rather than a default to
+# fall back on: this firmware drives a DYMO LabelWriter from an ESP32-S3 with
+# 16 MB of flash and 8 MB of PSRAM, and none of that fits the 4 MB boards the
+# Strux template ships with. Those were deleted rather than kept building, so
+# there is no configuration here that no hardware exercises.
+set(BOARD "esp32s3_n16r8" CACHE STRING "Target board (folder under main/hardware/boards/)")
 
 set(BOARD_DIR "${CMAKE_CURRENT_LIST_DIR}/hardware/boards/${BOARD}")
 if(NOT EXISTS "${BOARD_DIR}/board.cmake")

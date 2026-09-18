@@ -63,12 +63,11 @@ Lablr/
 │   │   └── LedManager/                # Worked example — delete when you have real ones
 │   ├── hardware/                      # THE BOARD — depends on nothing above it
 │   │   ├── boards/                    # One folder per target board (-DBOARD=<name>)
-│   │   │   ├── esp32_devkit/          # Generic ESP32 DevKit (default)
-│   │   │   │   ├── BoardConfig.h      # Pin definitions for this board
-│   │   │   │   ├── BoardContext.h/.cpp # Owns all drivers, answers BoardProvider
-│   │   │   │   └── board.cmake        # Board build fragment (adds BoardContext.cpp)
-│   │   │   └── esp32c3_supermini/     # ESP32-C3 SuperMini (RISC-V, USB-C)
-│   │   │       └── ...                # Same four files + sdkconfig.defaults overlay
+│   │   │   └── esp32s3_n16r8/         # ESP32-S3, 16 MB flash, 8 MB octal PSRAM
+│   │   │       ├── BoardConfig.h      # Pin definitions for this board
+│   │   │       ├── BoardContext.h/.cpp # Owns all drivers, answers BoardProvider
+│   │   │       ├── board.cmake        # Board build fragment (adds BoardContext.cpp)
+│   │   │       └── sdkconfig.defaults # Flash size, partition table, PSRAM
 │   │   ├── interfaces/                # Role interfaces (application vocabulary)
 │   │   │   ├── BoardProvider.h        # The roles every board owes
 │   │   │   └── Led.h                  # Led role: Set/IsOn + On/Off/Toggle helpers
@@ -99,18 +98,17 @@ Dependencies run one way: the board depends on nothing, the framework depends on
 
 ### Multiple boards
 
-The target board is selected at configure time with `-DBOARD=<name>` (default: `esp32_devkit`). Two ship with the template:
+The target board is selected at configure time with `-DBOARD=<name>`. One board today — the product's hardware. The template's 4 MB boards were deleted rather than kept building, because nothing this firmware is for fits on them.
 
 | `-DBOARD=` | Chip | Notes |
 |---|---|---|
-| `esp32_devkit` | ESP32-WROOM-32 (Xtensa) | Default. Built-in LED on GPIO2, active high |
-| `esp32c3_supermini` | ESP32-C3 (RISC-V) | The cheap ~18×22 mm USB-C board. Blue LED on GPIO8, active **low**; console on the chip's native USB Serial/JTAG |
+| `esp32s3_n16r8` | ESP32-S3 (Xtensa LX7) | 16 MB flash, 8 MB **octal** PSRAM. No LED bound yet — the role is a `MockLed` until the board's LED is known |
 
  Only the selected board folder is put on the include path, so application code just includes `BoardConfig.h` or `BoardContext.h` and gets the right one. The application never changes between boards: it compiles against the `BoardContext` class's surface, and each board makes itself compatible — with real hardware or a mock. Every board implements [`BoardProvider`](main/hardware/interfaces/BoardProvider.h), the list of roles a board owes, so a board that forgets one fails in the board rather than at some call site. To support a new board:
 
-1. Copy `main/hardware/boards/esp32_devkit/` to `main/hardware/boards/<your_board>/` and edit `BoardConfig.h` and `BoardContext.h`/`BoardContext.cpp` (bind each role to a real driver or a `Mock*` one)
+1. Copy `main/hardware/boards/esp32s3_n16r8/` to `main/hardware/boards/<your_board>/` and edit `BoardConfig.h` and `BoardContext.h`/`BoardContext.cpp` (bind each role to a real driver or a `Mock*` one)
 2. Add extra board-only source files to `BOARD_SOURCES` in its `board.cmake` (optional)
-3. Add `sdkconfig.defaults` in the board folder if the board needs different flash size, PSRAM, or partitions (optional)
+3. Edit its `sdkconfig.defaults`. **Required, not optional:** every board states its own `CONFIG_ESPTOOLPY_FLASHSIZE_*MB` and `CONFIG_PARTITION_TABLE_CUSTOM_FILENAME`, because the root defaults deliberately assert neither. A board that omits them gets IDF's own defaults, not another board's layout
 4. Build with `idf.py -DBOARD=<your_board> build`
 
 Shared chip drivers (sensors, displays, expanders) go in `main/hardware/drivers/`, parameterized through `BoardConfig` constants so every board can reuse them.
@@ -129,24 +127,24 @@ Or use the included dev container (requires Docker + VS Code with the Dev Contai
 ### Build & Flash
 
 ```bash
-idf.py set-target esp32
-idf.py build                          # default board: esp32_devkit
-idf.py -p /dev/ttyUSB0 flash monitor
+idf.py set-target esp32s3
+idf.py build                          # default board: esp32s3_n16r8
+idf.py -p COM7 flash monitor
 ```
 
 To build for a different board (see `main/hardware/boards/`), set both the chip and the board — `set-target` picks the chip, `-DBOARD` picks the pinout. A board's `sdkconfig.defaults` overlay cannot name the chip: IDF resolves `IDF_TARGET` in an early pass that does not yet see `BOARD`.
 
 ```bash
-idf.py -DBOARD=esp32c3_supermini set-target esp32c3
-idf.py -DBOARD=esp32c3_supermini build
+idf.py -DBOARD=<your_board> set-target <chip>
+idf.py -DBOARD=<your_board> build
 idf.py -p COM7 flash monitor
 ```
 
 Switching chips rewrites `sdkconfig`. To keep two boards side by side, give each its own build tree and config:
 
 ```bash
-idf.py -B build_c3 -D SDKCONFIG=sdkconfig.c3 -DBOARD=esp32c3_supermini set-target esp32c3
-idf.py -B build_c3 -D SDKCONFIG=sdkconfig.c3 -DBOARD=esp32c3_supermini build
+idf.py -B build_x -D SDKCONFIG=sdkconfig.x -DBOARD=<your_board> set-target <chip>
+idf.py -B build_x -D SDKCONFIG=sdkconfig.x -DBOARD=<your_board> build
 ```
 
 If [pnpm](https://pnpm.io/) is installed, the frontend is built automatically as part of `idf.py build`. The React app is compiled, gzipped per file, packed into one blob by `main/strux/WebAssets/pack_web_assets.py` and linked into the app image as rodata — no partition, no filesystem, no mount. A firmware image is the whole product.
@@ -273,7 +271,7 @@ The `hardware/` directory contains everything that changes when you swap the boa
 
 ### BoardConfig.h
 
-Each board has its own [`BoardConfig.h`](main/hardware/boards/esp32_devkit/BoardConfig.h) with its pin assignments:
+Each board has its own [`BoardConfig.h`](main/hardware/boards/esp32s3_n16r8/BoardConfig.h) with its pin assignments:
 
 ```cpp
 namespace BoardConfig
@@ -289,7 +287,7 @@ namespace BoardConfig
 
 ### BoardContext
 
-Each board folder provides a [`BoardContext`](main/hardware/boards/esp32_devkit/BoardContext.h) that owns every hardware driver instance (and bus host) and answers [`BoardProvider`](main/hardware/interfaces/BoardProvider.h) — the roles every board owes. Devices the application addresses by *meaning* go through small role interfaces in `hardware/interfaces/` — the included [`Led`](main/hardware/interfaces/Led.h) role is implemented by [`GpioLed`](main/hardware/drivers/GpioLed.h), and a board without the hardware binds a mock ([`MockLed`](main/hardware/drivers/MockLed.h)).
+Each board folder provides a [`BoardContext`](main/hardware/boards/esp32s3_n16r8/BoardContext.h) that owns every hardware driver instance (and bus host) and answers [`BoardProvider`](main/hardware/interfaces/BoardProvider.h) — the roles every board owes. Devices the application addresses by *meaning* go through small role interfaces in `hardware/interfaces/` — the included [`Led`](main/hardware/interfaces/Led.h) role is implemented by [`GpioLed`](main/hardware/drivers/GpioLed.h), and a board without the hardware binds a mock ([`MockLed`](main/hardware/drivers/MockLed.h)).
 
 `BoardProvider` lists roles only. A driver whose *full* API the application needs is exposed straight off `BoardContext` as an escape hatch, off the interface — which is what stops the role list turning into the union of every board's peripherals.
 
@@ -375,7 +373,7 @@ Routes are two words (`category command`). `ctx.readArgs(...)` is not optional e
 3. Instantiate it in the board's `BoardContext` class and expose it (role interface or concrete accessor)
 4. Add component dependencies in `main/CMakeLists.txt` (IDF built-ins) or `main/idf_component.yml` (managed components); board-only source files go in the board's `board.cmake` via `BOARD_SOURCES`
 
-See [`Led.h`](main/hardware/interfaces/Led.h), [`GpioLed.h`](main/hardware/drivers/GpioLed.h), and [`BoardContext.h`](main/hardware/boards/esp32_devkit/BoardContext.h) for a complete example.
+See [`Led.h`](main/hardware/interfaces/Led.h), [`GpioLed.h`](main/hardware/drivers/GpioLed.h), and [`BoardContext.h`](main/hardware/boards/esp32s3_n16r8/BoardContext.h) for a complete example.
 
 ---
 

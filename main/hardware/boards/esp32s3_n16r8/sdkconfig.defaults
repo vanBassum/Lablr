@@ -1,0 +1,34 @@
+# ──────────────────────────────────────────────────────────────
+# Board overlay: ESP32-S3 N16R8 (16 MB flash, 8 MB octal PSRAM).
+# Overlays the root sdkconfig.defaults and wins on conflicts (composed in the
+# root CMakeLists.txt).
+#
+# The chip itself is NOT set here. IDF resolves IDF_TARGET in the same early
+# pass that cannot see -DBOARD (the note in main/CMakeLists.txt), so a
+# CONFIG_IDF_TARGET line in this file is read too late and silently loses to
+# whatever the existing sdkconfig says. Select the chip the ordinary way:
+#   idf.py -DBOARD=esp32s3_n16r8 set-target esp32s3
+# ──────────────────────────────────────────────────────────────
+
+# Flash size and the partition table that fits it. This board is the reason
+# both moved out of the root defaults: the root asserted 4 MB, the overlay
+# wins on conflicts, and the drift guard then correctly refused a build whose
+# generated sdkconfig disagreed with an assertion it had been handed. The
+# assertion was in the wrong file, not wrong.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-16mb.csv"
+
+# ── PSRAM ─────────────────────────────────────────────────────
+# 8 MB of it, in OCTAL mode: the R8 half of N16R8 is an octal part, and the
+# IDF default is quad. Getting this wrong does not fail the build - PSRAM
+# simply is not found at boot, the log says so once, and everything that
+# wanted it silently falls back to internal RAM. ConsoleManager's 40 KB log
+# ring is already written that way (heap_caps_calloc with MALLOC_CAP_SPIRAM,
+# then plain calloc), so nothing breaks loudly.
+#
+# 80 MHz rather than 120: 120 MHz is behind IDF_EXPERIMENTAL_FEATURES on the
+# S3 and carries timing caveats. 80 MHz is the speed the module is specified
+# for and is not a bottleneck for anything here.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
