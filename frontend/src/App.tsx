@@ -6,12 +6,18 @@ import HomePage from "@/pages/HomePage"
 import ConsolePage from "@/pages/ConsolePage"
 import SettingsPage from "@/pages/SettingsPage"
 import FirmwarePage from "@/pages/FirmwarePage"
+import FilesPage from "@/pages/FilesPage"
+import RenderPage from "@/pages/RenderPage"
 import LoginPage from "@/pages/LoginPage"
 
 function PageContent({ page }: { page: Page }) {
   switch (page) {
     case "home":
       return <HomePage />
+    case "files":
+      return <FilesPage />
+    case "render":
+      return <RenderPage />
     case "console":
       return <ConsolePage />
     case "settings":

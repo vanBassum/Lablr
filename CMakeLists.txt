@@ -138,3 +138,38 @@ if(NOT STRUX_ALLOW_SDKCONFIG_DRIFT)
             "-DSTRUX_ALLOW_SDKCONFIG_DRIFT=ON.")
     endif()
 endif()
+
+# ── ThorVG font support needs a patched component ─────────────
+# The registry's espressif/thorvg passes -D__linux__ to ThorVG's meson build.
+# ThorVG 1.1.0's font loader reads that as 'mmap is available' and includes
+# <sys/mman.h>, which ESP-IDF does not have, so enabling the TTF/OTF loader
+# fails to compile. Fonts are not optional here - an SVG <text> element without
+# a font renders as nothing at all - so the fix is to drop that one token.
+#
+# Checked here because the alternative is a fresh clone failing deep inside a
+# dependency's build with 'sys/mman.h: No such file or directory', which says
+# nothing about what to do.
+if(CONFIG_THORVG_TTF_LOADER_SUPPORT)
+    set(_tvg_cross "${CMAKE_SOURCE_DIR}/managed_components/espressif__thorvg/cross_file.txt.in")
+    if(EXISTS "${_tvg_cross}")
+        file(READ "${_tvg_cross}" _tvg_cross_text)
+        if(_tvg_cross_text MATCHES "__linux__")
+            message(FATAL_ERROR
+                "espressif/thorvg still defines __linux__, so its font loader will try to "
+                "mmap and the build will fail on <sys/mman.h>.
+
+"
+                "Point main/idf_component.yml at a fork of espressif/idf-extra-components "
+                "whose thorvg/cross_file.txt.in drops '-D__linux__' from cpp_args (see the "
+                "commented stanza in that file), or remove that token from:
+"
+                "  ${_tvg_cross}
+
+"
+                "To build without label text instead, set "
+                "'# CONFIG_THORVG_TTF_LOADER_SUPPORT is not set' in sdkconfig.defaults, "
+                "delete the generated sdkconfig and re-run set-target.")
+        endif()
+    endif()
+endif()
+

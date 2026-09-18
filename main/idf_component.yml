@@ -5,6 +5,27 @@ dependencies:
   # The SVG renderer. A managed dependency and not a board fragment, because
   # ESP-IDF resolves REQUIRES in a pass that cannot see -DBOARD - see the note
   # in main/CMakeLists.txt.
+  #
+  # FONT SUPPORT NEEDS A FORKED COMPONENT. The registry build passes
+  # -D__linux__ to ThorVG's meson, and ThorVG 1.1.0 reads that as "mmap is
+  # available": its font loader includes <sys/mman.h>, which ESP-IDF has not
+  # got, so CONFIG_THORVG_TTF_LOADER_SUPPORT=y fails to compile. An SVG <text>
+  # element with no font renders as nothing at all, so this is not optional.
+  #
+  # The fix is one token. Fork espressif/idf-extra-components, and in
+  # thorvg/cross_file.txt.in drop '-D__linux__' from cpp_args - ThorVG then
+  # takes its own portable fopen path, which is what every other non-Linux
+  # target uses. Nothing else in the built sources reads __linux__ (only the
+  # font loader and the GL backend, and the GL backend is not built here).
+  # Then replace the line below with:
+  #
+  #   espressif/thorvg:
+  #     version: "*"
+  #     git: https://github.com/vanBassum/idf-extra-components.git
+  #     path: thorvg
+  #
+  # Until then the root CMakeLists refuses the build with these instructions
+  # rather than letting it fail inside the dependency. Worth a PR upstream.
   espressif/thorvg: "~1.1.0"
 # esp_websocket_client is deliberately absent: the relay drives a WebSocket through
 # the built-in tcp_transport layer instead, so the reading happens on the task that

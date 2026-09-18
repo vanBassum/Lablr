@@ -120,6 +120,23 @@ Log lines broadcast to all WebSocket clients via `ConsoleManager`. Its log ring 
 
 `UpdateManager`'s entire external surface is its command table: session-based updates addressed by partition label (`updateBegin`/`updateWrite`/`updateEnd`), pull OTA from URL, and partition download. App partitions go through `esp_ota_*` (image validation, running slot refused); data partitions are raw erase+write. The built frontend is **not** a partition: `main/strux/WebAssets/pack_web_assets.py` packs `www/` into one gzipped-per-file blob that `EMBED_FILES` links into the app image, so a firmware image is the whole product and a UI change is an ordinary app OTA. `WebAssets` is a const table over that blob in flash-mapped rodata — no RAM, no filesystem, no mount — and both serving routes (the local HTTP route and `web read`) go through `StaticFileHandler::Resolve` into it. One blob rather than one `EMBED_FILES` entry per asset because vite content-hashes its filenames and `EMBED_FILES` needs its list when CMake configures.
 
+### Labels: the filesystem and the renderer
+
+The product's own two managers, both in `main/app/`, both clients of nothing in `strux/` beyond the framework's own seams.
+
+`StorageManager` mounts the `storage` partition FAT with wear levelling at `/storage` and creates `/labels`, `/fonts` and `/media`. Its five `fs` commands take and return file contents as request and reply **bodies**, never arguments - the envelope is capped at 512 bytes and a single value at 192, so an SVG could not fit even if that were the right shape. `fs write` drains `ctx.in.lendInput()` straight to the file the way `partition write` does; `fs read` streams back behind a header record the way `web read` does. Paths on the wire are rooted at the mount, so a caller never learns the VFS path, and `..` anywhere is refused rather than normalised.
+
+`RenderManager` owns ThorVG. `render svg` returns a JSON header then the raw pixels in `ARGB8888S` - one 32-bit little-endian word per pixel, so the bytes are B,G,R,A, un-premultiplied so a viewer can use them directly. Canvas and SVG buffers are `heap_caps_malloc(MALLOC_CAP_SPIRAM)`, never the internal heap the radios need.
+
+**Four things about ThorVG on ESP-IDF, each of which cost a debugging session:**
+
+- **It cannot be built without its thread pool.** ThorVG's meson links `pthread` unconditionally on any non-Windows host, while the Espressif component only puts pthread on the linker path when `THORVG_THREAD_ENABLED=y`. Turning off the option the Kconfig help invites fails with "C++ shared or static library 'pthread' not found".
+- **With threads in, it must be called from a pthread.** Its scheduler asks for the calling thread's identity, which on ESP-IDF is `pthread_self()` and hard-asserts for a FreeRTOS task pthread did not create. Calling ThorVG from a command handler reboots the device. Hence the worker in `RenderManager`, created with `pthread_create`; handlers hand it a job and wait. It also gives the rasteriser its own stack (16 KB; it reports ~11.5 KB left).
+- **Font support needs a forked component.** The component passes `-D__linux__`, and ThorVG 1.1.0's font loader takes that to mean mmap exists. See the note in [main/idf_component.yml](main/idf_component.yml); the root CMakeLists refuses the build with instructions rather than failing inside the dependency.
+- **A font-family that matches nothing renders nothing, silently.** ThorVG resolves `<text font-family="X">` against its font registry by exact name and has no fallback. Fonts are registered from `/fonts` at boot under their filename without the extension, so `/fonts/DejaVuSans.ttf` is `font-family="DejaVuSans"`. `render fonts` is what tells you which names exist - and the shapes around missing text still draw, so the label looks right except that the words are gone.
+
+Fonts are read into PSRAM by this manager rather than by ThorVG's own file path: that path is `fopen` plus one `malloc` of the whole file, and a font is hundreds of kilobytes that would likely land in internal RAM.
+
 ### Settings
 
 Settings are typed leaf objects (`lib`-style, [TypedSettings.h](main/strux/SettingsManager/TypedSettings.h)) declared in the manager that owns them and registered at runtime:

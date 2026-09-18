@@ -9,38 +9,38 @@ Last updated 2026-09-18.
 
 ## Now
 
-**This firmware is ESP32-S3 only, and the flash map is settled.** `esp32s3_n16r8` is the
-one board: 16 MB flash, 8 MB octal PSRAM at 80 MHz. The template's `esp32_devkit` and
-`esp32c3_supermini` are deleted — 4 MB parts with no PSRAM, which nothing this product
-does will fit on. Flash size and partition table are now stated by the board's
-`sdkconfig.defaults` rather than asserted at the root, which is what made a 16 MB board
-possible at all; the drift guard is untouched and now names the board overlay when a line
-does not take. Builds green at 1,273,696 bytes (1.21 MiB), 60% of a slot free, and boots on the bench S3 with every manager up, WiFi joined and SNTP synced.
+**The rendering path is proved on hardware, end to end.** `fs write` → SVG on FAT →
+ThorVG → ARGB bitmap → command reply, driven both from a script and from the device's
+own Files and Render pages. Geometry is pixel-perfect; `<text>` renders with a TrueType
+font read from `/fonts`. A 400×200 render costs 320 KB of PSRAM (the canvas itself),
+~25 KB of internal heap, leaves ~11.5 KB of the worker's 16 KB stack, and takes ~780 ms
+round trip including shipping 313 KB over the WebSocket.
 
-**Settled: there is no LED, and that is the answer.** The `Led` role binds `MockLed`
-permanently. This product drives a label printer; the only thing an indicator would
-report is a link state the printer's own commands already answer, and writing a WS2812
-driver to light up a demo that gets deleted with `LedManager` would be work spent on the
-copy rather than the product.
+**Outstanding: the ThorVG fork is not made yet.** Font support needs one token removed
+from the component (`-D__linux__`), agreed to be carried as a fork of
+`espressif/idf-extra-components`. Until that fork exists, `main/idf_component.yml` still
+points at the registry and the build refuses with instructions; the bench works because
+this machine's `managed_components/` copy is patched by hand, which a clean clone will
+not be. The stanza to switch to is in that file, and it is worth a PR upstream.
 
-**Settled: the flash map is the baseline.** 3 MB + 3 MB OTA and a 9.875 MB `storage`
-area, agreed 2026-09-18. Not revisited without a measurement.
+**Outstanding: printing does not exist.** No USB host, no DYMO protocol. `DeviceDoc`
+says so explicitly, because a model that assumes otherwise will tell someone a label was
+printed.
 
-**Outstanding: `storage` is reserved, not live.** 9.875 MB at 0x620000, declared FAT in
-the table so the OTA slots cannot grow into it, but nothing mounts it, formats it or
-knows it exists — `fatfs` and `wear_levelling` are deliberately still out of
-`COMPONENT_REQUIRES`. Mounting it is the next piece, and with it the `/labels`, `/media`
-and `/fonts` layout.
+**Outstanding: `/media` is empty.** Render sizes are given as explicit pixel width and
+height. Media definitions — physical size, DPI — are the next design decision, and the
+render command's arguments are where they will land.
 
-**Outstanding: no product code.** `main/app/` still holds Strux's LED demo. The product is
-a Strux-connected DYMO LabelWriter: the S3 drives the printer over USB host, SVG labels on
-the FAT partition are rendered on-device (ThorVG is the candidate) to a monochrome bitmap,
-and a render/preview command returns that bitmap without printing. ThorVG and the USB host
-component go in `main/idf_component.yml` — a board fragment cannot add REQUIRES.
+**Outstanding: the bench font is Verdana.** Copied off this Windows machine to prove the
+path; it is not redistributable and is not in the repo. Anything shipped wants an open
+font (DejaVu, Liberation, Noto).
 
-**Settled: octal PSRAM is verified on hardware.** Flashed to the bench S3
-(MAC 80:b5:4e:db:47:18) on 2026-09-18: `Found 8MB PSRAM device`, `Speed: 80MHz`,
-`SPI SRAM memory test OK`, and 8192K added to the heap. The bootloader also reports
-`SPI Flash Size : 16MB` and the partition table exactly as designed, `storage` included
-(the bootloader calls it "Unknown data 01 81" because it has no name for subtype 0x81 -
-that is FAT, and expected).
+**Worth backporting to Strux:** the WebSocket inbound-frame fix. The local transport read
+frames into a 512-byte stack buffer while declaring `INBOUND_WINDOW = 4096`, so any frame
+of 512 bytes or more dropped the client — which also means `partition write` from the
+browser over the LAN has been broken. Same fix, in `main/strux/WebServerManager/`.
+
+**Settled, and not revisited without a measurement:** the S3-only board
+(`esp32s3_n16r8`, 16 MB flash, 8 MB octal PSRAM, verified at boot on MAC
+80:b5:4e:db:47:18), the 3 MB + 3 MB OTA plus 9.875 MB `storage` flash map, and no LED —
+`MockLed` is permanent, because a label printer has nothing to indicate.

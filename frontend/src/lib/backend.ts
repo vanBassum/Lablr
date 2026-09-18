@@ -742,6 +742,98 @@ class BackendService {
     onProgress?.(100)
   }
 
+  /** One command whose reply is a JSON header record, a newline, then raw bytes.
+   *
+   *  The third reply shape the device uses, after 'one JSON object' and 'a stream
+   *  of bytes': `fs read` and `render svg` both answer this way, and so does
+   *  `web read`. Splitting at the first newline belongs here rather than in each
+   *  page, because it is a property of the wire format and not of the command.
+   *
+   *  A refusal arrives the same way - {"ok":false,...} then a newline and no body -
+   *  so the header is returned as-is and the caller decides what ok=false means. */
+  async downloadSessionWithHeader<H>(
+    type: string,
+    params?: Record<string, unknown>,
+    onProgress?: (received: number) => void,
+  ): Promise<{ header: H; bytes: Uint8Array }> {
+    const buf = await this.enqueue(async () => {
+      await this.ensureConnected()
+      const session = this.allocSession()
+      const reply = this.awaitReply<Uint8Array<ArrayBuffer>>(session, {
+        timeoutMs: 120000,
+        binary: true,
+        onData: (received) => onProgress?.(received),
+      })
+      const body = new TextEncoder().encode(
+        JSON.stringify({ type, ...(params ?? {}) }) + "\n",
+      )
+      this.sendChunk(session, FLAG_FINAL, body)
+      return reply
+    })
+
+    const nl = buf.indexOf(10)
+    if (nl < 0) throw new Error("malformed reply: no header line")
+    const header = JSON.parse(new TextDecoder().decode(buf.subarray(0, nl))) as H
+    return { header, bytes: buf.subarray(nl + 1) }
+  }
+
+  // ── Lablr: the label filesystem and the renderer ────────────────────────
+  //
+  // Thin wrappers over the SAME commands an external caller uses. Nothing here
+  // is a private channel for the UI: the pages are clients of the device's
+  // public interface, so driving them exercises what the relay's MCP surface
+  // will drive.
+
+  fsInfo(): Promise<FsInfo> {
+    return this.send<FsInfo>("fs info")
+  }
+
+  fsList(path: string): Promise<FsListResult> {
+    return this.send<FsListResult>("fs list", { path })
+  }
+
+  /** Raw bytes of one file, plus the header the device sent with them. */
+  async fsRead(path: string): Promise<{ header: FsReadHeader; bytes: Uint8Array }> {
+    const res = await this.downloadSessionWithHeader<FsReadHeader>("fs read", { path })
+    if (!res.header.ok) throw new Error(res.header.error ?? "read failed")
+    return res
+  }
+
+  /** Create or replace a file. The bytes are the request BODY - see uploadSession. */
+  async fsWrite(path: string, body: Blob, onProgress?: (f: number) => void): Promise<number> {
+    const res = await this.uploadSession<{ ok: boolean; written?: number; error?: string }>(
+      "fs write", { path }, body, onProgress,
+    )
+    if (!res.ok) throw new Error(res.error ?? "write failed")
+    return res.written ?? 0
+  }
+
+  async fsDelete(path: string): Promise<void> {
+    const res = await this.send<{ ok: boolean; error?: string }>("fs delete", { path })
+    if (!res.ok) throw new Error(res.error ?? "delete failed")
+  }
+
+  renderFonts(): Promise<{ ok: boolean; fonts: FontEntry[] }> {
+    return this.send<{ ok: boolean; fonts: FontEntry[] }>("render fonts")
+  }
+
+  /** Render an SVG and return the framebuffer with the header describing it.
+   *  Timed here because the device does not report a duration - this is
+   *  round-trip including the transfer, and the page says so. */
+  async renderSvg(
+    path: string,
+    width: number,
+    height: number,
+  ): Promise<{ header: RenderHeader; bytes: Uint8Array; elapsedMs: number }> {
+    const started = performance.now()
+    const res = await this.downloadSessionWithHeader<RenderHeader>("render svg", {
+      path, width, height,
+    })
+    const elapsedMs = performance.now() - started
+    if (!res.header.ok) throw new Error(res.header.error ?? "render failed")
+    return { ...res, elapsedMs }
+  }
+
 }
 
 const instance = new BackendService()
@@ -836,5 +928,59 @@ export interface Partition {
 
 export interface PartitionsResponse {
   partitions: Partition[]
+}
+
+// ── Lablr types ──────────────────────────────────────────────────────────────
+
+export interface FsInfo {
+  ok: boolean
+  mounted: boolean
+  total?: number
+  free?: number
+  used?: number
+}
+
+export interface FsEntry {
+  name: string
+  dir: boolean
+  size: number
+}
+
+export interface FsListResult {
+  ok: boolean
+  path: string
+  entries: FsEntry[]
+  error?: string
+}
+
+export interface FsReadHeader {
+  ok: boolean
+  path?: string
+  size?: number
+  error?: string
+}
+
+export interface FontEntry {
+  name: string
+  bytes: number
+}
+
+/** What `render svg` puts before the pixels. `format` is ARGB8888S: one 32-bit
+ *  little-endian word per pixel, so the bytes are B,G,R,A and alpha is not
+ *  premultiplied - which is what lets the page hand them to ImageData after a
+ *  channel swap and nothing else. */
+export interface RenderHeader {
+  ok: boolean
+  path?: string
+  width?: number
+  height?: number
+  format?: string
+  stride?: number
+  bytes?: number
+  scale?: number
+  psramUsed?: number
+  internalUsed?: number
+  workerStackLeft?: number
+  error?: string
 }
 

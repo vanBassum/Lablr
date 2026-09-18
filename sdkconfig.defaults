@@ -58,7 +58,7 @@ CONFIG_FATFS_MAX_LFN=255
 # Log on for now. It is how a font that failed to load says so - ThorVG
 # reports that through TVGLOG and returns a plain error code otherwise.
 CONFIG_THORVG_SVG_LOADER_SUPPORT=y
-# CONFIG_THORVG_TTF_LOADER_SUPPORT is not set
+CONFIG_THORVG_TTF_LOADER_SUPPORT=y
 CONFIG_THORVG_LOG_ENABLED=y
 # CONFIG_THORVG_LOTTIE_LOADER_SUPPORT is not set
 CONFIG_THORVG_THREAD_ENABLED=y
