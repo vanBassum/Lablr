@@ -30,6 +30,7 @@ import {
   RefreshCwIcon,
   SearchIcon,
   SquareDashedIcon,
+  Trash2Icon,
   UploadIcon,
   ZoomInIcon,
   ZoomOutIcon,
@@ -98,6 +99,16 @@ function previewKeyOf(path: string, w: number, h: number): string {
   return `${path}|${w}|${h}`
 }
 
+/** One unit of device work. There are only two kinds, and the queue below is a
+ *  function that picks between them rather than a list anything pushes to. */
+type Job =
+  | { kind: "thumb"; path: string }
+  | { kind: "preview"; path: string }
+
+/** Thumbnails are 96 px on the long edge - small enough that the device draws
+ *  one in well under the time a full preview takes. */
+const THUMB_WIDTH = 96
+
 export default function PrintPage() {
   const connection = useConnectionStatus()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -130,6 +141,27 @@ export default function PrintPage() {
   const [lastJob, setLastJob] = useState<PrintResult | null>(null)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [dims, setDims] = useState<Record<string, { w: number; h: number } | null>>({})
+  // Thumbnails ATTEMPTED, which is not the same as thumbnails we have: a label
+  // that will not parse belongs here too, or the queue below offers it forever.
+  const [tried, setTried] = useState<Record<string, true>>({})
+  // Rows that have been scrolled into view at least once.
+  const [seen, setSeen] = useState<Record<string, true>>({})
+  // Bumped by a finished job, purely so the queue effect re-runs after one that
+  // changed nothing else.
+  const [tick, setTick] = useState(0)
+
+  const listRef = useRef<HTMLDivElement>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const rowsRef = useRef(new Map<string, HTMLElement>())
+  const workerBusy = useRef(false)
+
+  // Stable, so React calls it once per row rather than on every re-render.
+  const rowRef = useCallback((element: HTMLElement | null) => {
+    const path = element?.dataset.path
+    if (!element || !path) return
+    rowsRef.current.set(path, element)
+    observerRef.current?.observe(element)
+  }, [])
 
   const medium = media.find((m) => m.id === mediaId) ?? null
   // Custom size is an override for calibration; until someone opens Advanced and
@@ -149,6 +181,13 @@ export default function PrintPage() {
   const standIn = selected ? thumbs[selected] : undefined
 
   const refresh = useCallback(() => {
+    // Reload means "the files may have changed underneath me", so what was
+    // rendered FROM them is stale. Clearing the attempt record is what re-offers
+    // every thumbnail to the queue; the pictures themselves are kept so the
+    // strip does not blank out while they come back, and the preview key is
+    // dropped so the open label is drawn again too.
+    setTried({})
+    setDrawnKey(null)
     backend
       .fsList("/labels")
       .then((r) => {
@@ -182,18 +221,44 @@ export default function PrintPage() {
     refresh()
   }, [connection, refresh])
 
-  // The big preview. Re-renders whenever the label or the geometry changes,
-  // because a preview at the wrong size is worse than none.
-  useEffect(() => {
-    if (connection !== "connected" || !selected) return
-    const seq = ++requestSeq.current
-    const key = previewKeyOf(selected, w, h)
-    let cancelled = false
-    setBusy(true)
-    backend
-      .renderSvg(selected, w, h)
-      .then((res) => {
-        if (cancelled || seq !== requestSeq.current) return
+  // One label's own size and its thumbnail. Two device round trips, kept
+  // together because the size is what gives the thumbnail its aspect ratio -
+  // the DESIGN's, not the medium's, so a design drawn for other stock looks
+  // wrong here rather than looking fine and printing wrong.
+  const renderThumb = useCallback(async (path: string) => {
+    let size: { w: number; h: number } | null = null
+    try {
+      const { bytes } = await backend.fsRead(path)
+      size = svgSize(new TextDecoder().decode(bytes))
+      setDims((d) => ({ ...d, [path]: size }))
+    } catch {
+      /* unreadable: the row shows its name and no size */
+    }
+
+    const tw = THUMB_WIDTH
+    const th = Math.max(24, Math.round(tw / (size ? size.w / size.h : 1)))
+    try {
+      const res = await backend.renderSvg(path, tw, th)
+      setThumbs((t) => ({
+        ...t,
+        [path]: toDataUrl(res.bytes, res.header.width ?? tw, res.header.height ?? th),
+      }))
+    } catch {
+      /* a label that will not render shows its name and no picture */
+    } finally {
+      setTried((t) => ({ ...t, [path]: true }))
+    }
+  }, [])
+
+  // The full preview, at the medium's real geometry, straight onto the canvas.
+  const renderPreview = useCallback(
+    async (path: string, seq: number) => {
+      const key = previewKeyOf(path, w, h)
+      try {
+        const res = await backend.renderSvg(path, w, h)
+        // Nothing else may have asked in the meantime. A slow render of a label
+        // that is no longer selected must never reach the canvas.
+        if (seq !== requestSeq.current) return
         const rw = res.header.width ?? w
         const rh = res.header.height ?? h
         const canvas = canvasRef.current
@@ -201,61 +266,113 @@ export default function PrintPage() {
         canvas.width = rw
         canvas.height = rh
         canvas.getContext("2d")?.putImageData(toImageData(res.bytes, rw, rh), 0, 0)
-        // Only now is the canvas the current label's, and only now does the
-        // markup below stop showing the thumbnail standing in for it.
+        // Only now is the canvas this label's, and only now does the markup
+        // below stop showing the thumbnail standing in for it.
         setDrawnKey(key)
-      })
-      .catch((e) => {
-        if (!cancelled) toast.error("Render failed", { description: errorMessage(e) })
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [connection, selected, w, h])
+      } catch (e) {
+        if (seq === requestSeq.current)
+          toast.error("Render failed", { description: errorMessage(e) })
+        // Marked done anyway, so a design the rasteriser refuses does not have
+        // the queue asking for it again on every tick.
+        setDrawnKey(key)
+      }
+    },
+    [w, h],
+  )
 
-  // Each design's own size and its thumbnail, one label at a time - sequentially,
-  // so a directory of twenty labels does not queue twenty rasteriser jobs at once.
-  // Keyed on the label list alone: neither depends on the selected medium, and
-  // re-reading them when the dropdown changes would be work for nothing.
+  // Which rows the eye has actually reached. A label nobody has scrolled to is a
+  // render nobody has asked for, and the device does them one at a time at about
+  // a second each - so a drawer of eighty designs used to mean eighty jobs queued
+  // on a page load, and the one label you were looking at waited behind all of
+  // them. Membership is one-way: seen once is seen.
   useEffect(() => {
-    if (connection !== "connected" || !labels.length) return
+    const root = listRef.current
+    if (!root) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setSeen((cur) => {
+          let next = cur
+          for (const entry of entries) {
+            const path = (entry.target as HTMLElement).dataset.path
+            if (!entry.isIntersecting || !path || cur[path]) continue
+            if (next === cur) next = { ...cur }
+            next[path] = true
+          }
+          return next
+        })
+      },
+      // A screen's worth of lead, so scrolling finds pictures already there
+      // rather than starting the render as the row lands.
+      { root, rootMargin: "200px" },
+    )
+    observerRef.current = observer
+    // Rows mounted before this effect ran - which is all of them on a reload -
+    // are registered in the map and would otherwise never be observed.
+    for (const element of rowsRef.current.values()) observer.observe(element)
+    return () => {
+      observer.disconnect()
+      observerRef.current = null
+    }
+  }, [])
+
+  // ── The render queue ──────────────────────────────────────────────────────
+  //
+  // ONE job at a time, chosen fresh each time the previous finishes, in the
+  // order the page is actually read:
+  //
+  //   1. the selected label's thumbnail  - it stands in for the preview, so it
+  //      is what turns a blank panel into a picture, and it is cheap
+  //   2. the thumbnails of rows on screen - the strip fills in
+  //   3. the selected label's full preview at the medium's real geometry
+  //
+  // The expensive job goes LAST deliberately: by the time it runs the panel is
+  // already showing this label at this shape, so the full render replaces
+  // something correct rather than nothing. Moving it up is moving one block.
+  //
+  // There is no queue object. `pick` is a pure function of current state, so a
+  // change of selection or a scroll re-prioritises what happens next without
+  // anything having to be cancelled or drained.
+  const pick = useCallback((): Job | null => {
+    if (!selected) return null
+    if (!tried[selected]) return { kind: "thumb", path: selected }
+    for (const path of labels) if (seen[path] && !tried[path]) return { kind: "thumb", path }
+    if (drawnKey !== previewKeyOf(selected, w, h)) return { kind: "preview", path: selected }
+    return null
+  }, [selected, labels, seen, tried, drawnKey, w, h])
+
+  useEffect(() => {
+    if (connection !== "connected" || workerBusy.current) return
+    const job = pick()
+    if (!job) {
+      setBusy(false)
+      return
+    }
+
+    // Every job records an attempt whether it succeeds or not. That is what
+    // makes the effect a pump - each completion changes state, which re-runs
+    // this and picks the next - and it is also what stops a label that will not
+    // render from being retried forever.
+    workerBusy.current = true
+    setBusy(true)
     let cancelled = false
+    const seq = ++requestSeq.current
+
     ;(async () => {
-      for (const path of labels) {
-        if (cancelled) return
-        let size: { w: number; h: number } | null = null
-        try {
-          const { bytes } = await backend.fsRead(path)
-          if (cancelled) return
-          size = svgSize(new TextDecoder().decode(bytes))
-          setDims((d) => ({ ...d, [path]: size }))
-        } catch {
-          /* unreadable: the row shows its name and no size */
-        }
-        // The thumbnail gets the DESIGN's aspect ratio, not the medium's, so a
-        // design drawn for other stock looks wrong here rather than looking fine
-        // and printing wrong.
-        const tw = 96
-        const th = Math.max(24, Math.round(tw / (size ? size.w / size.h : 1)))
-        try {
-          const res = await backend.renderSvg(path, tw, th)
-          if (cancelled) return
-          setThumbs((t) => ({
-            ...t,
-            [path]: toDataUrl(res.bytes, res.header.width ?? tw, res.header.height ?? th),
-          }))
-        } catch {
-          /* a label that will not render shows its name and no picture */
-        }
+      try {
+        if (job.kind === "thumb") await renderThumb(job.path)
+        else await renderPreview(job.path, seq)
+      } finally {
+        workerBusy.current = false
+        // A completed job always lands in state, so the re-run comes from that.
+        // This only covers the unmount race.
+        if (!cancelled) setTick((t) => t + 1)
       }
     })()
+
     return () => {
       cancelled = true
     }
-  }, [connection, labels])
+  }, [connection, pick, tick, renderThumb, renderPreview])
 
   async function print() {
     if (!selected) return
@@ -287,6 +404,25 @@ export default function PrintPage() {
     }
   }
 
+  async function deleteLabel(path: string, name: string) {
+    // Confirmed, because the file is gone from the device's filesystem and
+    // there is no copy of it anywhere else - unlike a print, which only costs a
+    // label. Same shape as the prompt behind New label.
+    if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return
+    try {
+      await backend.fsDelete(path)
+      toast.success(`Deleted ${name}`)
+      // Drop what was rendered FROM it, or a label created under the same name
+      // later would show the old one's picture.
+      setThumbs(({ [path]: _gone, ...rest }) => rest)
+      setDims(({ [path]: _also, ...rest }) => rest)
+      setTried(({ [path]: _too, ...rest }) => rest)
+      refresh()
+    } catch (e) {
+      toast.error("Delete failed", { description: errorMessage(e) })
+    }
+  }
+
   async function printSpecial(kind: "test" | "calibrate") {
     setPrinting(true)
     try {
@@ -296,7 +432,7 @@ export default function PrintPage() {
         description:
           kind === "test"
             ? `${res.jobBytes?.toLocaleString()} bytes`
-            : "Measure where the label's edges fall, then set the offsets on Media.",
+            : "Measure where the label's edges fall, then set the offsets in the medium's JSON on the Files page.",
       })
     } catch (e) {
       toast.error("Print failed", { description: errorMessage(e) })
@@ -323,7 +459,7 @@ export default function PrintPage() {
             />
           </div>
 
-          <div className="-mx-1 min-h-0 flex-1 space-y-2 overflow-y-auto px-1">
+          <div ref={listRef} className="-mx-1 min-h-0 flex-1 space-y-2 overflow-y-auto px-1">
             {shown.length === 0 && (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {labels.length === 0
@@ -343,35 +479,52 @@ export default function PrintPage() {
                   ? Math.abs(d.w / d.h - medium.widthDots / medium.heightDots) > 0.05
                   : false
               return (
-                <button
+                // A row, not a button: it holds a second control now, and a
+                // button inside a button is invalid markup that browsers
+                // resolve by dropping one of them. `data-path` is how the
+                // observer above names what it just saw.
+                <div
                   key={path}
-                  onClick={() => setSelected(path)}
+                  ref={rowRef}
+                  data-path={path}
                   className={
-                    "flex w-full items-center gap-3 rounded-lg border p-2 text-left transition-colors " +
-                    (active
-                      ? "border-foreground/60 bg-accent"
-                      : "hover:bg-accent/50")
+                    "flex w-full items-center gap-1 rounded-lg border pr-1 transition-colors " +
+                    (active ? "border-foreground/60 bg-accent" : "hover:bg-accent/50")
                   }
                 >
-                  <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-white">
-                    {thumbs[path] ? (
-                      <img src={thumbs[path]} alt="" className="max-h-full max-w-full" />
-                    ) : (
-                      <FileTextIcon className="size-5 text-muted-foreground" />
-                    )}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{name}</span>
-                    <span className="block text-xs tabular-nums text-muted-foreground">
-                      {d ? `${d.w} \u00d7 ${d.h}` : "unknown size"}
+                  <button
+                    onClick={() => setSelected(path)}
+                    className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left"
+                  >
+                    <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-white">
+                      {thumbs[path] ? (
+                        <img src={thumbs[path]} alt="" className="max-h-full max-w-full" />
+                      ) : (
+                        <FileTextIcon className="size-5 text-muted-foreground" />
+                      )}
                     </span>
-                    {mismatch && (
-                      <span className="block text-xs text-amber-600">
-                        not this medium's shape
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{name}</span>
+                      <span className="block text-xs tabular-nums text-muted-foreground">
+                        {d ? `${d.w} \u00d7 ${d.h}` : "unknown size"}
                       </span>
-                    )}
-                  </span>
-                </button>
+                      {mismatch && (
+                        <span className="block text-xs text-amber-600">
+                          not this medium's shape
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+                    title={`Delete ${name}`}
+                    onClick={() => deleteLabel(path, name)}
+                  >
+                    <Trash2Icon className="size-4" />
+                  </Button>
+                </div>
               )
             })}
           </div>
@@ -510,8 +663,8 @@ export default function PrintPage() {
             <Label htmlFor="print-media">Media</Label>
             {media.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No media defined. Add one on the Media page; its size and calibration then
-                come from there.
+                No media defined. Add a /media/&lt;name&gt;.json on the Files page; its size
+                and calibration then come from there.
               </p>
             ) : (
               <>
@@ -644,7 +797,7 @@ export default function PrintPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {custom
-                    ? "Overriding the medium - the calibrated offsets are NOT applied. For calibration only; a settled value belongs on the Media page."
+                    ? "Overriding the medium - the calibrated offsets are NOT applied. For calibration only; a settled value belongs in the medium's JSON on the Files page."
                     : "Mirrors the selected medium. Changing it overrides the medium and drops its calibration."}
                 </p>
                 {custom && (
