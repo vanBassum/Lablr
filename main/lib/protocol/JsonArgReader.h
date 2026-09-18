@@ -102,6 +102,19 @@ private:
             return RequestError::Ok;
         }
 
+        case ArgType::Int32:
+        {
+            // strtol, not strtoul: a calibration offset is legitimately negative
+            // (the printer's first raster line can land past the label's leading
+            // edge), and an unsigned argument would have to encode that in the
+            // caller, which is where a sign convention goes to be got wrong.
+            char* end = nullptr;
+            const long v = strtol(value, &end, 0);   // 0 -> accepts 0x...
+            if (end == value || *end != '\0') { failed_ = s.name; return RequestError::MalformedNumber; }
+            *static_cast<int32_t*>(s.dst) = static_cast<int32_t>(v);
+            return RequestError::Ok;
+        }
+
         case ArgType::Bool:
             *static_cast<bool*>(s.dst) =
                 (strcmp(value, "true") == 0 || strcmp(value, "1") == 0);

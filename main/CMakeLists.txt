@@ -41,6 +41,7 @@ set(APP_SOURCES
     "app/StorageManager/StorageManager.cpp"
     "app/RenderManager/RenderManager.cpp"
     "app/UsbHostManager/UsbHostManager.cpp"
+    "app/MediaManager/MediaManager.cpp"
     "app/PrintManager/PrintManager.cpp"
 )
 
@@ -79,6 +80,7 @@ set(INCLUDE_DIRS_LIST
     "app/StorageManager"
     "app/RenderManager"
     "app/UsbHostManager"
+    "app/MediaManager"
     "app/PrintManager"
 )
 

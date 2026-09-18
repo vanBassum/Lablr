@@ -50,6 +50,7 @@ private:
         {
         case ArgType::String: return "string";
         case ArgType::UInt32: return "uint32";
+        case ArgType::Int32:  return "int32";
         case ArgType::Bool:   return "bool";
         }
         return "unknown";

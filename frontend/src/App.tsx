@@ -8,6 +8,7 @@ import SettingsPage from "@/pages/SettingsPage"
 import FirmwarePage from "@/pages/FirmwarePage"
 import FilesPage from "@/pages/FilesPage"
 import RenderPage from "@/pages/RenderPage"
+import MediaPage from "@/pages/MediaPage"
 import LoginPage from "@/pages/LoginPage"
 
 function PageContent({ page }: { page: Page }) {
@@ -18,6 +19,8 @@ function PageContent({ page }: { page: Page }) {
       return <FilesPage />
     case "render":
       return <RenderPage />
+    case "media":
+      return <MediaPage />
     case "console":
       return <ConsolePage />
     case "settings":

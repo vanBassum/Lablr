@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react"
 import {
   backend,
   type FontEntry,
+  type Medium,
   type PrintResult,
   type PrintStatus,
   type RenderHeader,
@@ -52,15 +53,17 @@ export default function RenderPage() {
   const [header, setHeader] = useState<RenderHeader | null>(null)
   const [elapsed, setElapsed] = useState<number | null>(null)
 
-  // Printing. headWidth and offsetX are the head geometry, not the label's -
-  // the head prints from its own left edge, so a narrow label has to be told
-  // where across the head it sits. Dots, because there is no media layer yet.
+  // Printing. Geometry comes from the selected medium - size AND the calibrated
+  // offsets - so nothing here converts millimetres or knows where the paper sits
+  // under the head. Threshold stays, because it is about the artwork.
   const [printer, setPrinter] = useState<PrintStatus | null>(null)
-  const [headWidth, setHeadWidth] = useState(672)
-  const [offsetX, setOffsetX] = useState(0)
+  const [media, setMedia] = useState<Medium[]>([])
+  const [mediaId, setMediaId] = useState("")
   const [threshold, setThreshold] = useState(128)
   const [printing, setPrinting] = useState(false)
   const [lastJob, setLastJob] = useState<PrintResult | null>(null)
+
+  const medium = media.find((m) => m.id === mediaId) ?? null
 
   function refresh() {
     backend
@@ -79,6 +82,16 @@ export default function RenderPage() {
       .catch(() => setLabels([]))
     backend.renderFonts().then((r) => setFonts(r.fonts)).catch(() => setFonts(null))
     backend.printStatus().then(setPrinter).catch(() => setPrinter(null))
+    backend
+      .mediaList()
+      .then((r) => {
+        setMedia(r.media ?? [])
+        // Steer the selection only when it points at nothing, so a reload does
+        // not silently move a print onto different stock.
+        if (r.media?.length && !r.media.some((m) => m.id === mediaId))
+          setMediaId(r.media[0].id)
+      })
+      .catch(() => setMedia([]))
   }
 
   useEffect(() => {
@@ -86,6 +99,17 @@ export default function RenderPage() {
     refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connection])
+
+  // Picking a medium sizes the preview as well as the print. The preview is
+  // only honest if it is the same raster the printer gets.
+  function selectMedium(id: string) {
+    setMediaId(id)
+    const m = media.find((x) => x.id === id)
+    if (m?.widthDots && m?.heightDots) {
+      setWidth(m.widthDots)
+      setHeight(m.heightDots)
+    }
+  }
 
   async function render() {
     setBusy(true)
@@ -121,9 +145,12 @@ export default function RenderPage() {
       // Render happens ON the device for a print: shipping the bitmap up here
       // and the job back down would be the same pixels twice, and would make
       // the browser a step the MCP path does not have.
-      const res = await backend.printSvg({
-        path, width, height, headWidth, offsetX, threshold,
-      })
+      // Send the medium, not the numbers: the device applies its calibration,
+      // and a value typed here would quietly override it.
+      const res = await backend.printSvg(
+        mediaId ? { path, media: mediaId, threshold }
+                : { path, width, height, threshold },
+      )
       setLastJob(res)
       if (res.warning) toast.warning("Printed, but blank", { description: res.warning })
       else toast.success("Printed", {
@@ -137,10 +164,25 @@ export default function RenderPage() {
     }
   }
 
+  async function printCalibrate() {
+    setPrinting(true)
+    try {
+      const res = await backend.printCalibrate()
+      setLastJob(res)
+      toast.success("Calibration grid sent", {
+        description: "Measure where the label's edges fall, then set the offsets on Media.",
+      })
+    } catch (e) {
+      toast.error("Calibration print failed", { description: errorMessage(e) })
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   async function printTest() {
     setPrinting(true)
     try {
-      const res = await backend.printTest(headWidth)
+      const res = await backend.printTest()
       setLastJob(res)
       toast.success("Test pattern sent", {
         description: `${res.jobBytes?.toLocaleString()} bytes`,
@@ -293,27 +335,41 @@ export default function RenderPage() {
           <p className="break-all font-mono text-xs text-muted-foreground">{printer.deviceId}</p>
         )}
 
+        <div className="space-y-2">
+          <Label>Media</Label>
+          {media.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No media defined. Add one on the Media page, then the size and the calibration
+              come from it.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {media.map((m) => (
+                <Button
+                  key={m.id}
+                  variant={m.id === mediaId ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7"
+                  onClick={() => selectMedium(m.id)}
+                >
+                  {m.name}
+                </Button>
+              ))}
+            </div>
+          )}
+          {medium && (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {(medium.widthUm / 1000).toFixed(1)} x {(medium.heightUm / 1000).toFixed(1)} mm
+              {" = "}
+              {medium.widthDots} x {medium.heightDots} dots, placed at head (
+              {medium.offsetXDots ?? 0}, {medium.offsetYDots ?? 0}).
+              {(medium.offsetYDots ?? 0) < 0 &&
+                " The negative Y is the printer starting after the label's edge; that much is cropped off the top of the design."}
+            </p>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="print-head">Head width</Label>
-            <Input
-              id="print-head"
-              type="number"
-              className="w-28"
-              value={headWidth}
-              onChange={(e) => setHeadWidth(Number(e.target.value))}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="print-offset">Offset X</Label>
-            <Input
-              id="print-offset"
-              type="number"
-              className="w-24"
-              value={offsetX}
-              onChange={(e) => setOffsetX(Number(e.target.value))}
-            />
-          </div>
           <div className="space-y-2">
             <Label htmlFor="print-threshold">Threshold</Label>
             <Input
@@ -331,13 +387,16 @@ export default function RenderPage() {
           <Button variant="outline" onClick={printTest} disabled={printing || !printer?.ready}>
             Test pattern
           </Button>
+          <Button variant="outline" onClick={printCalibrate} disabled={printing || !printer?.ready}>
+            Calibration grid
+          </Button>
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Sizes are in printer dots, not millimetres - at 300 DPI one millimetre is 11.8 dots.
-          Width and height above are the label; head width is the printer's, and the label is
-          placed into it at Offset X because the head prints from its own left edge. Media
-          definitions will supply all three later.
+          The medium supplies the size and the calibrated offsets, so Print sends its name
+          rather than any numbers from this page. Threshold is about the artwork, not the
+          paper: raise it to make thin anti-aliased text print heavier. The calibration grid
+          is how a medium's offsets get measured in the first place.
         </p>
 
         {lastJob && (

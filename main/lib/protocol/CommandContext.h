@@ -55,7 +55,7 @@ enum class RequestError : uint8_t
     Described,
 };
 
-enum class ArgType : uint8_t { String, UInt32, Bool };
+enum class ArgType : uint8_t { String, UInt32, Int32, Bool };
 
 /// One declared argument: where to put it and whether it may be absent. Type-erased
 /// on purpose — the variadic layer builds an array of these and hands it to one
@@ -83,11 +83,13 @@ struct ArgSpec
 template <size_t N>
 inline ArgSpec Required(const char* name, char (&dst)[N], const char* help = nullptr) { return { name, dst, N, ArgType::String, true, help }; }
 inline ArgSpec Required(const char* name, uint32_t& dst, const char* help = nullptr)  { return { name, &dst, 0, ArgType::UInt32, true, help }; }
+inline ArgSpec Required(const char* name, int32_t& dst, const char* help = nullptr)   { return { name, &dst, 0, ArgType::Int32,  true, help }; }
 inline ArgSpec Required(const char* name, bool& dst, const char* help = nullptr)      { return { name, &dst, 0, ArgType::Bool,   true, help }; }
 
 template <size_t N>
 inline ArgSpec Optional(const char* name, char (&dst)[N], const char* help = nullptr) { return { name, dst, N, ArgType::String, false, help }; }
 inline ArgSpec Optional(const char* name, uint32_t& dst, const char* help = nullptr)  { return { name, &dst, 0, ArgType::UInt32, false, help }; }
+inline ArgSpec Optional(const char* name, int32_t& dst, const char* help = nullptr)   { return { name, &dst, 0, ArgType::Int32,  false, help }; }
 inline ArgSpec Optional(const char* name, bool& dst, const char* help = nullptr)      { return { name, &dst, 0, ArgType::Bool,   false, help }; }
 
 /// Reads a request's arguments off a stream. One implementation per wire format; a

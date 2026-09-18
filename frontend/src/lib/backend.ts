@@ -843,6 +843,25 @@ class BackendService {
     return this.send<PrintStatus>("print status")
   }
 
+  // ── Media ──────────────────────────────────────────────────────
+  // Label stock is device data, not a table in this bundle: the same
+  // definitions an MCP agent reads and writes.
+
+  mediaList(): Promise<MediaListResult> {
+    return this.send<MediaListResult>("media list")
+  }
+
+  async mediaSet(m: MediaWrite): Promise<Medium> {
+    const res = await this.send<Medium & { ok: boolean; error?: string }>("media set", { ...m })
+    if (!res.ok) throw new Error(res.error ?? "could not save the medium")
+    return res
+  }
+
+  async mediaDelete(id: string): Promise<void> {
+    const res = await this.send<{ ok: boolean; error?: string }>("media delete", { id })
+    if (!res.ok) throw new Error(res.error ?? "could not delete the medium")
+  }
+
   /** Render and print in one device-side call, so the bitmap never travels. */
   async printSvg(args: PrintArgs): Promise<PrintResult> {
     const res = await this.send<PrintResult>("print svg", { ...args })
@@ -850,9 +869,16 @@ class BackendService {
     return res
   }
 
-  async printTest(headWidth?: number, height?: number): Promise<PrintResult> {
-    const res = await this.send<PrintResult>("print test", { headWidth, height })
+  async printTest(height?: number): Promise<PrintResult> {
+    const res = await this.send<PrintResult>("print test", { height })
     if (!res.ok) throw new Error(res.error ?? "test print failed")
+    return res
+  }
+
+  /** The measuring grid that calibration is read off. */
+  async printCalibrate(height?: number): Promise<PrintResult> {
+    const res = await this.send<PrintResult>("print calibrate", { height })
+    if (!res.ok) throw new Error(res.error ?? "calibration print failed")
     return res
   }
 
@@ -1006,18 +1032,60 @@ export interface PrintStatus {
   note?: string
 }
 
+/** One roll of label stock. Micrometres are what is STORED - the paper's own
+ *  dimensions - and the `*Dots` fields are what they come to on the attached
+ *  printer, derived by the device and never written back. */
+export interface Medium {
+  id: string
+  name: string
+  widthUm: number
+  heightUm: number
+  /** Head column the label's left edge sits at, in micrometres. Calibration. */
+  offsetXUm: number
+  /** Raster line the label's top edge sits at, in micrometres. Negative means
+   *  the printer starts after the label's edge, cropping the design's top. */
+  offsetYUm: number
+  widthDots?: number
+  heightDots?: number
+  offsetXDots?: number
+  offsetYDots?: number
+}
+
+/** A `media set` call. Everything but the id is optional: an update leaves out
+ *  what it does not change, which is how calibration edits one offset. */
+export interface MediaWrite {
+  id: string
+  name?: string
+  widthUm?: number
+  heightUm?: number
+  offsetXUm?: number
+  offsetYUm?: number
+}
+
+export interface MediaListResult {
+  ok: boolean
+  /** The PRINTER's resolution, not any medium's. */
+  dpi: number
+  headDots: number
+  media: Medium[]
+}
+
 /** Geometry for `print svg`, all in PRINTER DOTS. Millimetres would need a
  *  media definition to convert, and that layer does not exist yet - see
  *  docs/next-up.md. */
 export interface PrintArgs {
   path: string
-  width: number
-  height: number
-  headWidth?: number
+  /** Name a medium and the geometry comes from it - size and calibrated
+   *  offsets both. Give this OR width and height. */
+  media?: string
+  width?: number
+  height?: number
   offsetX?: number
+  offsetY?: number
   threshold?: number
-  invert?: number
-  feed?: number
+  invert?: boolean
+  feed?: boolean
+  fullHead?: boolean
 }
 
 export interface PrintResult {
@@ -1027,9 +1095,12 @@ export interface PrintResult {
    *  SVG naming a font-family the device does not have. */
   warning?: string
   path?: string
+  media?: string
   width?: number
   height?: number
-  headWidth?: number
+  offsetX?: number
+  offsetY?: number
+  headDots?: number
   bytesPerLine?: number
   lines?: number
   jobBytes?: number

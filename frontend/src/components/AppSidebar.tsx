@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { LightbulbIcon, TerminalIcon, SettingsIcon, DownloadIcon, FolderIcon, ImageIcon } from "lucide-react"
+import { LightbulbIcon, TerminalIcon, SettingsIcon, DownloadIcon, FolderIcon, ImageIcon, TagIcon } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +32,7 @@ const navItems = [
   { title: "LED", icon: LightbulbIcon, page: "home" as const },
   { title: "Files", icon: FolderIcon, page: "files" as const },
   { title: "Render", icon: ImageIcon, page: "render" as const },
+  { title: "Media", icon: TagIcon, page: "media" as const },
   { title: "Console", icon: TerminalIcon, page: "console" as const },
   { title: "Settings", icon: SettingsIcon, page: "settings" as const },
   { title: "Firmware", icon: DownloadIcon, page: "firmware" as const },

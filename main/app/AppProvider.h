@@ -16,6 +16,7 @@ class LedManager;
 class StorageManager;
 class RenderManager;
 class UsbHostManager;
+class MediaManager;
 class PrintManager;
 
 class AppProvider
@@ -41,7 +42,12 @@ public:
     /// UsbHostManager.h for why that split is here.
     virtual UsbHostManager& getUsbHostManager() = 0;
 
-    /// The printer's raster dialect. Draws through RenderManager and sends
-    /// through UsbHostManager, and owns neither.
+    /// What the physical label stock IS - /media, one definition per roll,
+    /// written at runtime. Describes paper only; the printer's DPI and head
+    /// width are PrintManager's.
+    virtual MediaManager& getMediaManager() = 0;
+
+    /// The printer's raster dialect. Draws through RenderManager, sizes through
+    /// MediaManager and sends through UsbHostManager, and owns none of them.
     virtual PrintManager& getPrintManager() = 0;
 };

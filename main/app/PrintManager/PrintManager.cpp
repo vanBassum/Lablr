@@ -3,10 +3,12 @@
 #include "CommandManager.h"
 #include "RenderManager.h"
 #include "StorageManager.h"
+#include "MediaManager.h"
 #include "UsbHostManager.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
+#include <climits>
 #include <cstring>
 #include <cstdio>
 
@@ -27,57 +29,61 @@ void PrintManager::Init()
     app_.getStrux().getCommandManager().Register(this, commands_);
 
     init.SetReady();
-    ESP_LOGI(TAG, "Initialized");
+    ESP_LOGI(TAG, "Initialized (%lu DPI, %lu-dot head)",
+             (unsigned long)DPI, (unsigned long)HEAD_DOTS);
 }
 
 // ──────────────────────────────────────────────────────────────
-// ARGB8888S to one bit per dot
+// Geometry
 // ──────────────────────────────────────────────────────────────
 
-uint32_t PrintManager::Rasterise(const uint32_t* pixels, uint32_t width, uint32_t height,
-                                 uint8_t* job, uint32_t bytesPerLine, uint32_t offsetX,
-                                 uint32_t threshold, bool invert)
+uint32_t PrintManager::BytesPerLine(const Placement& p)
 {
+    if (p.fullHead) return (HEAD_DOTS + 7u) / 8u;
+
+    // The rightmost head column the design touches, measured from column 0
+    // because ESC D counts from there and cannot be given an origin.
+    const int64_t right = static_cast<int64_t>(p.offsetX) + p.width;
+    if (right <= 0) return 1;
+
+    uint32_t bytes = static_cast<uint32_t>((right + 7) / 8);
+    const uint32_t max = (HEAD_DOTS + 7u) / 8u;
+    return bytes > max ? max : bytes;
+}
+
+uint32_t PrintManager::RasteriseRow(const uint32_t* row, uint32_t width, uint8_t* line,
+                                    uint32_t bytesPerLine, int32_t offsetX,
+                                    uint32_t threshold, bool invert)
+{
+    const int64_t headDots = static_cast<int64_t>(bytesPerLine) * 8;
     uint32_t black = 0;
-    size_t   out   = 0;
 
-    for (uint32_t y = 0; y < height; ++y)
+    for (uint32_t x = 0; x < width; ++x)
     {
-        job[out++] = SYN;
-        uint8_t* line = job + out;
-        memset(line, 0x00, bytesPerLine);          // paper
-        out += bytesPerLine;
+        const int64_t dot = static_cast<int64_t>(offsetX) + x;
+        if (dot < 0) continue;            // off the left of the head
+        if (dot >= headDots) break;       // past what this line carries
 
-        const uint32_t* src = pixels + static_cast<size_t>(y) * width;
-        for (uint32_t x = 0; x < width; ++x)
-        {
-            const uint32_t dot = offsetX + x;
-            if (dot >= bytesPerLine * 8u) break;   // past the right edge of the head
+        // ARGB8888S is one little-endian 32-bit word per pixel, so the bytes
+        // are B,G,R,A and the word reads as 0xAARRGGBB here.
+        const uint32_t px = row[x];
+        const uint32_t a = (px >> 24) & 0xff;
+        const uint32_t r = (px >> 16) & 0xff;
+        const uint32_t g = (px >>  8) & 0xff;
+        const uint32_t b =  px        & 0xff;
 
-            // ARGB8888S is one little-endian 32-bit word per pixel, so the bytes
-            // are B,G,R,A and the word is 0xAARRGGBB however it is read here.
-            const uint32_t p = src[x];
-            const uint32_t a = (p >> 24) & 0xff;
-            const uint32_t r = (p >> 16) & 0xff;
-            const uint32_t g = (p >>  8) & 0xff;
-            const uint32_t b =  p        & 0xff;
+        // Transparent is paper, not black: an SVG that does not cover its whole
+        // box would otherwise print a solid rectangle. Luminance is the cheap
+        // integer approximation, which is all a 1-bit threshold can justify.
+        const uint32_t lum = (a == 0) ? 255 : (r * 77 + g * 151 + b * 28) >> 8;
 
-            // Transparent is paper, not black: an SVG that does not cover its
-            // whole box would otherwise print a solid rectangle. Luminance is
-            // the cheap integer approximation, which is all a 1-bit threshold
-            // can justify.
-            const uint32_t lum = (a == 0) ? 255 : (r * 77 + g * 151 + b * 28) >> 8;
+        bool ink = lum < threshold;
+        if (invert) ink = !ink;
+        if (!ink) continue;
 
-            bool ink = lum < threshold;
-            if (invert) ink = !ink;
-            if (!ink) continue;
-
-            // MSB is the leftmost dot in each byte.
-            line[dot >> 3] |= static_cast<uint8_t>(0x80u >> (dot & 7u));
-            ++black;
-        }
+        line[dot >> 3] |= static_cast<uint8_t>(0x80u >> (dot & 7u));   // MSB is leftmost
+        ++black;
     }
-
     return black;
 }
 
@@ -85,93 +91,148 @@ uint32_t PrintManager::Rasterise(const uint32_t* pixels, uint32_t width, uint32_
 // The job
 // ──────────────────────────────────────────────────────────────
 
-const char* PrintManager::PrintSvg(const char* wirePath, uint32_t width, uint32_t height,
-                                   uint32_t headDots, uint32_t offsetX, uint32_t threshold,
-                                   bool invert, bool feed, JobStats& stats)
+const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, JobStats& stats)
 {
     auto& usb = app_.getUsbHostManager();
     if (!usb.IsReady()) return "no printer attached";
-    if (!app_.getStorageManager().IsMounted()) return "not mounted";
-    if (height == 0 || height > MAX_LINES) return "height must be 1 to 4000 dots";
-    if (headDots == 0 || headDots > 4096) return "headWidth out of range";
-    if (offsetX + width > headDots) return "label does not fit the head at that offset";
 
-    char full[256];
-    if (!StorageManager::Resolve(wirePath, full, sizeof(full))) return "bad path";
+    // Lines run from raster 0 to the design's last row, so the count is
+    // height + offsetY for either sign of offsetY: a positive offset adds blank
+    // lead-in, a negative one crops that many rows off the top.
+    const int64_t total = static_cast<int64_t>(p.height) + p.offsetY;
+    if (total <= 0) return "the design is entirely above the first raster line";
+    if (total > MAX_LINES) return "too many raster lines - check the medium's height";
 
-    // ── Render, through the one rasteriser ──
-    const int64_t t0 = esp_timer_get_time();
-    RenderManager::Bitmap bmp;
-    // White background: the threshold below reads paper as white, and a
-    // transparent canvas would make every uncovered dot ambiguous.
-    if (const char* err = app_.getRenderManager().Render(full, width, height, 0xFFFFFFFFu, bmp))
-        return err;
+    const uint32_t lines        = static_cast<uint32_t>(total);
+    const uint32_t bytesPerLine = BytesPerLine(p);
 
-    const int64_t t1 = esp_timer_get_time();
-
-    const uint32_t bytesPerLine = (headDots + 7u) / 8u;
-    // ESC x100, ESC @, ESC L hi lo, ESC D n = 107 bytes, then the lines, then ESC E.
+    // ESC x100, ESC @, ESC L hi lo, ESC D n, then the lines, then ESC E.
     const size_t headerMax = 100 + 2 + 4 + 3;
-    const size_t jobSize   = headerMax + static_cast<size_t>(height) * (1 + bytesPerLine) + 2;
+    const size_t jobSize   = headerMax + static_cast<size_t>(lines) * (1 + bytesPerLine) + 2;
 
-    // PSRAM: a full-length label is a couple of hundred kilobytes and the
+    // PSRAM: a full-length label is a couple of hundred kilobytes, and the
     // internal heap is what the radios and the USB driver live in.
     uint8_t* job = static_cast<uint8_t*>(
         heap_caps_malloc(jobSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!job)
-    {
-        heap_caps_free(bmp.pixels);
-        return "no PSRAM for the job";
-    }
+    if (!job) return "no PSRAM for the job";
 
     size_t n = 0;
-    // A printer that was interrupted mid-command is still waiting for its
-    // operands; 100 ESCs are swallowed as no-ops by a printer in any state and
-    // put it back at a command boundary.
+    // A printer interrupted mid-command is still waiting for its operands; 100
+    // ESCs are swallowed as no-ops in any state and put it back at a boundary.
     memset(job + n, ESC, 100); n += 100;
     job[n++] = ESC; job[n++] = 0x40;                                  // reset
-    job[n++] = ESC; job[n++] = 0x4c;                                  // label length, in dots
-    job[n++] = static_cast<uint8_t>((height >> 8) & 0xff);
-    job[n++] = static_cast<uint8_t>(height & 0xff);
+    job[n++] = ESC; job[n++] = 0x4c;                                  // label length, dots
+    job[n++] = static_cast<uint8_t>((lines >> 8) & 0xff);
+    job[n++] = static_cast<uint8_t>(lines & 0xff);
     job[n++] = ESC; job[n++] = 0x44;                                  // bytes per line
     job[n++] = static_cast<uint8_t>(bytesPerLine);
 
-    const uint32_t black = Rasterise(bmp.pixels, width, height,
-                                     job + n, bytesPerLine, offsetX, threshold, invert);
-    n += static_cast<size_t>(height) * (1 + bytesPerLine);
+    const int64_t t0 = esp_timer_get_time();
+    uint32_t black = 0;
+    for (uint32_t l = 0; l < lines; ++l)
+    {
+        job[n++] = SYN;
+        uint8_t* line = job + n;
+        memset(line, 0x00, bytesPerLine);      // paper
+        n += bytesPerLine;
 
-    if (feed) { job[n++] = ESC; job[n++] = 0x45; }                    // form feed to the tear bar
+        // Which design row lands on this raster line. Outside the design is
+        // blank, which covers both the lead-in and a short design.
+        const int64_t row = static_cast<int64_t>(l) - p.offsetY;
+        if (!pixels || row < 0 || row >= p.height) continue;
 
-    heap_caps_free(bmp.pixels);
-    const int64_t t2 = esp_timer_get_time();
+        black += RasteriseRow(pixels + static_cast<size_t>(row) * p.width, p.width,
+                              line, bytesPerLine, p.offsetX, p.threshold, p.invert);
+    }
+    const int64_t t1 = esp_timer_get_time();
 
-    ESP_LOGI(TAG, "job for %s: %ux%u at offset %u on a %u-dot head, "
-                  "%u bytes/line, %u lines, %u bytes, %u black dots",
-             wirePath, (unsigned)width, (unsigned)height, (unsigned)offsetX,
-             (unsigned)headDots, (unsigned)bytesPerLine, (unsigned)height,
-             (unsigned)n, (unsigned)black);
+    if (p.feed) { job[n++] = ESC; job[n++] = 0x45; }   // form feed to the tear bar
+
+    ESP_LOGI(TAG, "job: design %lux%lu at head (%ld,%ld), %lu bytes/line, "
+                  "%lu lines, %u bytes, %lu ink dots",
+             (unsigned long)p.width, (unsigned long)p.height,
+             (long)p.offsetX, (long)p.offsetY,
+             (unsigned long)bytesPerLine, (unsigned long)lines,
+             (unsigned)n, (unsigned long)black);
 
     // 30 s: a long label at the printer's own feed rate is slow, and a timeout
     // shorter than the paper takes is a truncated label.
     const int sent = usb.Send(job, n, 30000);
-    const int64_t t3 = esp_timer_get_time();
+    const int64_t t2 = esp_timer_get_time();
     heap_caps_free(job);
 
-    stats.headDots     = headDots;
     stats.bytesPerLine = bytesPerLine;
-    stats.lines        = height;
+    stats.lines        = lines;
     stats.jobBytes     = static_cast<uint32_t>(n);
     stats.blackDots    = black;
+    stats.convertMs    = static_cast<uint32_t>((t1 - t0) / 1000);
+    stats.sendMs       = static_cast<uint32_t>((t2 - t1) / 1000);
+
+    if (sent < 0) return "usb transfer failed";
+    if (static_cast<size_t>(sent) != n) return "printer stopped accepting the job";
+    return nullptr;
+}
+
+const char* PrintManager::PrintSvg(const char* wirePath, const Placement& p, JobStats& stats)
+{
+    if (!app_.getStorageManager().IsMounted()) return "not mounted";
+
+    char full[288];
+    if (!StorageManager::Resolve(wirePath, full, sizeof(full))) return "bad path";
+
+    // One job at a time on the wire, and one render behind it.
+    LOCK(printLock_);
+
+    const int64_t t0 = esp_timer_get_time();
+    RenderManager::Bitmap bmp;
+    // White background: the threshold reads paper as white, and a transparent
+    // canvas would make every uncovered dot ambiguous.
+    if (const char* err = app_.getRenderManager().Render(full, p.width, p.height,
+                                                        0xFFFFFFFFu, bmp))
+        return err;
+    const int64_t t1 = esp_timer_get_time();
+
     stats.renderMs     = static_cast<uint32_t>((t1 - t0) / 1000);
-    stats.convertMs    = static_cast<uint32_t>((t2 - t1) / 1000);
-    stats.sendMs       = static_cast<uint32_t>((t3 - t2) / 1000);
     stats.psramUsed    = bmp.psramUsed;
     stats.internalUsed = bmp.internalUsed;
     stats.workerStack  = bmp.stackLeft;
     stats.scale        = bmp.scale;
 
-    if (sent < 0) return "usb transfer failed";
-    if (static_cast<size_t>(sent) != n) return "printer stopped accepting the job";
+    const char* err = SendJob(bmp.pixels, p, stats);
+    heap_caps_free(bmp.pixels);
+    return err;
+}
+
+const char* PrintManager::Resolve(const char* mediaId, Placement& p,
+                                  bool haveWidth, bool haveHeight,
+                                  bool haveOffsetX, bool haveOffsetY)
+{
+    if (mediaId && mediaId[0])
+    {
+        MediaManager::Medium m;
+        if (!app_.getMediaManager().Load(mediaId, m))
+            return "no such medium - 'media list' says what there is";
+
+        // The medium supplies everything the caller did not override. Overrides
+        // exist for calibration: finding an offset means printing the same
+        // design at several of them before one is worth storing.
+        if (!haveWidth)   p.width  = static_cast<uint32_t>(
+                              MediaManager::UmToDots(m.widthUm, DPI));
+        if (!haveHeight)  p.height = static_cast<uint32_t>(
+                              MediaManager::UmToDots(m.heightUm, DPI));
+        if (!haveOffsetX) p.offsetX = MediaManager::UmToDots(m.offsetXUm, DPI);
+        if (!haveOffsetY) p.offsetY = MediaManager::UmToDots(m.offsetYUm, DPI);
+    }
+    else if (!haveWidth || !haveHeight)
+    {
+        return "name a medium with -media, or give -width and -height in dots";
+    }
+
+    if (p.width == 0 || p.height == 0) return "width and height must be non-zero";
+    if (p.height > MAX_LINES)          return "height is more than the printer will feed";
+    if (p.offsetX >= static_cast<int32_t>(HEAD_DOTS))
+        return "offsetX puts the label off the right of the head";
+    if (p.threshold == 0 || p.threshold > 255) return "threshold must be 1 to 255";
     return nullptr;
 }
 
@@ -181,55 +242,83 @@ const char* PrintManager::PrintSvg(const char* wirePath, uint32_t width, uint32_
 
 RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
 {
-    char     path[192] = {};
-    uint32_t width = 0, height = 0;
-    uint32_t headWidth = HEAD_DOTS_DEFAULT;
-    uint32_t offsetX   = 0;
-    uint32_t threshold = THRESHOLD_DEFAULT;
-    uint32_t invert    = 0;
-    uint32_t feed      = 1;
+    static constexpr int32_t  UNSET_I = INT32_MIN;
+    static constexpr uint32_t UNSET_U = 0;
+
+    char     path[192]  = {};
+    char     media[32]  = {};
+    uint32_t width      = UNSET_U;
+    uint32_t height     = UNSET_U;
+    int32_t  offsetX    = UNSET_I;
+    int32_t  offsetY    = UNSET_I;
+    uint32_t threshold  = THRESHOLD_DEFAULT;
+    bool     invert     = false;
+    bool     feed       = true;
+    bool     fullHead   = false;
 
     RETURN_IF_ERROR(ctx.readArgs(
         Required("path",      path,
                  "SVG to print, rooted at the label filesystem, e.g. "
                  "'/labels/test.svg'."),
-        Required("width",     width,
-                 "Label width in PRINTER DOTS. At 300 DPI, millimetres x 11.81."),
-        Required("height",    height,
-                 "Label length in PRINTER DOTS - how far the paper feeds. "
-                 "1 to 4000."),
-        Optional("headWidth", headWidth,
-                 "Width of the print head in dots. Default 672, the 300 DPI "
-                 "LabelWriter head. The raster is built at this width because "
-                 "the head prints from its own left edge, not the label's."),
+        Optional("media",     media,
+                 "Which label stock this is going on, as 'media list' reports "
+                 "it. Supplies the size AND the calibrated offsets, so nothing "
+                 "else here is needed. Give this OR -width and -height."),
+        Optional("width",     width,
+                 "Design width in PRINTER DOTS, overriding the medium. At 300 "
+                 "DPI one millimetre is 11.81 dots."),
+        Optional("height",    height,
+                 "Design height in PRINTER DOTS, overriding the medium."),
         Optional("offsetX",   offsetX,
-                 "Where to place the label across the head, in dots from the "
-                 "left. Default 0. This is how a narrow label is moved to where "
-                 "the media actually sits."),
+                 "Head column the design's left edge goes to, overriding the "
+                 "medium. For calibration; a settled value belongs in the "
+                 "medium, not in every call."),
+        Optional("offsetY",   offsetY,
+                 "Raster line the design's top edge goes to, overriding the "
+                 "medium. Negative crops that many rows off the top, which is "
+                 "what a printer that starts late needs. For calibration."),
         Optional("threshold", threshold,
                  "Luminance below which a pixel becomes ink, 1 to 255. Default "
                  "128. Raise it to make thin anti-aliased text print heavier."),
         Optional("invert",    invert,
-                 "1 to print the negative. Default 0."),
+                 "true to print the negative. Default false."),
         Optional("feed",      feed,
-                 "1 to advance the label to the tear bar when done, which is "
-                 "what you want unless you are printing several in a row. "
-                 "Default 1.")
+                 "true to advance the label to the tear bar when done, which is "
+                 "what you want unless printing several in a row. Default true."),
+        Optional("fullHead",  fullHead,
+                 "true to emit all 672 head columns instead of stopping at the "
+                 "label's right edge. Same picture, a bigger job; for proving "
+                 "that the narrowed raster prints identically.")
     ));
 
+    Placement p;
+    p.threshold = threshold;
+    p.invert    = invert;
+    p.feed      = feed;
+    p.fullHead  = fullHead;
+    if (width  != UNSET_U) p.width   = width;
+    if (height != UNSET_U) p.height  = height;
+    if (offsetX != UNSET_I) p.offsetX = offsetX;
+    if (offsetY != UNSET_I) p.offsetY = offsetY;
+
     JobStats stats;
-    const char* error = PrintSvg(path, width, height, headWidth, offsetX,
-                                 threshold ? threshold : THRESHOLD_DEFAULT,
-                                 invert != 0, feed != 0, stats);
+    const char* error = Resolve(media, p,
+                                width != UNSET_U, height != UNSET_U,
+                                offsetX != UNSET_I, offsetY != UNSET_I);
+    if (!error) error = PrintSvg(path, p, stats);
 
     auto resp = ctx.reply.object();
     resp.field("ok", error == nullptr);
     if (error) resp.field("error", error);
     resp.field("path", path);
-    resp.field("width", width);
-    resp.field("height", height);
-    resp.field("headWidth", stats.headDots);
+    if (media[0]) resp.field("media", media);
+    resp.field("width", p.width);
+    resp.field("height", p.height);
+    resp.field("offsetX", p.offsetX);
+    resp.field("offsetY", p.offsetY);
+    resp.field("headDots", HEAD_DOTS);
     resp.field("bytesPerLine", stats.bytesPerLine);
+    resp.field("lines", stats.lines);
     resp.field("jobBytes", stats.jobBytes);
     resp.field("blackDots", stats.blackDots);
     resp.field("scale", stats.scale);
@@ -239,8 +328,8 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
     resp.field("psramUsed", stats.psramUsed);
     resp.field("internalUsed", stats.internalUsed);
     resp.field("workerStackLeft", stats.workerStack);
-    // A job with no ink is the quiet failure this whole phase is watching for -
-    // a missing font renders nothing and still prints a blank label happily.
+    // A job with no ink is the quiet failure worth naming: a missing font
+    // renders nothing and still prints a happy, empty label.
     if (error == nullptr && stats.blackDots == 0)
         resp.field("warning",
                    "the label is entirely blank - check the SVG's font-family "
@@ -250,31 +339,26 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
 
 RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
 {
-    uint32_t headWidth = HEAD_DOTS_DEFAULT;
-    uint32_t height    = 300;
-
+    uint32_t height = 300;
     RETURN_IF_ERROR(ctx.readArgs(
-        Optional("headWidth", headWidth,
-                 "Width of the print head in dots. Default 672."),
-        Optional("height",    height,
+        Optional("height", height,
                  "How many dot rows to print. Default 300, about an inch at "
-                 "300 DPI.")
-    ));
+                 "300 DPI.")));
 
     auto& usb = app_.getUsbHostManager();
 
     const char* error = nullptr;
-    uint32_t bytesPerLine = 0;
+    uint32_t bytesPerLine = (HEAD_DOTS + 7u) / 8u;
     size_t   n = 0;
-
-    if (!usb.IsReady())                              error = "no printer attached";
-    else if (height == 0 || height > MAX_LINES)      error = "height must be 1 to 4000 dots";
-    else if (headWidth == 0 || headWidth > 4096)     error = "headWidth out of range";
-
     uint8_t* job = nullptr;
+    int      sent = -1;
+    int64_t  t0 = 0, t1 = 0;
+
+    if (!usb.IsReady())                          error = "no printer attached";
+    else if (height == 0 || height > MAX_LINES)  error = "height must be 1 to 4000 dots";
+
     if (!error)
     {
-        bytesPerLine = (headWidth + 7u) / 8u;
         const size_t jobSize = 109 + static_cast<size_t>(height) * (1 + bytesPerLine) + 2;
         job = static_cast<uint8_t*>(
             heap_caps_malloc(jobSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -283,6 +367,8 @@ RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
 
     if (!error)
     {
+        LOCK(printLock_);
+
         memset(job + n, ESC, 100); n += 100;
         job[n++] = ESC; job[n++] = 0x40;
         job[n++] = ESC; job[n++] = 0x4c;
@@ -309,30 +395,125 @@ RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
         }
         job[n++] = ESC; job[n++] = 0x45;
 
-        ESP_LOGI(TAG, "test pattern: %u dots wide, %u lines, %u bytes",
-                 (unsigned)headWidth, (unsigned)height, (unsigned)n);
-
-        const int64_t t0 = esp_timer_get_time();
-        const int sent = usb.Send(job, n, 30000);
-        const int64_t t1 = esp_timer_get_time();
-        heap_caps_free(job);
-
-        auto resp = ctx.reply.object();
-        const bool ok = (sent >= 0 && static_cast<size_t>(sent) == n);
-        resp.field("ok", ok);
-        if (!ok) resp.field("error", sent < 0 ? "usb transfer failed"
-                                              : "printer stopped accepting the job");
-        resp.field("headWidth", headWidth);
-        resp.field("bytesPerLine", bytesPerLine);
-        resp.field("lines", height);
-        resp.field("jobBytes", static_cast<uint32_t>(n));
-        resp.field("sendMs", static_cast<uint32_t>((t1 - t0) / 1000));
-        return RequestError::Ok;
+        t0 = esp_timer_get_time();
+        sent = usb.Send(job, n, 30000);
+        t1 = esp_timer_get_time();
     }
+    if (job) heap_caps_free(job);
 
     auto resp = ctx.reply.object();
-    resp.field("ok", false);
-    resp.field("error", error);
+    const bool ok = !error && sent >= 0 && static_cast<size_t>(sent) == n;
+    resp.field("ok", ok);
+    if (error)     resp.field("error", error);
+    else if (!ok)  resp.field("error", sent < 0 ? "usb transfer failed"
+                                                : "printer stopped accepting the job");
+    resp.field("headDots", HEAD_DOTS);
+    resp.field("bytesPerLine", bytesPerLine);
+    resp.field("lines", height);
+    resp.field("jobBytes", static_cast<uint32_t>(n));
+    resp.field("sendMs", static_cast<uint32_t>((t1 - t0) / 1000));
+    return RequestError::Ok;
+}
+
+RequestError PrintManager::Cmd_PrintCalibrate(CommandContext& ctx)
+{
+    uint32_t height = 400;
+    uint32_t minor  = 25;
+    uint32_t major  = 100;
+
+    RETURN_IF_ERROR(ctx.readArgs(
+        Optional("height", height,
+                 "How many raster lines to print. Default 400 - about 34 mm, "
+                 "deliberately longer than a small label so the paper's own "
+                 "edge is visible against the grid."),
+        Optional("minor",  minor,
+                 "Spacing of the thin rules, in dots. Default 25, which is "
+                 "2.12 mm at 300 DPI."),
+        Optional("major",  major,
+                 "Spacing of the heavy rules, in dots. Default 100, 8.47 mm.")));
+
+    auto& usb = app_.getUsbHostManager();
+
+    const char* error = nullptr;
+    const uint32_t bytesPerLine = (HEAD_DOTS + 7u) / 8u;
+    size_t   n = 0;
+    uint8_t* job = nullptr;
+    int      sent = -1;
+
+    if (!usb.IsReady())                         error = "no printer attached";
+    else if (height == 0 || height > MAX_LINES) error = "height must be 1 to 4000 dots";
+    else if (minor == 0 || major == 0)          error = "minor and major must be non-zero";
+
+    if (!error)
+    {
+        const size_t jobSize = 109 + static_cast<size_t>(height) * (1 + bytesPerLine) + 2;
+        job = static_cast<uint8_t*>(
+            heap_caps_malloc(jobSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!job) error = "no PSRAM for the job";
+    }
+
+    if (!error)
+    {
+        LOCK(printLock_);
+
+        memset(job + n, ESC, 100); n += 100;
+        job[n++] = ESC; job[n++] = 0x40;
+        job[n++] = ESC; job[n++] = 0x4c;
+        job[n++] = static_cast<uint8_t>((height >> 8) & 0xff);
+        job[n++] = static_cast<uint8_t>(height & 0xff);
+        job[n++] = ESC; job[n++] = 0x44;
+        job[n++] = static_cast<uint8_t>(bytesPerLine);
+
+        // A grid in HEAD coordinates, so whatever lands on the paper says where
+        // the paper is. The axes at column 0 and line 0 are solid and 4 wide, so
+        // the origin is unmistakable even if the rest is faint - and if neither
+        // is on the label, that is itself the measurement.
+        for (uint32_t y = 0; y < height; ++y)
+        {
+            job[n++] = SYN;
+            uint8_t* line = job + n;
+            memset(line, 0x00, bytesPerLine);
+            n += bytesPerLine;
+
+            const bool axisY  = (y < 4);                       // raster line 0
+            const bool ruleY  = (y % minor) == 0;
+            const bool heavyY = (y % major) < 3;
+
+            if (axisY || heavyY || ruleY)
+            {
+                // A full-width rule.
+                memset(line, 0xff, bytesPerLine);
+                continue;
+            }
+
+            for (uint32_t x = 0; x < HEAD_DOTS; ++x)
+            {
+                const bool axisX  = (x < 4);                   // head column 0
+                const bool ruleX  = (x % minor) == 0;
+                const bool heavyX = (x % major) < 3;
+                if (!(axisX || ruleX || heavyX)) continue;
+                line[x >> 3] |= static_cast<uint8_t>(0x80u >> (x & 7u));
+            }
+        }
+        job[n++] = ESC; job[n++] = 0x45;
+
+        sent = usb.Send(job, n, 30000);
+    }
+    if (job) heap_caps_free(job);
+
+    auto resp = ctx.reply.object();
+    const bool ok = !error && sent >= 0 && static_cast<size_t>(sent) == n;
+    resp.field("ok", ok);
+    if (error)     resp.field("error", error);
+    else if (!ok)  resp.field("error", sent < 0 ? "usb transfer failed"
+                                                : "printer stopped accepting the job");
+    resp.field("headDots", HEAD_DOTS);
+    resp.field("lines", height);
+    resp.field("minorDots", minor);
+    resp.field("majorDots", major);
+    resp.field("minorUm", static_cast<uint32_t>(minor * 25400u / DPI));
+    resp.field("majorUm", static_cast<uint32_t>(major * 25400u / DPI));
+    resp.field("jobBytes", static_cast<uint32_t>(n));
     return RequestError::Ok;
 }
 
@@ -345,6 +526,8 @@ RequestError PrintManager::Cmd_PrintStatus(CommandContext& ctx)
     auto resp = ctx.reply.object();
     resp.field("ok", true);
     resp.field("ready", usb.IsReady());
+    resp.field("dpi", DPI);
+    resp.field("headDots", HEAD_DOTS);
 
     if (!usb.IsReady())
     {

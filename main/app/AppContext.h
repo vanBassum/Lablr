@@ -9,6 +9,7 @@
 #include "StorageManager/StorageManager.h"
 #include "RenderManager/RenderManager.h"
 #include "UsbHostManager/UsbHostManager.h"
+#include "MediaManager/MediaManager.h"
 #include "PrintManager/PrintManager.h"
 
 // The application layer's context: owns this product's managers and answers AppProvider.
@@ -53,8 +54,10 @@ public:
         // to be plugged in and answers for whatever turns up.
         usbHostManager_.Init();
 
-        // Last: it reaches the renderer and the USB host through the provider,
-        // and both have to be able to answer before a print command can arrive.
+        // Media before print: a print command resolves its geometry through
+        // MediaManager, and the two together are what makes `print svg -media`
+        // answerable the moment the command surface is up.
+        mediaManager_.Init();
         printManager_.Init();
     }
 
@@ -64,6 +67,7 @@ public:
     StorageManager& getStorageManager() override { return storageManager_; }
     RenderManager& getRenderManager() override { return renderManager_; }
     UsbHostManager& getUsbHostManager() override { return usbHostManager_; }
+    MediaManager& getMediaManager() override { return mediaManager_; }
     PrintManager& getPrintManager() override { return printManager_; }
 
 private:
@@ -74,5 +78,6 @@ private:
     StorageManager storageManager_{*this};
     RenderManager renderManager_{*this};
     UsbHostManager usbHostManager_{*this};
+    MediaManager mediaManager_{*this};
     PrintManager printManager_{*this};
 };

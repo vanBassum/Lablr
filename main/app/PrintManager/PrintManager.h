@@ -11,14 +11,16 @@
 // PrintManager — the DYMO LabelWriter's raster dialect, and the commands that
 // put a stored SVG on paper.
 //
-//   /labels/x.svg -> RenderManager (ThorVG) -> ARGB8888S in PSRAM
-//                 -> threshold -> 1 bit per dot
-//                 -> LabelWriter job bytes
-//                 -> UsbHostManager -> bulk OUT -> printer
+//   /labels/x.svg + a medium from /media
+//        -> physical size -> DPI -> raster size
+//        -> RenderManager (ThorVG) -> ARGB8888S in PSRAM
+//        -> threshold -> 1 bit per dot
+//        -> placed at the medium's calibrated offsets
+//        -> LabelWriter job bytes -> UsbHostManager -> bulk OUT
 //
-// It owns no USB and no rasteriser. RenderManager draws the label - the same
-// call `render svg` makes, so the preview and the print come from one bitmap -
-// and UsbHostManager moves the bytes.
+// It owns no USB, no rasteriser and no media. RenderManager draws the label -
+// the same call `render svg` makes, so preview and print come from one bitmap -
+// MediaManager says what the paper is, and UsbHostManager moves the bytes.
 //
 // ── The wire format ──
 //
@@ -35,18 +37,32 @@
 // every line, not once. And ESC D is BYTES, not dots - every line must be
 // exactly that many bytes or the printer loses sync and prints diagonal noise.
 //
-// ── Head width, and why it is an argument ──
+// ── The coordinate system, which is the whole of the calibration ──
 //
-// The raster is left-aligned at the print head's origin, and a LabelWriter's
-// head is wider than most media: a job narrower than the head prints at the
-// left edge of the head rather than centred on the label. So the job is built
-// at full head width and the rendered label is placed into it at an offset.
+// There are two frames and the medium is the map between them.
 //
-// HEAD_DOTS_DEFAULT is the 300 DPI LabelWriter 4xx/450 head (672 dots, 84
-// bytes). It is a DEFAULT and an argument, not a constant, because the right
-// number is a fact about the attached printer and this phase deliberately does
-// not have the media layer that would know it. `usb status` reports the device
-// id string, which is where the model comes from.
+//   HEAD frame     dot column 0..HEAD_DOTS-1 across the paper, and raster line
+//                  0,1,2... in the order lines are emitted. This is what the
+//                  printer understands and the only thing the job contains.
+//
+//   LABEL frame    the design's own pixels, 0,0 at its top-left.
+//
+// A medium says where the label sits in the head frame: its left edge at head
+// column `offsetX`, its top edge at raster line `offsetY`. Both are signed.
+// offsetY < 0 means raster line 0 already lands inside the label - the printer
+// starts late - so the top of the design is cropped by that much rather than
+// shifted down. Total emitted lines are therefore `height + offsetY` for either
+// sign, which falls out of the arithmetic rather than needing two cases.
+//
+// ── Why the raster is narrowed but not moved ──
+//
+// ESC D is a COUNT of bytes from head column 0; there is no "start at column N"
+// in this dialect. So the job always begins at head column 0 and the label's
+// position is expressed by leaving those columns blank. What can safely shrink
+// is the far end: bytes beyond the label's right edge carry nothing, and
+// dropping them is arithmetic on the count alone, with the origin untouched.
+// Hence bytesPerLine = ceil((offsetX + width) / 8), not ceil(width / 8) - the
+// second would print the label at the head's left edge, wherever the paper is.
 // ──────────────────────────────────────────────────────────────
 
 class PrintManager
@@ -55,9 +71,6 @@ class PrintManager
 
     static constexpr uint8_t ESC = 0x1b;
     static constexpr uint8_t SYN = 0x16;
-
-    /// 672 dots at 300 DPI - 56.9 mm, the LabelWriter 450 head.
-    static constexpr uint32_t HEAD_DOTS_DEFAULT = 672;
 
     /// A job is header + one prefixed line per dot row. Bounded so a bad
     /// argument is refused rather than eating PSRAM.
@@ -68,6 +81,23 @@ class PrintManager
     static constexpr uint32_t THRESHOLD_DEFAULT = 128;
 
 public:
+    // ── The printer's own facts ──
+    // Hardware, not configuration, and public because the media layer converts
+    // millimetres with them. They deliberately do NOT appear in a medium: a roll
+    // of paper does not have a resolution, and a `dpi` field on a medium would
+    // be a second place for one truth.
+    //
+    // 300 DPI is confirmed rather than assumed - a design rendered at 295 dots
+    // measured 25 mm on paper, and 295 / 300 inch is 24.98 mm.
+
+    /// Dots per inch, both axes.
+    static constexpr uint32_t DPI = 300;
+
+    /// Print head width in dots. 672 at 300 DPI is 56.9 mm - wider than any
+    /// label this printer takes, which is why a medium has to say where its
+    /// paper sits inside it.
+    static constexpr uint32_t HEAD_DOTS = 672;
+
     explicit PrintManager(AppProvider& app);
 
     PrintManager(const PrintManager&) = delete;
@@ -82,10 +112,23 @@ private:
     InitState    initState_;
     Mutex        printLock_;     ///< one job on the wire at a time
 
+    /// Where a design goes in the head frame. Everything a job needs that is
+    /// not the pixels.
+    struct Placement
+    {
+        uint32_t width   = 0;      ///< design raster width, dots
+        uint32_t height  = 0;      ///< design raster height, dots
+        int32_t  offsetX = 0;      ///< head column of the design's left edge
+        int32_t  offsetY = 0;      ///< raster line of the design's top edge
+        uint32_t threshold = THRESHOLD_DEFAULT;
+        bool     invert  = false;
+        bool     feed    = true;
+        bool     fullHead = false; ///< emit all HEAD_DOTS columns, not just to the right edge
+    };
+
     /// What a finished job cost, reported back so the bench has numbers.
     struct JobStats
     {
-        uint32_t headDots      = 0;
         uint32_t bytesPerLine  = 0;
         uint32_t lines         = 0;
         uint32_t jobBytes      = 0;
@@ -99,36 +142,52 @@ private:
         float    scale         = 1.0f;
     };
 
-    /// Render `wirePath`, threshold it, build the job and push it at the
-    /// printer. Returns null on success or a static reason.
-    const char* PrintSvg(const char* wirePath, uint32_t width, uint32_t height,
-                         uint32_t headDots, uint32_t offsetX, uint32_t threshold,
-                         bool invert, bool feed, JobStats& stats);
+    /// Render `wirePath` and print it at `p`. Returns null, or a static reason.
+    const char* PrintSvg(const char* wirePath, const Placement& p, JobStats& stats);
 
-    /// ARGB8888S (little-endian words: B,G,R,A) to packed 1-bit rows inside an
-    /// already-allocated job buffer. Returns the count of black dots, which is
-    /// the cheapest way to notice a blank label before it is printed.
-    static uint32_t Rasterise(const uint32_t* pixels, uint32_t width, uint32_t height,
-                              uint8_t* job, uint32_t bytesPerLine, uint32_t offsetX,
-                              uint32_t threshold, bool invert);
+    /// Emit one complete job into a PSRAM buffer and push it at the printer.
+    /// `pixels` may be null, which prints blank lines - used by the patterns.
+    const char* SendJob(const uint32_t* pixels, const Placement& p, JobStats& stats);
+
+    /// How many bytes per raster line this placement needs. Always measured
+    /// from head column 0, because ESC D is a count and not an origin.
+    static uint32_t BytesPerLine(const Placement& p);
+
+    /// One design row into one already-blanked raster line. Returns ink dots set.
+    static uint32_t RasteriseRow(const uint32_t* row, uint32_t width, uint8_t* line,
+                                 uint32_t bytesPerLine, int32_t offsetX,
+                                 uint32_t threshold, bool invert);
+
+    /// Resolve the geometry for a print: from a medium if one is named, from
+    /// explicit dots otherwise, with either overridable for calibration.
+    const char* Resolve(const char* mediaId, Placement& p,
+                        bool haveWidth, bool haveHeight,
+                        bool haveOffsetX, bool haveOffsetY);
 
     // ── Commands ──
     RequestError Cmd_PrintSvg(CommandContext& ctx);
     RequestError Cmd_PrintTest(CommandContext& ctx);
+    RequestError Cmd_PrintCalibrate(CommandContext& ctx);
     RequestError Cmd_PrintStatus(CommandContext& ctx);
 
     inline static CommandEntry commands_[] = {
-        { "print", "svg",    &InvokeCommand<&PrintManager::Cmd_PrintSvg>,
-          "Render a stored SVG and PRINT it on the attached LabelWriter. The "
-          "SVG is fitted into the given dot box exactly as 'render svg' fits "
-          "it, so the preview is what comes out. Sizes are in PRINTER DOTS, "
-          "not millimetres: at 300 DPI one millimetre is 11.8 dots. There is "
-          "no media layer yet, so the caller supplies the geometry." },
-        { "print", "test",   &InvokeCommand<&PrintManager::Cmd_PrintTest>,
-          "Print a built-in test pattern - a framed block of stripes at full "
-          "head width. It uses no filesystem and no renderer, so it separates "
-          "a USB or printer problem from an SVG or font problem." },
-        { "print", "status", &InvokeCommand<&PrintManager::Cmd_PrintStatus>,
+        { "print", "svg",       &InvokeCommand<&PrintManager::Cmd_PrintSvg>,
+          "Render a stored SVG and PRINT it. Name a medium with -media and the "
+          "geometry comes from it - size, and the calibrated offsets that put "
+          "the design where the paper actually is - so a caller needs to know "
+          "nothing about dots. The SVG is fitted exactly as 'render svg' fits "
+          "it, so the preview is what comes out." },
+        { "print", "test",      &InvokeCommand<&PrintManager::Cmd_PrintTest>,
+          "Print a built-in striped test pattern at full head width. No "
+          "filesystem, no renderer and no medium, so it separates a USB or "
+          "printer problem from a label or font problem." },
+        { "print", "calibrate", &InvokeCommand<&PrintManager::Cmd_PrintCalibrate>,
+          "Print a measuring grid across the whole head: a rule every 25 dots "
+          "(2.12 mm) and a heavy rule every 100 dots (8.47 mm), with solid axes "
+          "at head column 0 and raster line 0. This is how a medium's offsets "
+          "are found - print it, measure where the label's edges fall against "
+          "the grid, and put the result in 'media set'." },
+        { "print", "status",    &InvokeCommand<&PrintManager::Cmd_PrintStatus>,
           "Whether a printer is attached and ready to take a job, with what it "
           "says about itself. 'usb status' has the full descriptor detail." },
     };
