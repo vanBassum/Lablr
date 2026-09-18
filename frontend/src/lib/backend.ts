@@ -27,6 +27,13 @@ interface PendingRequest {
   onData?: (received: number) => void
 }
 
+/** What a login attempt came to. `error` is set only when the device gave a
+ *  reason of its own - a rate limit today - so its absence means an ordinary
+ *  wrong password. */
+export type LoginOutcome =
+  | { ok: true }
+  | { ok: false; error?: string; retryAfter?: number }
+
 export type ConnectionStatus = "connected" | "connecting" | "disconnected"
 type StatusHandler = (status: ConnectionStatus) => void
 type AuthHandler = (authenticated: boolean) => void
@@ -479,17 +486,28 @@ class BackendService {
     return this.send("system reboot")
   }
 
-  /** Returns false on wrong password; throws on connection failure. On success
-   *  stores the session key and marks the connection authenticated. */
-  async login(password: string): Promise<boolean> {
+  /** Throws on connection failure. On success stores the session key and marks
+   *  the connection authenticated.
+   *
+   *  A refusal is not always a wrong password: the device rate-limits failed
+   *  logins and says so, and reporting that as "invalid password" is how
+   *  somebody spends an hour retyping a password that was right. */
+  async login(password: string): Promise<LoginOutcome> {
     await this.ensureConnected()
-    const res = await this.send<{ ok: boolean; key?: string }>("auth login", { password })
-    if (!res.ok) return false
+    const res = await this.send<{ ok: boolean; key?: string; error?: string; retryAfter?: number }>(
+      "auth login",
+      { password },
+    )
+    if (!res.ok) {
+      return res.error
+        ? { ok: false, error: res.error, retryAfter: res.retryAfter }
+        : { ok: false }
+    }
     this.token = res.key ?? null
     if (this.token) sessionStorage.setItem(TOKEN_KEY, this.token)
     this.setAuthenticated(true)
     this.startHeartbeat()
-    return true
+    return { ok: true }
   }
 
   /** One command whose REQUEST has a body: an envelope chunk (not FINAL), then

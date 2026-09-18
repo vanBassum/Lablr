@@ -193,8 +193,18 @@ RequestError WebServerManager::Cmd_AuthLogin(CommandContext& ctx)
     auto resp = ctx.reply.object();
 
     // A wrong password is MEANING, not form: the request was perfectly well made, the
-    // answer is no. So it is a reply, not a refusal.
-    if (!auth_.CheckPassword(password))
+    // answer is no. So it is a reply, not a refusal. So is being rate limited - and
+    // that one says so, because "wrong password" when the password is right is the
+    // kind of answer somebody debugs for an hour.
+    const auto result = auth_.TryPassword(password);
+    if (result == Authenticator::LoginResult::TooManyAttempts)
+    {
+        resp.field("ok", false);
+        resp.field("error", "too many failed attempts - wait and try again");
+        resp.field("retryAfter", auth_.LockoutRemainingSeconds());
+        return RequestError::Ok;
+    }
+    if (result != Authenticator::LoginResult::Ok)
     {
         resp.field("ok", false);
         return RequestError::Ok;
