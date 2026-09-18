@@ -5,6 +5,7 @@
 #include "CommandEntry.h"
 #include <cstdint>
 #include <cstddef>
+#include <cstdio>
 
 // ──────────────────────────────────────────────────────────────
 // MediaManager — what a physical label IS, as data on the device.
@@ -130,6 +131,10 @@ private:
     /// normalising them.
     static bool PathFor(const char* id, char* out, size_t cap);
     static bool ValidId(const char* id);
+
+    /// Write one JSON string literal, quotes included, with the escaping a
+    /// free-form name needs.
+    static void WriteJsonString(FILE* f, const char* value);
 
     bool Save(const Medium& m) const;
 

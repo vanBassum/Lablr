@@ -92,6 +92,30 @@ bool MediaManager::Load(const char* id, Medium& out) const
     return out.widthUm > 0 && out.heightUm > 0;
 }
 
+void MediaManager::WriteJsonString(FILE* f, const char* value)
+{
+    // The id is validated to [A-Za-z0-9_-] and needs none of this; the NAME is
+    // a free-form string off the wire and needs all of it. Both go through here
+    // so there is one rule rather than two, and no second place to forget.
+    //
+    // A quote or a backslash written raw produced a file that Load then
+    // misparsed - widthUm came back 0, the medium was refused as sizeless, and
+    // it stayed unprintable until somebody deleted it. Anything outside
+    // printable ASCII becomes '?' rather than being escaped: the file must be
+    // valid UTF-8 because `media list` copies the name straight onto the wire,
+    // and a name off the wire carries no encoding guarantee. Same call, and the
+    // same reason, as CopyStringDesc in UsbHostManager.
+    fputc('"', f);
+    for (const unsigned char* p = reinterpret_cast<const unsigned char*>(value); *p; ++p)
+    {
+        const unsigned char c = *p;
+        if (c == '"' || c == '\\')      { fputc('\\', f); fputc(c, f); }
+        else if (c >= 0x20 && c <= 0x7e) { fputc(c, f); }
+        else                             { fputc('?', f); }
+    }
+    fputc('"', f);
+}
+
 bool MediaManager::Save(const Medium& m) const
 {
     char full[288];
@@ -102,17 +126,21 @@ bool MediaManager::Save(const Medium& m) const
 
     // Written by hand rather than through JsonWriter: that class writes to a
     // Stream for the log broadcast, and a file is not one. Six fields do not
-    // justify an adapter.
+    // justify an adapter - but the two strings do need escaping, which is what
+    // WriteJsonString is for.
+    fputs("{\"id\":", f);
+    WriteJsonString(f, m.id);
+    fputs(",\"name\":", f);
+    WriteJsonString(f, m.name);
     const int written = fprintf(f,
-        "{\"id\":\"%s\",\"name\":\"%s\","
-        "\"widthUm\":%ld,\"heightUm\":%ld,"
+        ",\"widthUm\":%ld,\"heightUm\":%ld,"
         "\"offsetXUm\":%ld,\"offsetYUm\":%ld}\n",
-        m.id, m.name,
         (long)m.widthUm, (long)m.heightUm,
         (long)m.offsetXUm, (long)m.offsetYUm);
+    const bool streamOk = ferror(f) == 0;
     fclose(f);
 
-    if (written <= 0)
+    if (written <= 0 || !streamOk)
     {
         ESP_LOGE(TAG, "could not write %s", full);
         return false;
