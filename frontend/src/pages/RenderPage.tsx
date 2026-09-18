@@ -8,10 +8,12 @@ import { useEffect, useRef, useState } from "react"
 import {
   backend,
   type FontEntry,
+  type PrintResult,
+  type PrintStatus,
   type RenderHeader,
 } from "@/lib/backend"
 import { useConnectionStatus } from "@/hooks/use-connection-status"
-import { ImageIcon, RefreshCwIcon } from "lucide-react"
+import { ImageIcon, PrinterIcon, RefreshCwIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -50,6 +52,16 @@ export default function RenderPage() {
   const [header, setHeader] = useState<RenderHeader | null>(null)
   const [elapsed, setElapsed] = useState<number | null>(null)
 
+  // Printing. headWidth and offsetX are the head geometry, not the label's -
+  // the head prints from its own left edge, so a narrow label has to be told
+  // where across the head it sits. Dots, because there is no media layer yet.
+  const [printer, setPrinter] = useState<PrintStatus | null>(null)
+  const [headWidth, setHeadWidth] = useState(672)
+  const [offsetX, setOffsetX] = useState(0)
+  const [threshold, setThreshold] = useState(128)
+  const [printing, setPrinting] = useState(false)
+  const [lastJob, setLastJob] = useState<PrintResult | null>(null)
+
   function refresh() {
     backend
       .fsList("/labels")
@@ -66,6 +78,7 @@ export default function RenderPage() {
       })
       .catch(() => setLabels([]))
     backend.renderFonts().then((r) => setFonts(r.fonts)).catch(() => setFonts(null))
+    backend.printStatus().then(setPrinter).catch(() => setPrinter(null))
   }
 
   useEffect(() => {
@@ -99,6 +112,43 @@ export default function RenderPage() {
       toast.error("Render failed", { description: errorMessage(e) })
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function print() {
+    setPrinting(true)
+    try {
+      // Render happens ON the device for a print: shipping the bitmap up here
+      // and the job back down would be the same pixels twice, and would make
+      // the browser a step the MCP path does not have.
+      const res = await backend.printSvg({
+        path, width, height, headWidth, offsetX, threshold,
+      })
+      setLastJob(res)
+      if (res.warning) toast.warning("Printed, but blank", { description: res.warning })
+      else toast.success("Printed", {
+        description: `${res.jobBytes?.toLocaleString()} bytes, ${res.blackDots?.toLocaleString()} dots of ink`,
+      })
+    } catch (e) {
+      toast.error("Print failed", { description: errorMessage(e) })
+    } finally {
+      setPrinting(false)
+      backend.printStatus().then(setPrinter).catch(() => {})
+    }
+  }
+
+  async function printTest() {
+    setPrinting(true)
+    try {
+      const res = await backend.printTest(headWidth)
+      setLastJob(res)
+      toast.success("Test pattern sent", {
+        description: `${res.jobBytes?.toLocaleString()} bytes`,
+      })
+    } catch (e) {
+      toast.error("Test print failed", { description: errorMessage(e) })
+    } finally {
+      setPrinting(false)
     }
   }
 
@@ -214,6 +264,91 @@ export default function RenderPage() {
             {header?.bytes != null ? `${(header.bytes / 1024).toFixed(0)} KB` : "the bitmap"} over
             the WebSocket - the device does not report its own render time.
           </p>
+        )}
+      </div>
+
+      <div className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Print</h2>
+          {printer === null ? (
+            <Badge variant="outline">Unknown</Badge>
+          ) : printer.ready ? (
+            <Badge variant="secondary" className="gap-1">
+              {printer.product || printer.id || "Printer"}
+              {printer.paperEmpty && <span className="text-destructive">no paper</span>}
+            </Badge>
+          ) : (
+            <Badge variant="outline">No printer</Badge>
+          )}
+        </div>
+
+        {printer && !printer.ready && (
+          <p className="text-xs text-muted-foreground">
+            {printer.note ??
+              "Nothing on the USB host port."}
+          </p>
+        )}
+
+        {printer?.deviceId && (
+          <p className="break-all font-mono text-xs text-muted-foreground">{printer.deviceId}</p>
+        )}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="print-head">Head width</Label>
+            <Input
+              id="print-head"
+              type="number"
+              className="w-28"
+              value={headWidth}
+              onChange={(e) => setHeadWidth(Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="print-offset">Offset X</Label>
+            <Input
+              id="print-offset"
+              type="number"
+              className="w-24"
+              value={offsetX}
+              onChange={(e) => setOffsetX(Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="print-threshold">Threshold</Label>
+            <Input
+              id="print-threshold"
+              type="number"
+              className="w-24"
+              value={threshold}
+              onChange={(e) => setThreshold(Number(e.target.value))}
+            />
+          </div>
+          <Button onClick={print} disabled={printing || !path || !printer?.ready}>
+            <PrinterIcon className="size-4" />
+            {printing ? "Printing..." : "Print"}
+          </Button>
+          <Button variant="outline" onClick={printTest} disabled={printing || !printer?.ready}>
+            Test pattern
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Sizes are in printer dots, not millimetres - at 300 DPI one millimetre is 11.8 dots.
+          Width and height above are the label; head width is the printer's, and the label is
+          placed into it at Offset X because the head prints from its own left edge. Media
+          definitions will supply all three later.
+        </p>
+
+        {lastJob && (
+          <div className="grid grid-cols-2 gap-3 border-t pt-3 text-sm sm:grid-cols-4">
+            <Field label="Job" value={lastJob.jobBytes != null ? `${lastJob.jobBytes.toLocaleString()} B` : "-"} />
+            <Field label="Bytes/line" value={lastJob.bytesPerLine?.toString() ?? "-"} />
+            <Field label="Ink dots" value={lastJob.blackDots?.toLocaleString() ?? "-"} />
+            <Field label="Render" value={lastJob.renderMs != null ? `${lastJob.renderMs} ms` : "-"} />
+            <Field label="Convert" value={lastJob.convertMs != null ? `${lastJob.convertMs} ms` : "-"} />
+            <Field label="Send" value={lastJob.sendMs != null ? `${lastJob.sendMs} ms` : "-"} />
+          </div>
         )}
       </div>
 

@@ -326,6 +326,47 @@ void RenderManager::RunJob()
 }
 
 // ──────────────────────────────────────────────────────────────
+// The public entry point: one rasteriser, two callers
+// ──────────────────────────────────────────────────────────────
+
+const char* RenderManager::Render(const char* vfsPath, uint32_t width, uint32_t height,
+                                  uint32_t background, Bitmap& out)
+{
+    out = Bitmap{};
+
+    if (!workerUp_ || !engineUp_)                             return "render engine unavailable";
+    if (width == 0 || height == 0)                            return "width and height must be non-zero";
+    if (width > MAX_DIMENSION || height > MAX_DIMENSION)      return "width or height too large";
+    if (static_cast<uint64_t>(width) * height > MAX_PIXELS)   return "too many pixels";
+
+    // One render at a time. The wait is the queue.
+    LOCK(renderLock_);
+
+    snprintf(job_.path, sizeof(job_.path), "%s", vfsPath);
+    job_.width      = width;
+    job_.height     = height;
+    job_.background = background;
+
+    jobRequest_.Give();
+    jobDone_.Take();
+
+    if (job_.error || !job_.pixels)
+        return job_.error ? job_.error : "render produced nothing";
+
+    out.pixels       = job_.pixels;
+    out.width        = width;
+    out.height       = height;
+    out.scale        = job_.scale;
+    out.psramUsed    = job_.psramUsed;
+    out.internalUsed = job_.internalUsed;
+    out.stackLeft    = job_.stackLeft;
+
+    // The handler owns the buffer now; job_ must not free or reuse it.
+    job_.pixels = nullptr;
+    return nullptr;
+}
+
+// ──────────────────────────────────────────────────────────────
 // Commands
 // ──────────────────────────────────────────────────────────────
 
@@ -370,14 +411,14 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
 
     // Everything that can be refused before the worker is woken, is.
     const char* error = nullptr;
-    if (!workerUp_ || !engineUp_)                     error = "render engine unavailable";
-    else if (!app_.getStorageManager().IsMounted())   error = "not mounted";
-    else if (width == 0 || height == 0)               error = "width and height must be non-zero";
-    else if (width > MAX_DIMENSION || height > MAX_DIMENSION) error = "width or height too large";
-    else if (static_cast<uint64_t>(width) * height > MAX_PIXELS) error = "too many pixels";
-
     char full[256];
-    if (!error && !StorageManager::Resolve(path, full, sizeof(full))) error = "bad path";
+    if (!app_.getStorageManager().IsMounted())                    error = "not mounted";
+    else if (!StorageManager::Resolve(path, full, sizeof(full)))  error = "bad path";
+
+    // Rendering itself is Render(), shared with the printer - a preview that
+    // came from a different rasteriser would stop predicting a print.
+    Bitmap bmp;
+    if (!error) error = Render(full, width, height, background, bmp);
 
     if (error)
     {
@@ -385,28 +426,6 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
             auto head = ctx.reply.object();
             head.field("ok", false);
             head.field("error", error);
-        }
-        ctx.out.write("\n", 1);
-        return RequestError::Ok;
-    }
-
-    // One render at a time. The wait is the queue.
-    LOCK(renderLock_);
-
-    snprintf(job_.path, sizeof(job_.path), "%s", full);
-    job_.width      = width;
-    job_.height     = height;
-    job_.background = background;
-
-    jobRequest_.Give();
-    jobDone_.Take();
-
-    if (job_.error || !job_.pixels)
-    {
-        {
-            auto head = ctx.reply.object();
-            head.field("ok", false);
-            head.field("error", job_.error ? job_.error : "render produced nothing");
         }
         ctx.out.write("\n", 1);
         return RequestError::Ok;
@@ -427,15 +446,15 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
         head.field("format", "ARGB8888S");
         head.field("stride", width * 4u);
         head.field("bytes", static_cast<uint32_t>(pixelBytes));
-        head.field("scale", job_.scale);
-        head.field("psramUsed", job_.psramUsed);
-        head.field("internalUsed", job_.internalUsed);
-        head.field("workerStackLeft", job_.stackLeft);
+        head.field("scale", bmp.scale);
+        head.field("psramUsed", bmp.psramUsed);
+        head.field("internalUsed", bmp.internalUsed);
+        head.field("workerStackLeft", bmp.stackLeft);
     }
     ctx.out.write("\n", 1);
 
     // Straight out of the canvas into the transport's framing buffer.
-    const uint8_t* src = reinterpret_cast<const uint8_t*>(job_.pixels);
+    const uint8_t* src = reinterpret_cast<const uint8_t*>(bmp.pixels);
     size_t sent = 0;
     if (ctx.out.canLend())
     {
@@ -455,7 +474,6 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
         ctx.out.write(src, pixelBytes);
     }
 
-    heap_caps_free(job_.pixels);
-    job_.pixels = nullptr;
+    heap_caps_free(bmp.pixels);
     return RequestError::Ok;
 }

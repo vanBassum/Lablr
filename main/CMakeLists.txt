@@ -40,6 +40,8 @@ set(APP_SOURCES
     "app/LedManager/LedManager.cpp"
     "app/StorageManager/StorageManager.cpp"
     "app/RenderManager/RenderManager.cpp"
+    "app/UsbHostManager/UsbHostManager.cpp"
+    "app/PrintManager/PrintManager.cpp"
 )
 
 set(SOURCE_FILES_LIST
@@ -76,6 +78,8 @@ set(INCLUDE_DIRS_LIST
     "app/LedManager"
     "app/StorageManager"
     "app/RenderManager"
+    "app/UsbHostManager"
+    "app/PrintManager"
 )
 
 set(COMPONENT_REQUIRES
@@ -97,6 +101,11 @@ set(COMPONENT_REQUIRES
     # renderer therefore runs on a pthread - see RenderManager.h.
     pthread
     esp_driver_gpio
+    # NOTE: the USB Host Library is NOT here. IDF 6.0 moved the `usb` component
+    # out of the framework and into the component registry, so it is a managed
+    # dependency in main/idf_component.yml - a REQUIRES line for it fails with
+    # "Failed to resolve component 'usb'". It is app-layer either way: nothing
+    # in strux/ knows a printer exists.
     mdns
     # Only to report the DFS bounds in `system info` — the scaling itself is
     # configured by startup code, see CONFIG_PM_ENABLE in sdkconfig.defaults.

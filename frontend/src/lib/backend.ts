@@ -834,6 +834,28 @@ class BackendService {
     return { ...res, elapsedMs }
   }
 
+  // ── Printing ───────────────────────────────────────────────────
+  // The SAME commands an external caller (or the relay's MCP surface) uses.
+  // There is no HTTP print route and there is not going to be one: a second
+  // path to the printer is a second thing to keep in step with the first.
+
+  printStatus(): Promise<PrintStatus> {
+    return this.send<PrintStatus>("print status")
+  }
+
+  /** Render and print in one device-side call, so the bitmap never travels. */
+  async printSvg(args: PrintArgs): Promise<PrintResult> {
+    const res = await this.send<PrintResult>("print svg", { ...args })
+    if (!res.ok) throw new Error(res.error ?? "print failed")
+    return res
+  }
+
+  async printTest(headWidth?: number, height?: number): Promise<PrintResult> {
+    const res = await this.send<PrintResult>("print test", { headWidth, height })
+    if (!res.ok) throw new Error(res.error ?? "test print failed")
+    return res
+  }
+
 }
 
 const instance = new BackendService()
@@ -969,6 +991,58 @@ export interface FontEntry {
  *  little-endian word per pixel, so the bytes are B,G,R,A and alpha is not
  *  premultiplied - which is what lets the page hand them to ImageData after a
  *  channel swap and nothing else. */
+/** What `print status` reports. `deviceId` is the printer's own IEEE-1284 ID
+ *  string - it names the model and the command set, straight from the printer
+ *  rather than from a table here. */
+export interface PrintStatus {
+  ok: boolean
+  ready: boolean
+  id?: string
+  product?: string
+  deviceId?: string
+  paperEmpty?: boolean
+  selected?: boolean
+  noError?: boolean
+  note?: string
+}
+
+/** Geometry for `print svg`, all in PRINTER DOTS. Millimetres would need a
+ *  media definition to convert, and that layer does not exist yet - see
+ *  docs/next-up.md. */
+export interface PrintArgs {
+  path: string
+  width: number
+  height: number
+  headWidth?: number
+  offsetX?: number
+  threshold?: number
+  invert?: number
+  feed?: number
+}
+
+export interface PrintResult {
+  ok: boolean
+  error?: string
+  /** Present and non-empty when the label came out blank - almost always an
+   *  SVG naming a font-family the device does not have. */
+  warning?: string
+  path?: string
+  width?: number
+  height?: number
+  headWidth?: number
+  bytesPerLine?: number
+  lines?: number
+  jobBytes?: number
+  blackDots?: number
+  scale?: number
+  renderMs?: number
+  convertMs?: number
+  sendMs?: number
+  psramUsed?: number
+  internalUsed?: number
+  workerStackLeft?: number
+}
+
 export interface RenderHeader {
   ok: boolean
   path?: string

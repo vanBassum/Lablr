@@ -74,7 +74,16 @@ private:
     // single task: one frame is in flight at a time. It is distinct from
     // sessionInbound_ because both are live at once -- Session keeps a pointer
     // into this one while pulling continuations into that one.
-    uint8_t inboundFrame_[INBOUND_WINDOW];
+    //
+    // Sized HEADER_LEN + INBOUND_WINDOW + 1, and every term is load-bearing. A
+    // frame is a header AND a payload, so sizing it INBOUND_WINDOW alone makes
+    // the payload window HEADER_LEN short - which is the original bug again,
+    // just four bytes wide instead of 3584, and it drops the client the same
+    // way. The +1 is for the byte httpd_ws_recv_frame is handed one less than
+    // (the room a text frame's NUL would need), so that a full-window binary
+    // chunk still fits. sessionInbound_ needs no +1 because RecvChunk passes
+    // the whole size.
+    uint8_t inboundFrame_[session::HEADER_LEN + INBOUND_WINDOW + 1];
 
     void RemoveWsClient(int fd);
 

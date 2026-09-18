@@ -2,6 +2,11 @@ dependencies:
   idf:
     version: ">=5.0.0"
   espressif/mdns: ^1
+  # The USB Host Library, which drives the label printer off the S3's OTG port.
+  # A managed dependency and not a COMPONENT_REQUIRES because IDF 6.0 moved the
+  # `usb` component out of the framework and into the registry; on 5.x this was
+  # a built-in and a REQUIRES line was enough.
+  espressif/usb: "^1.4.0"
   # The SVG renderer. A managed dependency and not a board fragment, because
   # ESP-IDF resolves REQUIRES in a pass that cannot see -DBOARD - see the note
   # in main/CMakeLists.txt.

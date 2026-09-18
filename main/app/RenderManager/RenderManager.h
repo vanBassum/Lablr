@@ -83,6 +83,31 @@ public:
 
     void Init();
 
+    /// A rendered label, owned by the caller: free `pixels` with heap_caps_free.
+    /// This is the same buffer `render svg` ships to a browser, which is the
+    /// point - the printer must not get a second rasteriser, or a preview would
+    /// stop predicting a print.
+    struct Bitmap
+    {
+        uint32_t* pixels = nullptr;      ///< ARGB8888S in PSRAM, width*height words
+        uint32_t  width  = 0;
+        uint32_t  height = 0;
+        float     scale  = 1.0f;         ///< what the SVG was fitted by
+        uint32_t  psramUsed = 0;
+        uint32_t  internalUsed = 0;
+        uint32_t  stackLeft = 0;
+    };
+
+    /// Render a stored SVG into `out`. `vfsPath` is a resolved VFS path, not a
+    /// wire path - callers get one from StorageManager::Resolve. Returns null on
+    /// success, or a static reason string.
+    const char* Render(const char* vfsPath, uint32_t width, uint32_t height,
+                       uint32_t background, Bitmap& out);
+
+    /// The bounds Render enforces, so a caller can refuse before allocating.
+    static constexpr uint32_t MaxDimension() { return MAX_DIMENSION; }
+    static constexpr uint32_t MaxPixels()    { return MAX_PIXELS; }
+
 private:
     AppProvider& app_;
     InitState initState_;

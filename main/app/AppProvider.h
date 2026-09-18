@@ -15,6 +15,8 @@ class StruxProvider;
 class LedManager;
 class StorageManager;
 class RenderManager;
+class UsbHostManager;
+class PrintManager;
 
 class AppProvider
 {
@@ -34,4 +36,12 @@ public:
     /// SVG to bitmap. Reads what StorageManager holds, which is why it
     /// initialises after it.
     virtual RenderManager& getRenderManager() = 0;
+
+    /// The USB OTG port in host mode. Knows nothing about printing - see
+    /// UsbHostManager.h for why that split is here.
+    virtual UsbHostManager& getUsbHostManager() = 0;
+
+    /// The printer's raster dialect. Draws through RenderManager and sends
+    /// through UsbHostManager, and owns neither.
+    virtual PrintManager& getPrintManager() = 0;
 };

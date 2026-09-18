@@ -8,6 +8,8 @@
 #include "LedManager/LedManager.h"
 #include "StorageManager/StorageManager.h"
 #include "RenderManager/RenderManager.h"
+#include "UsbHostManager/UsbHostManager.h"
+#include "PrintManager/PrintManager.h"
 
 // The application layer's context: owns this product's managers and answers AppProvider.
 //
@@ -46,6 +48,14 @@ public:
         // only in a log line nobody reads until a label has no text.
         storageManager_.Init();
         renderManager_.Init();
+
+        // The USB host is independent of the other three: it waits for a device
+        // to be plugged in and answers for whatever turns up.
+        usbHostManager_.Init();
+
+        // Last: it reaches the renderer and the USB host through the provider,
+        // and both have to be able to answer before a print command can arrive.
+        printManager_.Init();
     }
 
     StruxProvider& getStrux() override { return strux_; }
@@ -53,6 +63,8 @@ public:
     LedManager& getLedManager() override { return ledManager_; }
     StorageManager& getStorageManager() override { return storageManager_; }
     RenderManager& getRenderManager() override { return renderManager_; }
+    UsbHostManager& getUsbHostManager() override { return usbHostManager_; }
+    PrintManager& getPrintManager() override { return printManager_; }
 
 private:
     BoardContext& board_;
@@ -61,4 +73,6 @@ private:
     LedManager ledManager_{*this};
     StorageManager storageManager_{*this};
     RenderManager renderManager_{*this};
+    UsbHostManager usbHostManager_{*this};
+    PrintManager printManager_{*this};
 };
