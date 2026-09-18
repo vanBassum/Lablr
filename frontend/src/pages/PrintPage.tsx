@@ -91,6 +91,13 @@ function toDataUrl(bytes: Uint8Array, width: number, height: number): string {
   return c.toDataURL("image/png")
 }
 
+/** Identifies one preview: a picture is the current one only if it is of this
+ *  label AT this geometry. One function so the request side and the "is what is
+ *  on screen still current" side cannot drift apart. */
+function previewKeyOf(path: string, w: number, h: number): string {
+  return `${path}|${w}|${h}`
+}
+
 export default function PrintPage() {
   const connection = useConnectionStatus()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -110,6 +117,16 @@ export default function PrintPage() {
   const [busy, setBusy] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [zoom, setZoom] = useState(1)
+  // What the canvas actually holds. The canvas is ONE element that outlives a
+  // selection change, so without this the previous label's pixels stay on screen
+  // for the seconds the new render takes - the worst of both, since they look
+  // authoritative. Compared against the key the effect below requests.
+  const [drawnKey, setDrawnKey] = useState<string | null>(null)
+  // Monotonic request number. The effect's own `cancelled` flag closes over one
+  // run, which is already enough for a re-render; this also rejects a reply that
+  // outlived its request for any other reason, so a slow render of a label that
+  // is no longer selected can never reach the canvas.
+  const requestSeq = useRef(0)
   const [lastJob, setLastJob] = useState<PrintResult | null>(null)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [dims, setDims] = useState<Record<string, { w: number; h: number } | null>>({})
@@ -124,6 +141,12 @@ export default function PrintPage() {
   const shown = labels.filter((l) =>
     l.toLowerCase().includes(filter.trim().toLowerCase()),
   )
+
+  // Is the canvas showing the label that is selected now, at the geometry that is
+  // selected now? While it is not, the strip's thumbnail stands in for it - the
+  // browser already has that picture, and the device render takes seconds.
+  const previewCurrent = selected !== null && drawnKey === previewKeyOf(selected, w, h)
+  const standIn = selected ? thumbs[selected] : undefined
 
   const refresh = useCallback(() => {
     backend
@@ -163,12 +186,14 @@ export default function PrintPage() {
   // because a preview at the wrong size is worse than none.
   useEffect(() => {
     if (connection !== "connected" || !selected) return
+    const seq = ++requestSeq.current
+    const key = previewKeyOf(selected, w, h)
     let cancelled = false
     setBusy(true)
     backend
       .renderSvg(selected, w, h)
       .then((res) => {
-        if (cancelled) return
+        if (cancelled || seq !== requestSeq.current) return
         const rw = res.header.width ?? w
         const rh = res.header.height ?? h
         const canvas = canvasRef.current
@@ -176,6 +201,9 @@ export default function PrintPage() {
         canvas.width = rw
         canvas.height = rh
         canvas.getContext("2d")?.putImageData(toImageData(res.bytes, rw, rh), 0, 0)
+        // Only now is the canvas the current label's, and only now does the
+        // markup below stop showing the thumbnail standing in for it.
+        setDrawnKey(key)
       })
       .catch((e) => {
         if (!cancelled) toast.error("Render failed", { description: errorMessage(e) })
@@ -429,11 +457,39 @@ export default function PrintPage() {
 
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg bg-muted/40 p-6">
             {selected ? (
-              <canvas
-                ref={canvasRef}
-                className="max-w-full rounded-sm bg-white shadow-sm"
-                style={{ transform: `scale(${zoom})`, transformOrigin: "center", imageRendering: "pixelated" }}
-              />
+              <>
+                {/* Always mounted, never conditionally rendered: the render
+                    effect draws through canvasRef, and a canvas swapped out
+                    while a render is in flight would have nothing to draw on.
+                    Hidden rather than absent, so it keeps its bitmap too. */}
+                <canvas
+                  ref={canvasRef}
+                  className={
+                    "max-w-full rounded-sm bg-white shadow-sm" + (previewCurrent ? "" : " hidden")
+                  }
+                  style={{ transform: `scale(${zoom})`, transformOrigin: "center", imageRendering: "pixelated" }}
+                />
+                {!previewCurrent &&
+                  (standIn ? (
+                    // The thumbnail the strip already has, in the box the real
+                    // render is about to fill: same width, same dot geometry,
+                    // and object-contain because that is how the device fits a
+                    // design into the medium. So the swap moves nothing.
+                    <img
+                      src={standIn}
+                      alt=""
+                      className="max-w-full rounded-sm bg-white object-contain shadow-sm"
+                      style={{
+                        width: w,
+                        aspectRatio: `${w} / ${h}`,
+                        transform: `scale(${zoom})`,
+                        transformOrigin: "center",
+                      }}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Rendering on the device...</p>
+                  ))}
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">No label selected.</p>
             )}
