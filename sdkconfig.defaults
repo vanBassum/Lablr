@@ -32,6 +32,37 @@ CONFIG_HTTPD_WS_SUPPORT=y
 # Increase timer task stack (default 2048 too small for WiFi calls in timer callbacks)
 CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096
 
+# ── FAT, for the label filesystem ─────────────────────────────
+# The storage partition holds /labels, /fonts and /media. Long filenames are
+# not optional here: a label is named by a human or by a model, and 8.3 would
+# silently mangle every one of them.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+
+# ── ThorVG, the SVG renderer ──────────────────────────────────
+# TTF is the whole point of the proof: an SVG <text> element resolves its
+# font-family through ThorVG's font registry, so without the sfnt loader a
+# label can draw shapes and no words. It is default-n upstream, hence this.
+#
+# Lottie is default-y upstream and dropped here - this device renders labels,
+# not animations, and it is the largest loader of the set.
+#
+# Threads stay ON, and not by choice: ThorVG's own meson.build links pthread
+# unconditionally on any non-Windows host, while the Espressif component only
+# puts the pthread library on the linker path when THORVG_THREAD_ENABLED is y.
+# Turning it off - which the Kconfig help invites - fails the build with
+# "C++ shared or static library 'pthread' not found". So the pool is compiled
+# in and asked for zero threads instead: tvg_engine_init(0) in RenderManager,
+# which means rendering still happens on the task that ran the command.
+#
+# Log on for now. It is how a font that failed to load says so - ThorVG
+# reports that through TVGLOG and returns a plain error code otherwise.
+CONFIG_THORVG_SVG_LOADER_SUPPORT=y
+# CONFIG_THORVG_TTF_LOADER_SUPPORT is not set
+CONFIG_THORVG_LOG_ENABLED=y
+# CONFIG_THORVG_LOTTIE_LOADER_SUPPORT is not set
+CONFIG_THORVG_THREAD_ENABLED=y
+
 # OTA rollback — pairs with esp_ota_mark_app_valid_cancel_rollback() in main.cpp
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 

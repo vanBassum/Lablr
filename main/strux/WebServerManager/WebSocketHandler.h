@@ -61,6 +61,21 @@ private:
     static constexpr size_t INBOUND_WINDOW = 4096;
     uint8_t sessionInbound_[session::HEADER_LEN + INBOUND_WINDOW];
 
+    // The FIRST frame of a request lands here, and it is a member for the same
+    // reason sessionInbound_ is: INBOUND_WINDOW does not belong on the httpd
+    // task's stack. It used to be a 512-byte local, which quietly made the
+    // inbound window 511 bytes for the one frame that carries the envelope --
+    // httpd_ws_recv_frame fails on a larger frame and the client is dropped,
+    // looking from the outside like the device resetting the connection. The
+    // frontend has always sized its upload chunks to INBOUND_WINDOW, so the
+    // two disagreed by a factor of eight.
+    //
+    // Safe as one buffer because esp_http_server serves every socket from a
+    // single task: one frame is in flight at a time. It is distinct from
+    // sessionInbound_ because both are live at once -- Session keeps a pointer
+    // into this one while pulling continuations into that one.
+    uint8_t inboundFrame_[INBOUND_WINDOW];
+
     void RemoveWsClient(int fd);
 
     static esp_err_t HandleWs(httpd_req_t* req);

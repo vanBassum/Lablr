@@ -13,6 +13,8 @@
 class BoardContext;
 class StruxProvider;
 class LedManager;
+class StorageManager;
+class RenderManager;
 
 class AppProvider
 {
@@ -25,4 +27,11 @@ public:
 
     // ── This application's own managers ──
     virtual LedManager& getLedManager() = 0;
+
+    /// The label filesystem: /labels, /fonts, /media.
+    virtual StorageManager& getStorageManager() = 0;
+
+    /// SVG to bitmap. Reads what StorageManager holds, which is why it
+    /// initialises after it.
+    virtual RenderManager& getRenderManager() = 0;
 };

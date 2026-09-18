@@ -38,6 +38,8 @@ set(STRUX_SOURCES
 # ── The application. This is the list a fork owns.
 set(APP_SOURCES
     "app/LedManager/LedManager.cpp"
+    "app/StorageManager/StorageManager.cpp"
+    "app/RenderManager/RenderManager.cpp"
 )
 
 set(SOURCE_FILES_LIST
@@ -72,6 +74,8 @@ set(INCLUDE_DIRS_LIST
     "hardware"
     "app"
     "app/LedManager"
+    "app/StorageManager"
+    "app/RenderManager"
 )
 
 set(COMPONENT_REQUIRES
@@ -86,6 +90,12 @@ set(COMPONENT_REQUIRES
     app_update
     esp_partition
     spi_flash
+    fatfs
+    wear_levelling
+    # ThorVG asks for the calling thread's identity, which on ESP-IDF is
+    # pthread_self() and asserts unless pthread created that thread. The
+    # renderer therefore runs on a pthread - see RenderManager.h.
+    pthread
     esp_driver_gpio
     mdns
     # Only to report the DFS bounds in `system info` — the scaling itself is

@@ -166,9 +166,8 @@ esp_err_t WebSocketHandler::HandleWs(httpd_req_t* req)
     }
 
     httpd_ws_frame_t frame = {};
-    uint8_t buf[512] = {};
-    frame.payload = buf;
-    esp_err_t ret = httpd_ws_recv_frame(req, &frame, sizeof(buf) - 1);
+    frame.payload = self->inboundFrame_;
+    esp_err_t ret = httpd_ws_recv_frame(req, &frame, sizeof(self->inboundFrame_) - 1);
     if (ret != ESP_OK)
     {
         // Also DEBUG: the common cause is the peer vanishing, which is not this
@@ -191,7 +190,7 @@ esp_err_t WebSocketHandler::HandleWs(httpd_req_t* req)
     if (frame.type == HTTPD_WS_TYPE_BINARY)
     {
         if (frame.len >= session::HEADER_LEN)
-            self->HandleBinary(req, buf, frame.len);
+            self->HandleBinary(req, self->inboundFrame_, frame.len);
         return ESP_OK;
     }
 

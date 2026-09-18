@@ -2,6 +2,10 @@ dependencies:
   idf:
     version: ">=5.0.0"
   espressif/mdns: ^1
+  # The SVG renderer. A managed dependency and not a board fragment, because
+  # ESP-IDF resolves REQUIRES in a pass that cannot see -DBOARD - see the note
+  # in main/CMakeLists.txt.
+  espressif/thorvg: "~1.1.0"
 # esp_websocket_client is deliberately absent: the relay drives a WebSocket through
 # the built-in tcp_transport layer instead, so the reading happens on the task that
 # runs the command. See Application/RelayManager/RelaySocket.h.

@@ -6,6 +6,8 @@
 #include "SystemManager.h"
 #include "DeviceDoc.h"
 #include "LedManager/LedManager.h"
+#include "StorageManager/StorageManager.h"
+#include "RenderManager/RenderManager.h"
 
 // The application layer's context: owns this product's managers and answers AppProvider.
 //
@@ -38,15 +40,25 @@ public:
             DeviceDoc::DESCRIPTION, DeviceDoc::INSTRUCTIONS);
 
         ledManager_.Init();
+
+        // Storage before render: RenderManager reads /fonts at Init, and a
+        // renderer that came up first would register no fonts and say so
+        // only in a log line nobody reads until a label has no text.
+        storageManager_.Init();
+        renderManager_.Init();
     }
 
     StruxProvider& getStrux() override { return strux_; }
     BoardContext& getBoard() override { return board_; }
     LedManager& getLedManager() override { return ledManager_; }
+    StorageManager& getStorageManager() override { return storageManager_; }
+    RenderManager& getRenderManager() override { return renderManager_; }
 
 private:
     BoardContext& board_;
     StruxProvider& strux_;
 
     LedManager ledManager_{*this};
+    StorageManager storageManager_{*this};
+    RenderManager renderManager_{*this};
 };
