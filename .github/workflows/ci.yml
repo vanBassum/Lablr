@@ -1,0 +1,100 @@
+name: CI
+
+# Every push and every pull request. Until this existed, the only workflow was
+# the release one, which fires on `v*` tags - so a commit that did not compile
+# stayed unnoticed until somebody cut a release, and the first sign of it was a
+# failed release rather than a failed build.
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"]      # a tag is the release workflow's job, not this one
+  pull_request:
+  workflow_dispatch: {}
+
+env:
+  IDF_VERSION: "v6.0"
+
+jobs:
+  # The parts that need no device, run first because they finish in seconds and
+  # a failure here is always a real one.
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build and run the host tests
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -Wall -Wextra -Werror \
+              -I main/lib/common -I main/app/PrintManager \
+              test/host/test_pure.cpp -o test_pure
+          ./test_pure
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install
+        run: cd frontend && pnpm install --frozen-lockfile
+
+      # `tsc --noEmit` checks NOTHING here - the root tsconfig has files: [].
+      # See CLAUDE.md.
+      - name: Typecheck
+        run: cd frontend && pnpm typecheck
+
+      - name: Build
+        run: cd frontend && pnpm build
+
+  # Does it still compile for the real board. Same two halves as the release
+  # workflow: set-target picks the chip, -DBOARD picks the pinout.
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: esp32s3_n16r8
+            target: esp32s3
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # The ESP-IDF container has no pnpm, so www/ is built here and the
+      # firmware links what it finds.
+      - name: Build frontend
+        run: cd frontend && pnpm install --frozen-lockfile && pnpm build
+
+      - name: Build firmware (ESP-IDF)
+        uses: espressif/esp-idf-ci-action@v1.2.0
+        with:
+          esp_idf_version: ${{ env.IDF_VERSION }}
+          target: ${{ matrix.target }}
+          command: |
+            set -euo pipefail
+            git config --global --add safe.directory "$PWD"
+            idf.py -DBOARD=${{ matrix.board }} set-target ${{ matrix.target }}
+            idf.py -DBOARD=${{ matrix.board }} build

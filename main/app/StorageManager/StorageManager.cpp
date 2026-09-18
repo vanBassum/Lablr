@@ -1,4 +1,5 @@
 #include "StorageManager.h"
+#include "PathResolve.h"
 #include "StruxProvider.h"
 #include "CommandManager.h"
 #include "ReplyBody.h"
@@ -75,17 +76,13 @@ void StorageManager::Mount()
              BASE_PATH, total / 1024, freeBytes / 1024);
 }
 
-bool StorageManager::Resolve(const char* path, char* out, size_t cap)
+bool StorageManager::Resolve(const char* wirePath, char* out, size_t cap)
 {
-    if (!path) return false;
-
-    // "..", anywhere, is refused rather than normalised. There is no legitimate
-    // use for it here and normalising is how path checks get subtly wrong.
-    if (strstr(path, "..") != nullptr) return false;
-
-    const char* sep = (path[0] == '/') ? "" : "/";
-    int n = snprintf(out, cap, "%s%s%s", BASE_PATH, sep, path);
-    return n > 0 && static_cast<size_t>(n) < cap;
+    // The rule itself lives in lib/common/PathResolve.h, which has no
+    // dependencies and is therefore compiled and tested on a PC. This is the
+    // only barrier between a path a client chose and the rest of the VFS, and a
+    // barrier nothing exercises is a barrier nobody has checked.
+    return path::ResolveUnder(BASE_PATH, wirePath, out, cap);
 }
 
 // ──────────────────────────────────────────────────────────────
