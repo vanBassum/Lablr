@@ -9,46 +9,48 @@ Last updated 2026-09-18.
 
 ## Now
 
-**A label prints.** SVG on FAT → ThorVG → threshold → LabelWriter raster → USB bulk OUT →
-paper, driven by `print svg` and by the Render page's Print button, which calls that same
-command. A 25 × 25 mm label at 295 × 295 dots costs 164 ms to render, 31 ms to convert and
-785 ms to send; the job is 25,186 bytes with 14,296 dots of ink. The rendering path is
-unchanged and shared — `render svg` and `print svg` call one `RenderManager::Render`, so
-the preview predicts the print by construction rather than by agreement.
+**Media is data, and the 25 × 25 mm stock is calibrated.** `/media` holds one JSON
+object per roll, written at runtime through `media list/get/set/delete`; `print svg -media
+square25 -path /labels/bc547.svg` is the whole call and a correctly positioned label comes
+out. The schema is five fields — `name`, `widthUm`, `heightUm`, `offsetXUm`, `offsetYUm` —
+in integer micrometres, with no `dpi` and no head width, because those belong to the
+printer and `print status` reports them.
 
-**What the printer is, from the printer.** DYMO LabelWriter 450, `0922:0020` rev 0112,
-serial 16031114352460. One interface, class 07/01/02 (printer, bidirectional), EP OUT
-0x02 and EP IN 0x82, both bulk, both 64-byte MPS. `usb status` reports all of it plus
-GET_PORT_STATUS, so paper-out comes from the printer rather than from a guess.
+**What the paper measured, on this printer with this stock:**
 
-**Its IEEE-1284 `CMD:` field is empty**, which is the one fact that would have named the
-raster dialect: `MFG:DYMO;CMD: ;MDL:LabelWriter 450;CLASS:PRINTER;...`. So the ESC
-language is not discoverable from the device, and a second model cannot be supported by
-asking it what it speaks.
+| Quantity | Measured |
+| --- | --- |
+| `offsetXUm` | −1016 (−12 dots) — head column 0 is 1.0 mm *inside* the label's left edge |
+| `offsetYUm` | −3133 (−37 dots) — raster line 0 lands 3.13 mm past the leading edge |
+| Printable | 283 × 258 of the label's 295 × 295 dots |
+| One label | 36 bytes/line, 258 lines, 9,657-byte job — against 25,186 uncalibrated at full head width |
 
-**Outstanding, and the whole point of the next phase: the printable area is not known.**
-The first label came out almost right — frame, both fonts, all four text runs — but its
-right and bottom border sit on or past the label's edge. 295 dots ≈ 25.0 mm at 300 DPI
-landed close enough to confirm 300 DPI on both axes, so what is missing is not the
-resolution but the *margins*: where dot 0 sits relative to the label's leading edge and
-its left edge, and how many dots of the 295 are actually reachable. The old C# config
-recorded `offsetCorrectionMm: {x: 0, y: -5}` for both rolls it knew, which says the answer
-is non-zero and was found by measurement before. `print svg` has `offsetX` but **no
-vertical offset at all** — that is a known gap, deliberately not filled by guessing.
+Both axes lose a margin, which is why `printableWidthDots`/`printableHeightDots` are
+reported — **derived from the offsets, never stored.** A design has to keep its content
+clear of them; `/labels/bc547.svg` does.
 
-**Outstanding: `/media` is still empty, and now has facts to be built from.** Geometry is
-supplied by the caller in printer dots. `headWidth` defaults to 672 (the 300 DPI head) and
-is an argument because the head prints from its own left edge — a 295-dot label placed at
-offset 0 leaves 377 dots of head hanging off the paper, which is why the full-width test
-pattern ran off the label.
+**Outstanding: the browser Print button is still the one path never physically
+exercised.** Everything it calls has been driven from a script and works. It is one click
+on the Render page after selecting the medium.
 
-**Outstanding: the head is addressed at full width for every job.** `bytesPerLine` is 84
-whatever the label's width, so a 25 mm label ships 84 bytes per line to use 37 of them.
-Narrowing `ESC D` to the label is an obvious saving and is unproven on this printer.
+**Outstanding: is the vertical offset actually a constant?** Every measurement of it so
+far followed a job that *overran* the label — the 400-line rulers on a 295-dot label, whose
+tails are visible at the top of each calibration photo. If raster line 0 depends on the
+previous job's length rather than on the media, it is not a per-medium property and the
+schema needs rethinking. Two consecutive same-length prints settle it. The legacy C#
+carried a fixed −5 mm for every roll, which is weak evidence that it is constant — and
+weak evidence is what it is, since the measured value here is −3.13 mm.
+
+**Outstanding: the calibrated label is good, not perfect.** Deliberately parked rather
+than chased; the residual is small and the next real information comes from a second roll,
+not from another decimal place on this one.
+
+**Outstanding: only one medium exists.** Adding label formats and anything
+AI-facing is the next phase, on purpose.
 
 **Settled, and not revisited without a measurement:** the S3-only board
-(`esp32s3_n16r8`, 16 MB flash, 8 MB octal PSRAM, verified at boot on MAC
-80:b5:4e:db:47:18), the 3 MB + 3 MB OTA plus 9.875 MB `storage` flash map, no LED, and
-the printer on the S3's native USB pins with **5 V fed to VBUS from outside** — the board
-cannot source it, and with no VBUS the printer never attaches its pull-up and the host
-enumerates nothing at all.
+(`esp32s3_n16r8`, 16 MB flash, 8 MB octal PSRAM, MAC 80:b5:4e:db:47:18), the 3 MB + 3 MB
+OTA plus 9.875 MB `storage` flash map, no LED, the printer on the S3's native USB pins
+with **5 V fed to VBUS from outside**, 300 DPI and a 672-dot head, and the raster narrowed
+to `ceil((offsetX + width) / 8)` — the far end only, because `ESC D` is a count from head
+column 0 and cannot be given an origin.
