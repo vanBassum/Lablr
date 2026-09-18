@@ -9,38 +9,46 @@ Last updated 2026-09-18.
 
 ## Now
 
-**The rendering path is proved on hardware, end to end.** `fs write` → SVG on FAT →
-ThorVG → ARGB bitmap → command reply, driven both from a script and from the device's
-own Files and Render pages. Geometry is pixel-perfect; `<text>` renders with a TrueType
-font read from `/fonts`. A 400×200 render costs 320 KB of PSRAM (the canvas itself),
-~25 KB of internal heap, leaves ~11.5 KB of the worker's 16 KB stack, and takes ~780 ms
-round trip including shipping 313 KB over the WebSocket.
+**A label prints.** SVG on FAT → ThorVG → threshold → LabelWriter raster → USB bulk OUT →
+paper, driven by `print svg` and by the Render page's Print button, which calls that same
+command. A 25 × 25 mm label at 295 × 295 dots costs 164 ms to render, 31 ms to convert and
+785 ms to send; the job is 25,186 bytes with 14,296 dots of ink. The rendering path is
+unchanged and shared — `render svg` and `print svg` call one `RenderManager::Render`, so
+the preview predicts the print by construction rather than by agreement.
 
-**Outstanding: the ThorVG fork is not made yet.** Font support needs one token removed
-from the component (`-D__linux__`), agreed to be carried as a fork of
-`espressif/idf-extra-components`. Until that fork exists, `main/idf_component.yml` still
-points at the registry and the build refuses with instructions; the bench works because
-this machine's `managed_components/` copy is patched by hand, which a clean clone will
-not be. The stanza to switch to is in that file, and it is worth a PR upstream.
+**What the printer is, from the printer.** DYMO LabelWriter 450, `0922:0020` rev 0112,
+serial 16031114352460. One interface, class 07/01/02 (printer, bidirectional), EP OUT
+0x02 and EP IN 0x82, both bulk, both 64-byte MPS. `usb status` reports all of it plus
+GET_PORT_STATUS, so paper-out comes from the printer rather than from a guess.
 
-**Outstanding: printing does not exist.** No USB host, no DYMO protocol. `DeviceDoc`
-says so explicitly, because a model that assumes otherwise will tell someone a label was
-printed.
+**Its IEEE-1284 `CMD:` field is empty**, which is the one fact that would have named the
+raster dialect: `MFG:DYMO;CMD: ;MDL:LabelWriter 450;CLASS:PRINTER;...`. So the ESC
+language is not discoverable from the device, and a second model cannot be supported by
+asking it what it speaks.
 
-**Outstanding: `/media` is empty.** Render sizes are given as explicit pixel width and
-height. Media definitions — physical size, DPI — are the next design decision, and the
-render command's arguments are where they will land.
+**Outstanding, and the whole point of the next phase: the printable area is not known.**
+The first label came out almost right — frame, both fonts, all four text runs — but its
+right and bottom border sit on or past the label's edge. 295 dots ≈ 25.0 mm at 300 DPI
+landed close enough to confirm 300 DPI on both axes, so what is missing is not the
+resolution but the *margins*: where dot 0 sits relative to the label's leading edge and
+its left edge, and how many dots of the 295 are actually reachable. The old C# config
+recorded `offsetCorrectionMm: {x: 0, y: -5}` for both rolls it knew, which says the answer
+is non-zero and was found by measurement before. `print svg` has `offsetX` but **no
+vertical offset at all** — that is a known gap, deliberately not filled by guessing.
 
-**Outstanding: the bench font is Verdana.** Copied off this Windows machine to prove the
-path; it is not redistributable and is not in the repo. Anything shipped wants an open
-font (DejaVu, Liberation, Noto).
+**Outstanding: `/media` is still empty, and now has facts to be built from.** Geometry is
+supplied by the caller in printer dots. `headWidth` defaults to 672 (the 300 DPI head) and
+is an argument because the head prints from its own left edge — a 295-dot label placed at
+offset 0 leaves 377 dots of head hanging off the paper, which is why the full-width test
+pattern ran off the label.
 
-**Worth backporting to Strux:** the WebSocket inbound-frame fix. The local transport read
-frames into a 512-byte stack buffer while declaring `INBOUND_WINDOW = 4096`, so any frame
-of 512 bytes or more dropped the client — which also means `partition write` from the
-browser over the LAN has been broken. Same fix, in `main/strux/WebServerManager/`.
+**Outstanding: the head is addressed at full width for every job.** `bytesPerLine` is 84
+whatever the label's width, so a 25 mm label ships 84 bytes per line to use 37 of them.
+Narrowing `ESC D` to the label is an obvious saving and is unproven on this printer.
 
 **Settled, and not revisited without a measurement:** the S3-only board
 (`esp32s3_n16r8`, 16 MB flash, 8 MB octal PSRAM, verified at boot on MAC
-80:b5:4e:db:47:18), the 3 MB + 3 MB OTA plus 9.875 MB `storage` flash map, and no LED —
-`MockLed` is permanent, because a label printer has nothing to indicate.
+80:b5:4e:db:47:18), the 3 MB + 3 MB OTA plus 9.875 MB `storage` flash map, no LED, and
+the printer on the S3's native USB pins with **5 V fed to VBUS from outside** — the board
+cannot source it, and with no VBUS the printer never attaches its pull-up and the host
+enumerates nothing at all.
