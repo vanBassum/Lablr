@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { LightbulbIcon, TerminalIcon, SettingsIcon, DownloadIcon, FolderIcon, ImageIcon, TagIcon } from "lucide-react"
+import { PrinterIcon, TerminalIcon, SettingsIcon, DownloadIcon, FolderIcon, TagIcon } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -19,19 +19,21 @@ import { PreReleaseBadge } from "@/components/PreReleaseBadge"
 import { DeviceInfoDialog } from "@/components/DeviceInfoDialog"
 
 // The nav, and the first entry is the product. "home" is a fixed id rather than the
-// feature's name so that a fork replacing this template's demo feature replaces the
-// CONTENTS of HomePage.tsx and the title and icon on this line — a bookmark to "/"
-// still lands on whatever that product's own screen is. LED is what Strux ships as
-// its worked example; a real product's first entry is its own thing.
+// feature's name, so a bookmark to "/" lands on whatever this product's own screen
+// is — which is Print: picking a label and putting it on paper is the whole point
+// of the device, and everything else on this list exists to support it.
+//
+// Strux's LED worked example used to hold this slot. It is gone, along with the
+// LedManager behind it: this board has no LED (see BoardConfig.h) and a demo that
+// indicates nothing is not a home page.
 //
 // There is no "Device" entry: a chip name and a heap figure are reference material
 // you go looking for, not a destination, so they live behind the footer instead of
 // taking a place in the navigation beside the product. See
 // docs/reasoning/2026-09-09-22h00.
 const navItems = [
-  { title: "LED", icon: LightbulbIcon, page: "home" as const },
-  { title: "Files", icon: FolderIcon, page: "files" as const },
-  { title: "Render", icon: ImageIcon, page: "render" as const },
+  { title: "Print", icon: PrinterIcon, page: "home" as const },
+  { title: "Labels", icon: FolderIcon, page: "files" as const },
   { title: "Media", icon: TagIcon, page: "media" as const },
   { title: "Console", icon: TerminalIcon, page: "console" as const },
   { title: "Settings", icon: SettingsIcon, page: "settings" as const },

@@ -2,23 +2,20 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar, type Page } from "@/components/AppSidebar"
 import { useRoute } from "@/hooks/use-route"
 import { useAuth } from "@/hooks/use-auth"
-import HomePage from "@/pages/HomePage"
+import PrintPage from "@/pages/PrintPage"
 import ConsolePage from "@/pages/ConsolePage"
 import SettingsPage from "@/pages/SettingsPage"
 import FirmwarePage from "@/pages/FirmwarePage"
 import FilesPage from "@/pages/FilesPage"
-import RenderPage from "@/pages/RenderPage"
 import MediaPage from "@/pages/MediaPage"
 import LoginPage from "@/pages/LoginPage"
 
 function PageContent({ page }: { page: Page }) {
   switch (page) {
     case "home":
-      return <HomePage />
+      return <PrintPage />
     case "files":
       return <FilesPage />
-    case "render":
-      return <RenderPage />
     case "media":
       return <MediaPage />
     case "console":

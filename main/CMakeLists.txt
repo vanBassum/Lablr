@@ -37,7 +37,6 @@ set(STRUX_SOURCES
 
 # ── The application. This is the list a fork owns.
 set(APP_SOURCES
-    "app/LedManager/LedManager.cpp"
     "app/StorageManager/StorageManager.cpp"
     "app/RenderManager/RenderManager.cpp"
     "app/UsbHostManager/UsbHostManager.cpp"
@@ -76,7 +75,6 @@ set(INCLUDE_DIRS_LIST
     "strux/TimeManager"
     "hardware"
     "app"
-    "app/LedManager"
     "app/StorageManager"
     "app/RenderManager"
     "app/UsbHostManager"

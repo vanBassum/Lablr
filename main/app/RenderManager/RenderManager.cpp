@@ -399,10 +399,14 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
                  "SVG to render, rooted at the label filesystem, e.g. "
                  "'/labels/test.svg'."),
         Required("width",  width,
-                 "Output width in pixels, 1 to 2000. Media definitions will "
-                 "supply this later; for now the caller decides."),
+                 "Output width in pixels, 1 to 2000. To preview what a print "
+                 "will look like, pass the medium's own widthDots from "
+                 "'media list'."),
         Required("height", height,
-                 "Output height in pixels, 1 to 2000."),
+                 "Output height in pixels, 1 to 2000. The medium's heightDots "
+                 "for a print preview. The SVG is fitted to this box with its "
+                 "aspect ratio preserved, so a box of another shape previews "
+                 "the design but not the label."),
         Optional("background", background,
                  "Background colour as 0xAARRGGBB. Defaults to 0xFFFFFFFF, "
                  "opaque white, because a label is printed on white paper. "

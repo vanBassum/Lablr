@@ -151,7 +151,10 @@ private:
         { "media", "set",    &InvokeCommand<&MediaManager::Cmd_MediaSet>,
           "Create or update a medium. This is how new label stock is added - "
           "from dimensions off the box, at runtime, with no firmware change. "
-          "Updating an existing one leaves out what you do not want to change." },
+          "Updating an existing one leaves out what you do not want to change. "
+          "The DIMENSIONS come off the box; the OFFSETS do not follow from them "
+          "and must be measured with 'print calibrate'. Leave them out rather "
+          "than guess - zero is honest, a guess is wrong and looks deliberate." },
         { "media", "delete", &InvokeCommand<&MediaManager::Cmd_MediaDelete>,
           "Forget a medium. The label designs in /labels are untouched; they are "
           "not tied to any particular stock." },

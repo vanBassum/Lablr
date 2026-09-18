@@ -21,16 +21,19 @@ namespace BoardConfig
     //
     // This product has no LED and wants none: it drives a label printer, and
     // the only thing an indicator would report is a link state the printer's
-    // own commands already answer. `Led` is a role every board owes
-    // (BoardProvider), so this board binds MockLed - the role is satisfied,
-    // the template's LedManager demo runs and reports its state, and no pin
-    // is touched.
+    // own commands already answer. The template's LedManager demo that used
+    // to make something of it is gone from main/app/ for that reason.
+    //
+    // `Led` is still a role every board owes (BoardProvider), so this board
+    // binds MockLed: the role is satisfied and no pin is touched. Nothing
+    // above the board reads it any more, and that member goes away the day
+    // `Led` stops being one of the roles - which is a Strux decision, not
+    // this product's, so it stays.
     //
     // So there is no LED_PIN here, and that is a decision rather than a gap.
     // The ESP32-S3-DevKitC-1's LED is an addressable WS2812 on GPIO38 or
-    // GPIO48 depending on revision; writing that driver to light up an
-    // example that will be deleted with the rest of LedManager would be
-    // work spent on the copy, not the product.
+    // GPIO48 depending on revision; writing that driver would be work spent
+    // on the copy, not the product.
     //
     // If some later board genuinely needs one: add LED_PIN and
     // LED_ACTIVE_HIGH here and swap MockLed for GpioLed in BoardContext.h.

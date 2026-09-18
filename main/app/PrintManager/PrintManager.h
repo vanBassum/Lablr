@@ -176,7 +176,10 @@ private:
           "geometry comes from it - size, and the calibrated offsets that put "
           "the design where the paper actually is - so a caller needs to know "
           "nothing about dots. The SVG is fitted exactly as 'render svg' fits "
-          "it, so the preview is what comes out." },
+          "it, so the preview is what comes out. This is the PHYSICAL one: it "
+          "advances the roll and consumes a label, with no undo. 'render svg' "
+          "with the medium's widthDots and heightDots shows the same picture "
+          "and costs nothing." },
         { "print", "test",      &InvokeCommand<&PrintManager::Cmd_PrintTest>,
           "Print a built-in striped test pattern at full head width. No "
           "filesystem, no renderer and no medium, so it separates a USB or "

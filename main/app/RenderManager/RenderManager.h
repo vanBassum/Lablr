@@ -169,7 +169,9 @@ private:
           "Render a stored SVG to a bitmap and return it WITHOUT printing. The "
           "reply is a JSON header line (width, height, format, stride, bytes), "
           "a newline, then the raw pixels. This is the preview: use it to see "
-          "what a label will look like before committing it." },
+          "what a label will look like before committing it. Nothing is "
+          "consumed and no paper moves, so it can be repeated freely - unlike "
+          "'print svg', which spends a label." },
         { "render", "fonts", &InvokeCommand<&RenderManager::Cmd_Fonts>,
           "List the fonts registered with the renderer. An SVG's font-family "
           "must match one of these names exactly or its text renders as "

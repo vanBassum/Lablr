@@ -233,9 +233,12 @@ RequestError StorageManager::Cmd_Write(CommandContext& ctx)
     char path[192] = {};
     RETURN_IF_ERROR(ctx.readArgs(
         Required("path", path,
-                 "File to create or replace, rooted at the filesystem, e.g. "
-                 "'/labels/vanilla.svg'. The file's bytes follow the envelope "
-                 "in this same session - they are not an argument.")));
+                 "File to create or replace, rooted at the filesystem. An SVG "
+                 "label design goes in /labels ('/labels/vanilla.svg'); a "
+                 "TrueType font goes in /fonts and needs a reboot to register. "
+                 "Leave /media to the 'media' commands. The file's bytes follow "
+                 "the envelope in this same session - they are not an "
+                 "argument.")));
 
     char full[256];
     if (!mounted_ || !Resolve(path, full, sizeof(full)))

@@ -48,9 +48,9 @@ private:
     // Hardware instances — buses first, then the drivers that use them.
 
     // A mock rather than a GpioLed, and permanently: this product has no LED
-    // and wants none - see the LED note in BoardConfig.h. The role is bound,
-    // so the application and the template's LED demo work; nothing lights up.
-    // This member goes away entirely if `Led` ever stops being a role every
-    // board owes.
+    // and wants none - see the LED note in BoardConfig.h. Nothing above the
+    // board asks for it any more either, now that the template's LED demo is
+    // out of main/app/. It is bound because `Led` is still a role every board
+    // owes, and it goes away entirely the day that stops being true.
     MockLed led_;
 };

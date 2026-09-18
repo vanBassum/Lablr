@@ -12,7 +12,6 @@
 
 class BoardContext;
 class StruxProvider;
-class LedManager;
 class StorageManager;
 class RenderManager;
 class UsbHostManager;
@@ -29,7 +28,6 @@ public:
     virtual BoardContext& getBoard() = 0;
 
     // ── This application's own managers ──
-    virtual LedManager& getLedManager() = 0;
 
     /// The label filesystem: /labels, /fonts, /media.
     virtual StorageManager& getStorageManager() = 0;
