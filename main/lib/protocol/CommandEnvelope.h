@@ -22,10 +22,6 @@
 // docs/reasoning/ on why the delimiter search is what forces this.)
 namespace protocol
 {
-    // Bounds the envelope, not the request: bodies stream. Long enough for the
-    // argument lists commands actually take.
-    inline constexpr size_t MAX_ENVELOPE = 128;
-
     // Command names are short by convention; a longer one simply won't match.
     inline constexpr size_t MAX_COMMAND_NAME = 32;
 
@@ -108,7 +104,23 @@ namespace protocol
 
         if (category[0] == '\0' || command[0] == '\0')
         {
-            session.reject("expected: <category> <command>");
+            // Say WHICH fault this is. An over-long envelope lands here too - the
+            // router only ever sees its own buffer's worth, so a "type" pushed past
+            // the end is indistinguishable from a missing one until the length is
+            // checked. Reporting the route when the fault was the size cost an
+            // afternoon once.
+            const uint8_t* head = nullptr;
+            size_t headLen = 0;
+            session.peekRequest(head, headLen);
+            const bool json = headLen > 0 && head[0] == '{';
+            const bool terminated =
+                memchr(head, '\n', std::min(headLen, MAX_ENVELOPE)) != nullptr;
+
+            if (json && !terminated)
+                session.reject("envelope too long: it must be one line under "
+                               "512 bytes, and the body goes AFTER the newline");
+            else
+                session.reject("expected: <category> <command>");
             return;
         }
 

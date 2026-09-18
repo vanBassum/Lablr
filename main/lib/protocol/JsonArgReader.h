@@ -18,7 +18,7 @@
 // for now — would convert every command at once without touching a handler.
 class JsonArgReader final : public ArgReader
 {
-    static constexpr size_t MAX_ENVELOPE = 512;
+    static constexpr size_t MAX_ENVELOPE = protocol::MAX_ENVELOPE;
     static constexpr size_t MAX_VALUE    = 192;
 
 public:
