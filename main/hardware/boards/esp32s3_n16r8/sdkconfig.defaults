@@ -30,11 +30,18 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-16mb.csv"
 # S3 and carries timing caveats. 80 MHz is the speed the module is specified
 # for and is not a bottleneck for anything here.
 #
-# UNVERIFIED ON HARDWARE. Nothing here has been flashed yet, and this is
-# exactly the setting a build cannot check: quad instead of octal, or a
-# module that is not really an R8, both produce a green build and a boot
-# that simply reports less PSRAM, or none. It counts as confirmed when a
-# real S3 boots this image and the log says 8 MB was found.
+# VERIFIED ON HARDWARE 2026-09-18, and it needed to be: this is the one setting
+# here that a green build says nothing about. Quad instead of octal, or a module
+# that is not really an R8, boots fine and simply finds less PSRAM, or none.
+# What the S3 (MAC 80:b5:4e:db:47:18) actually reported at boot:
+#
+#   octal_psram: vendor id : 0x0d (AP)     density : 0x03 (64 Mbit)
+#   esp_psram:   Found 8MB PSRAM device    Speed: 80MHz
+#   esp_psram:   SPI SRAM memory test OK
+#   esp_psram:   Adding pool of 8192K of PSRAM memory to heap allocator
+#
+# The memory test is the part that matters - it is the difference between the
+# chip answering and the bus actually working at this speed.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y

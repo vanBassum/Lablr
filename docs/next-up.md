@@ -15,7 +15,7 @@ one board: 16 MB flash, 8 MB octal PSRAM at 80 MHz. The template's `esp32_devkit
 does will fit on. Flash size and partition table are now stated by the board's
 `sdkconfig.defaults` rather than asserted at the root, which is what made a 16 MB board
 possible at all; the drift guard is untouched and now names the board overlay when a line
-does not take. Builds green at 1,273,696 bytes (1.21 MiB), 60% of a slot free.
+does not take. Builds green at 1,273,696 bytes (1.21 MiB), 60% of a slot free, and boots on the bench S3 with every manager up, WiFi joined and SNTP synced.
 
 **Settled: there is no LED, and that is the answer.** The `Led` role binds `MockLed`
 permanently. This product drives a label printer; the only thing an indicator would
@@ -38,8 +38,9 @@ the FAT partition are rendered on-device (ThorVG is the candidate) to a monochro
 and a render/preview command returns that bitmap without printing. ThorVG and the USB host
 component go in `main/idf_component.yml` — a board fragment cannot add REQUIRES.
 
-**Outstanding: octal PSRAM is configured but UNVERIFIED.** `CONFIG_SPIRAM_MODE_OCT` is
-the one setting here that a green build says nothing about: quad instead of octal, or a
-module that is not really an R8, boots fine and just finds less PSRAM, or none. It is
-confirmed when a real S3 boots this image and the log reports the full 8 MB - and not
-before.
+**Settled: octal PSRAM is verified on hardware.** Flashed to the bench S3
+(MAC 80:b5:4e:db:47:18) on 2026-09-18: `Found 8MB PSRAM device`, `Speed: 80MHz`,
+`SPI SRAM memory test OK`, and 8192K added to the heap. The bootloader also reports
+`SPI Flash Size : 16MB` and the partition table exactly as designed, `storage` included
+(the bootloader calls it "Unknown data 01 81" because it has no name for subtype 0x81 -
+that is FAT, and expected).
