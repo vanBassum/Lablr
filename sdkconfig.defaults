@@ -66,29 +66,37 @@ CONFIG_THORVG_THREAD_ENABLED=y
 # OTA rollback — pairs with esp_ota_mark_app_valid_cancel_rollback() in main.cpp
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
-# Dynamic frequency scaling: the CPU drops to the XTAL frequency whenever no task
-# holds a power-management lock, which on a device waiting for a request is nearly
-# all the time. DFS_INIT_AUTO configures it from startup code — max = the default
-# CPU frequency, min = XTAL — so no call is needed here; a fork wanting other bounds
-# calls esp_pm_configure() and overrides them. `system info` reports what took.
+# Full speed, and no power management at all. This is a mains-powered label
+# printer: it is plugged into a DYMO over USB, it has no battery, and the thing
+# it does between long idle periods is rasterise SVGs — which is pure CPU, and
+# which a person is waiting on. There is nothing here to trade latency for.
 #
-# WiFi holds an APB_FREQ_MAX lock (esp_wifi's "wifi" lock, released only by modem
-# sleep) and WIFI_PS_NONE — set deliberately, see WiFiInterface.cpp — never lets it
-# go. APB at 80 MHz needs the PLL, so with the radio up the floor is 80 MHz and not
-# the XTAL's 40; the 160 -> 80 step is still most of the saving, and the XTAL floor
-# applies while the radio is down between station rounds.
+# 240 MHz rather than the S3's 160 MHz default, because the rasteriser is the
+# device's slowest visible operation and it scales directly with clock.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# Dynamic frequency scaling, deliberately OFF — this reverses an earlier decision
+# (docs/reasoning/2026-09-02-15h52 and -15h53) and the reasoning that supported it
+# still stands; what changed is the product, not the analysis. DFS dropped the CPU
+# toward the XTAL whenever no task held a PM lock, which on a device waiting for a
+# request was nearly all the time, and it cost a few microseconds of interrupt
+# latency and coarser tick timekeeping to save milliamps nobody is counting.
 #
-# The cost is a few microseconds of extra interrupt latency and coarser RTOS tick
-# timekeeping. The console is unaffected: esp_pm re-clocks the console UART off
-# REF_TICK/XTAL so its baud rate does not follow APB.
+# Worth keeping from that analysis, because it bounds what turning this back on
+# could ever buy: WiFi holds an APB_FREQ_MAX lock that WIFI_PS_NONE (set
+# deliberately, see WiFiInterface.cpp) never releases, so with the radio up the
+# floor was 80 MHz rather than the XTAL's 40 — the saving was 160 -> 80, not
+# 160 -> 40.
 #
-# NOT enabled: FREERTOS_USE_TICKLESS_IDLE. It reads like a free prerequisite for
-# light sleep and is not one — esp_pm's get_lowest_allowed_mode() never returns
-# PM_MODE_LIGHT_SLEEP while light_sleep_enable is false, so tickless idle without
-# light sleep buys nothing and still costs tick accuracy. The two go together, and
-# together they are a battery-powered fork's decision, not the template's.
-CONFIG_PM_ENABLE=y
-CONFIG_PM_DFS_INIT_AUTO=y
+# Written in the "is not set" form rather than as =n on purpose: the drift guard
+# in CMakeLists.txt checks CONFIG_X=... lines against the generated sdkconfig, and
+# a disabled option is spelled as a comment there, so =n would be reported forever
+# as an assertion that did not take.
+# CONFIG_PM_ENABLE is not set
+#
+# FREERTOS_USE_TICKLESS_IDLE stays off too, and now trivially so: it only ever
+# mattered as a prerequisite for light sleep, which is a battery-powered fork's
+# decision and was never this one's.
 
 # lwIP socket budget, and the reason it cannot stay at IDF's default of 10.
 #
