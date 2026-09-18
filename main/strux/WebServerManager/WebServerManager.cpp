@@ -10,10 +10,8 @@
 #include <cstdio>
 #include <cstring>
 #include <esp_log.h>
-#include <esp_vfs_fat.h>
 
 static constexpr const char* TAG = "WebServerManager";
-static constexpr const char* BASE_PATH = "/www";
 static WebServerManager* s_instance_ = nullptr;
 
 WebServerManager::WebServerManager(StruxProvider& strux)
@@ -38,7 +36,6 @@ void WebServerManager::Init()
     auth_.Init();   // snapshot the stored password (after registration)
     wsHandler_.SetAuth(auth_);
 
-    MountFatPartition();
     StartServer();
     RegisterRoutes();
 
@@ -53,27 +50,6 @@ void WebServerManager::Init()
 
     initAttempt.SetReady();
     ESP_LOGI(TAG, "Initialized");
-}
-
-void WebServerManager::MountFatPartition()
-{
-    const esp_vfs_fat_mount_config_t mount_config = {
-        .format_if_mount_failed = true,
-        .max_files = 5,
-        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
-        .disk_status_check_enable = false,
-        .use_one_fat = false,
-    };
-
-    static wl_handle_t wl_handle = WL_INVALID_HANDLE;
-    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(BASE_PATH, "www", &mount_config, &wl_handle);
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to mount FAT partition: %s", esp_err_to_name(err));
-        return;
-    }
-
-    ESP_LOGI(TAG, "FAT partition mounted at %s", BASE_PATH);
 }
 
 void WebServerManager::StartServer()
@@ -116,7 +92,7 @@ void WebServerManager::RegisterRoutes()
     // app that bootstraps the page. No /api command route, no CORS: every
     // device interaction is a session on the one socket.
     wsHandler_.RegisterRoute(server_);
-    staticFileHandler_.RegisterRoute(server_, BASE_PATH);
+    staticFileHandler_.RegisterRoute(server_);
 }
 
 void WebServerManager::Broadcast(const char* json, int len)
@@ -150,15 +126,12 @@ RequestError WebServerManager::Cmd_GetWebFile(CommandContext& ctx)
         "'assets/index.js'. An empty path or a directory resolves to index.html.")));
 
     StaticFileHandler::Resolved file;
-    FILE* f = nullptr;
-
-    if (StaticFileHandler::Resolve(BASE_PATH, path, file))
-        f = fopen(file.path, "rb");
+    const bool found = StaticFileHandler::Resolve(path, file);
 
     // The header is a record; the body is raw bytes after it. The scope must therefore
     // close before the newline that divides them, hence the braces — the reply is not
     // one document, and ctx.out stays reachable alongside ctx.reply for exactly this.
-    if (!f)
+    if (!found)
     {
         // A real 404 — SPA fallback is the asking route layer's decision, not
         // ours (see StaticFileHandler::Resolve).
@@ -181,14 +154,11 @@ RequestError WebServerManager::Cmd_GetWebFile(CommandContext& ctx)
     }
     ctx.out.write("\n", 1);
 
-    // Streams out chunk-by-chunk through the session window; a 200 KB bundle
-    // never needs a 200 KB buffer here or on the transport.
-    char buf[512];
-    size_t r;
-    while ((r = fread(buf, 1, sizeof(buf), f)) > 0)
-        ctx.out.write(buf, r);
-
-    fclose(f);
+    // One write of the whole file, straight from flash-mapped rodata: Session::write
+    // splits it across the session window itself, so a 200 KB bundle still needs no
+    // 200 KB buffer here or on the transport — and no read buffer at all now that
+    // there is no file to read.
+    ctx.out.write(file.data, file.size);
     return RequestError::Ok;
 }
 

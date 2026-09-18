@@ -58,8 +58,6 @@ int UpdateManager::GetPartitions(PartitionInfo* out, int maxCount) const
 {
     const esp_partition_t* running = esp_ota_get_running_partition();
     const esp_partition_t* next    = esp_ota_get_next_update_partition(nullptr);
-    const esp_partition_t* wwwP    = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "www");
 
     int count = 0;
     esp_partition_iterator_t it = esp_partition_find(
@@ -105,10 +103,10 @@ int UpdateManager::GetPartitions(PartitionInfo* out, int maxCount) const
         info.running = (running && p == running);
         info.nextOta = (next && p == next);
 
-        // Uploadable: any non-running OTA app slot, or the www FAT partition.
-        info.uploadable =
-            (p->type == ESP_PARTITION_TYPE_APP && !info.running) ||
-            (wwwP && p == wwwP);
+        // Uploadable: any non-running OTA app slot. Nothing else — the frontend
+        // travels inside the app image now, so there is no data partition on this
+        // device a user is meant to write.
+        info.uploadable = (p->type == ESP_PARTITION_TYPE_APP && !info.running);
 
         info.version[0] = '\0';
         if (p->type == ESP_PARTITION_TYPE_APP)

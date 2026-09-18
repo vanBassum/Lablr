@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react"
 import { backend, NUMERIC_SETTING_TYPES, type SettingEntry, type WifiNetwork } from "@/lib/backend"
 import { useConnectionStatus } from "@/hooks/use-connection-status"
-import { SaveIcon, Undo2Icon, PowerIcon, SearchIcon, LockIcon, BracesIcon } from "lucide-react"
+import { SaveIcon, Undo2Icon, PowerIcon, SearchIcon, LockIcon, BracesIcon, ChevronDownIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import {
   AlertDialog,
@@ -27,59 +28,158 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : "Unknown error"
 }
 
-// Group settings by prefix (e.g. "wifi.ssid" → "wifi", "mqtt.broker" → "mqtt")
-function groupSettings(settings: SettingEntry[]): { label: string; prefix: string; items: SettingEntry[] }[] {
-  const groups = new Map<string, SettingEntry[]>()
-  for (const s of settings) {
-    const dot = s.key.indexOf(".")
-    const prefix = dot > 0 ? s.key.slice(0, dot) : "general"
-    if (!groups.has(prefix)) groups.set(prefix, [])
-    groups.get(prefix)!.push(s)
-  }
-
-  const labels: Record<string, string> = {
-    wifi: "WiFi",
-    device: "Device",
-    ntp: "Time & NTP",
-  }
-
-  return [...groups.entries()].map(([prefix, items]) => ({
-    prefix,
-    label: labels[prefix] ?? prefix.charAt(0).toUpperCase() + prefix.slice(1),
-    items,
-  }))
+type SettingGroup = {
+  id: string
+  label: string
+  items: SettingEntry[]
 }
 
-// ── Table of contents ────────────────────────────────────────
+// How settings are PRESENTED, which is not how they are stored.
+//
+// The device namespaces by the manager that owns a setting — `telem.*` belongs to
+// TelemetryManager, `ntp.*` to TimeManager — and that is right on the device,
+// where a namespace says who is responsible for a value. It is the wrong axis for
+// this page: someone looking for "how often does it report, and against which
+// clock" does not care that two managers answer, and eight cards of one or two
+// rows each made them hunt. So a card is a PURPOSE, and this table is the whole
+// mapping: one row per card in display order, listing the key prefixes it gathers.
+//
+// Nothing about storage or addressing moves. A setting is still registered, read
+// and written by its own key — this is a lens over the same list.
+const UI_GROUPS: { id: string; label: string; prefixes: string[] }[] = [
+  { id: "general", label: "General", prefixes: ["device", "led"] },
+  { id: "relay", label: "Relay", prefixes: ["relay"] },
+  { id: "web", label: "Web", prefixes: ["web"] },
+  { id: "telemetry", label: "Telemetry & Time", prefixes: ["telem", "ntp"] },
+  { id: "network", label: "Network", prefixes: ["wifi", "net"] },
+]
 
-function SettingsToc({
+// A prefix no row above claims still has to appear. A fork registering `foo.bar`,
+// or a framework manager gaining a setting before this table catches up, must end
+// up visible and editable rather than quietly absent — a settings page that hides
+// a setting is worse than one with a plainly named card on the end.
+const OTHER_GROUP = { id: "other", label: "Other" }
+
+function prefixOf(key: string): string {
+  const dot = key.indexOf(".")
+  return dot > 0 ? key.slice(0, dot) : key
+}
+
+function groupSettings(settings: SettingEntry[]): SettingGroup[] {
+  const owner = new Map<string, string>()
+  for (const g of UI_GROUPS) for (const p of g.prefixes) owner.set(p, g.id)
+
+  const byGroup = new Map<string, SettingEntry[]>()
+  for (const s of settings) {
+    const id = owner.get(prefixOf(s.key)) ?? OTHER_GROUP.id
+    if (!byGroup.has(id)) byGroup.set(id, [])
+    byGroup.get(id)!.push(s)
+  }
+
+  const groups: SettingGroup[] = []
+  for (const g of UI_GROUPS) {
+    const items = byGroup.get(g.id)
+    if (!items || items.length === 0) continue
+
+    // Rows follow the order their prefixes are listed above, and the device's own
+    // order within a prefix — so General reads Device Name then LED, and because
+    // the sort is stable each prefix's own block is left alone.
+    const rank = new Map(g.prefixes.map((p, i) => [p, i]))
+    items.sort((a, b) => (rank.get(prefixOf(a.key)) ?? 0) - (rank.get(prefixOf(b.key)) ?? 0))
+
+    groups.push({ id: g.id, label: g.label, items })
+  }
+
+  const rest = byGroup.get(OTHER_GROUP.id)
+  if (rest && rest.length > 0) groups.push({ ...OTHER_GROUP, items: rest })
+
+  return groups
+}
+
+// ── Column packing ───────────────────────────────────────────
+//
+// A `grid-cols-2` put both columns on shared rows, so a short card sat beside a
+// tall one and the row grew to the taller of the two — the gap under Net was the
+// height of Relay. The columns have to flow independently.
+//
+// `columns-2` is the CSS answer and it is one class, but a multi-column box
+// clips absolutely positioned descendants to the column, and this page has
+// one: the WiFi scan dropdown. So the split is done here and each column is an
+// ordinary flex stack, which also leaves `position: absolute` behaving normally.
+//
+// Cards are handed out as a PREFIX, not round-robin: the left column takes
+// groups until it is the taller half, then everything else goes right. That
+// keeps document order, so stacking the two columns on a narrow screen gives
+// back exactly the device's own ordering with no reshuffle.
+function packColumns(groups: SettingGroup[]): [SettingGroup[], SettingGroup[]] {
+  // Rows dominate the height of a card; the 1 is its header.
+  const weight = (g: SettingGroup) => 1 + g.items.length
+  const total = groups.reduce((n, g) => n + weight(g), 0)
+
+  const left: SettingGroup[] = []
+  const right: SettingGroup[] = []
+  let filled = 0
+  let filling = true
+
+  for (const g of groups) {
+    const w = weight(g)
+    // Straddle the midpoint rather than stopping short of it, so the card that
+    // crosses half lands wherever it leaves the two columns closest in height.
+    if (filling && filled + w / 2 <= total / 2) {
+      left.push(g)
+      filled += w
+    } else {
+      // Once the split has happened it must not reopen, or a later small group
+      // would jump back to the left and break document order.
+      filling = false
+      right.push(g)
+    }
+  }
+
+  // One very tall first card can clear the midpoint on its own and leave the
+  // left column empty; it still belongs on the left.
+  if (left.length === 0 && right.length > 0) left.push(right.shift()!)
+
+  return [left, right]
+}
+
+// ── Category filter row ──────────────────────────────────────
+//
+// This replaces the old right-hand "On this page" list. That column cost ~12rem
+// of width to do nothing but scroll the page it sat beside; a chip row costs one
+// line and can *filter*, which is the cheaper way to stop scrolling altogether.
+
+function CategoryFilter({
   groups,
-  activePrefix,
+  active,
+  onSelect,
 }: {
-  groups: { label: string; prefix: string }[]
-  activePrefix: string | null
+  groups: SettingGroup[]
+  active: string | null
+  onSelect: (prefix: string | null) => void
 }) {
+  const total = groups.reduce((n, g) => n + g.items.length, 0)
+
   return (
-    <div className="space-y-1">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        On this page
-      </p>
+    <div className="flex min-w-0 flex-wrap items-center gap-1">
+      <Button
+        size="xs"
+        variant={active === null ? "default" : "ghost"}
+        onClick={() => onSelect(null)}
+      >
+        All
+        <span className="ml-1 tabular-nums opacity-60">{total}</span>
+      </Button>
       {groups.map((g) => (
-        <a
-          key={g.prefix}
-          href={`#settings-${g.prefix}`}
-          onClick={(e) => {
-            e.preventDefault()
-            document.getElementById(`settings-${g.prefix}`)?.scrollIntoView({ behavior: "smooth" })
-          }}
-          className={`block rounded-md px-3 py-1.5 text-sm transition-colors hover:text-foreground ${
-            activePrefix === g.prefix
-              ? "bg-muted font-medium text-foreground"
-              : "text-muted-foreground"
-          }`}
+        <Button
+          key={g.id}
+          size="xs"
+          variant={active === g.id ? "default" : "ghost"}
+          onClick={() => onSelect(active === g.id ? null : g.id)}
         >
           {g.label}
-        </a>
+          <span className="ml-1 tabular-nums opacity-60">{g.items.length}</span>
+        </Button>
       ))}
     </div>
   )
@@ -90,12 +190,12 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingEntry[]>([])
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [activePrefix, setActivePrefix] = useState<string | null>(null)
+  const [category, setCategory] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [search, setSearch] = useState("")
   const [jsonOpen, setJsonOpen] = useState(false)
   const [jsonText, setJsonText] = useState("")
   const [jsonError, setJsonError] = useState("")
-  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (connection !== "connected") return
@@ -104,24 +204,6 @@ export default function SettingsPage() {
       setDirty(false)
     }).catch((e) => toast.error("Failed to load settings", { description: errorMessage(e) }))
   }, [connection])
-
-  useEffect(() => {
-    if (settings.length === 0 || !scrollRef.current) return
-    const root = scrollRef.current
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            const prefix = (entry.target as HTMLElement).dataset.prefix
-            if (prefix) setActivePrefix(prefix)
-          }
-        }
-      },
-      { root, rootMargin: "-20% 0px -70% 0px" },
-    )
-    root.querySelectorAll<HTMLElement>("[data-prefix]").forEach((el) => observer.observe(el))
-    return () => observer.disconnect()
-  }, [settings])
 
   async function handleChange(key: string, value: string) {
     try {
@@ -190,38 +272,70 @@ export default function SettingsPage() {
   }
 
   const groups = groupSettings(settings)
-  const filteredGroups = search.trim()
-    ? groups
-        .map((g) => ({
-          ...g,
-          items: g.items.filter(
-            (s) =>
-              s.label.toLowerCase().includes(search.toLowerCase()) ||
-              s.key.toLowerCase().includes(search.toLowerCase()),
-          ),
-        }))
-        .filter((g) => g.items.length > 0)
-    : groups
+
+  // Search and category compose: the chips narrow to one group, the search box
+  // narrows within whatever is showing.
+  const needle = search.trim().toLowerCase()
+  const visibleGroups = groups
+    .filter((g) => category === null || g.id === category)
+    .map((g) =>
+      needle
+        ? {
+            ...g,
+            items: g.items.filter(
+              (s) => s.label.toLowerCase().includes(needle) || s.key.toLowerCase().includes(needle),
+            ),
+          }
+        : g,
+    )
+    .filter((g) => g.items.length > 0)
+
+  const [leftColumn, rightColumn] = packColumns(visibleGroups)
+
+  function toggleCollapsed(id: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+  }
+
+  function renderColumn(column: SettingGroup[]) {
+    return (
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        {column.map((group) => (
+          <GroupCard
+            key={group.id}
+            group={group}
+            collapsed={collapsed.has(group.id)}
+            onToggle={() => toggleCollapsed(group.id)}
+            onChange={handleChange}
+          />
+        ))}
+      </div>
+    )
+  }
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl flex-col">
-      {/* Header */}
-      <div className="shrink-0 pb-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold">Settings</h1>
+    <div className="flex h-full w-full flex-col">
+      {/* Toolbar — title, state, actions; then search + category chips */}
+      <div className="shrink-0 space-y-2 pb-3">
+        <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold leading-tight">Settings</h1>
+            <p className="truncate text-sm text-muted-foreground">Configure your Strux device</p>
+          </div>
           {dirty && (
-            <p className="flex-1 text-sm text-amber-500">Unsaved changes — press Save to write to flash.</p>
+            <span className="rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-500">
+              Unsaved
+            </span>
           )}
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex items-center gap-1.5">
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
-                >
-                  <PowerIcon className="mr-1.5 size-3.5" />
-                  Reboot
+                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
+                  <PowerIcon />
+                  <span className="hidden sm:inline">Reboot</span>
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -239,76 +353,53 @@ export default function SettingsPage() {
               </AlertDialogContent>
             </AlertDialog>
             <Button variant="outline" size="sm" onClick={openJsonEditor}>
-              <BracesIcon className="mr-1.5 size-3.5" />
-              JSON
+              <BracesIcon />
+              <span className="hidden sm:inline">JSON</span>
             </Button>
             <Button variant="outline" size="sm" onClick={handleReload}>
-              <Undo2Icon className="mr-1.5 size-3.5" />
-              Undo
+              <Undo2Icon />
+              <span className="hidden sm:inline">Undo</span>
             </Button>
             <Button size="sm" onClick={handleSave} disabled={!dirty || saving}>
-              <SaveIcon className="mr-1.5 size-3.5" />
+              <SaveIcon />
               {saving ? "Saving..." : "Save"}
             </Button>
           </div>
         </div>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="relative w-full sm:w-52">
+            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="h-7 pl-8 text-[13px]"
+              placeholder="Search settings…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {groups.length > 0 && (
+            <CategoryFilter groups={groups} active={category} onSelect={setCategory} />
+          )}
+        </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-12">
-        {/* Main settings — scrollable */}
-        <div ref={scrollRef} className="min-w-0 flex-1 overflow-y-auto">
-          <div className="space-y-6 pb-6">
-            {settings.length === 0 ? (
-              <div className="rounded-xl border bg-card text-card-foreground shadow-sm">
-                <p className="p-6 text-sm text-muted-foreground">Loading...</p>
-              </div>
-            ) : filteredGroups.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No settings match "{search}".</p>
-            ) : (
-              filteredGroups.map((group) => (
-                <div
-                  key={group.prefix}
-                  id={`settings-${group.prefix}`}
-                  data-prefix={group.prefix}
-                  className="rounded-xl border bg-card text-card-foreground shadow-sm"
-                >
-                  <div className="border-b p-4">
-                    <h2 className="text-lg font-semibold">{group.label}</h2>
-                  </div>
-                  <ul className="divide-y">
-                    {group.items.map((setting) => (
-                      <SettingRow
-                        key={setting.key}
-                        setting={setting}
-                        onChange={(value) => handleChange(setting.key, value)}
-                      />
-                    ))}
-                  </ul>
-                </div>
-              ))
-            )}
-
+      {/* Groups — two columns of compact cards on desktop, one on narrow */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {settings.length === 0 ? (
+          <Card size="sm">
+            <CardContent className="text-sm text-muted-foreground">Loading…</CardContent>
+          </Card>
+        ) : visibleGroups.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No settings match {needle ? `"${search}"` : "this filter"}.
+          </p>
+        ) : (
+          // Two independent stacks side by side, one above the other on narrow
+          // screens — where the prefix split means they read in device order.
+          <div className="flex flex-col gap-3 pb-6 lg:flex-row lg:items-start">
+            {renderColumn(leftColumn)}
+            {renderColumn(rightColumn)}
           </div>
-        </div>
-
-        {/* Sidebar — only on wide screens */}
-        {groups.length > 0 && (
-          <aside className="hidden w-48 shrink-0 xl:flex xl:flex-col xl:gap-4">
-            <div className="relative shrink-0">
-              <SearchIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-              <Input
-                className="pl-8 text-sm"
-                placeholder="Search…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <SettingsToc groups={filteredGroups} activePrefix={activePrefix} />
-            </div>
-
-          </aside>
         )}
       </div>
 
@@ -342,6 +433,74 @@ export default function SettingsPage() {
 }
 
 
+// ── Group card ───────────────────────────────────────────────
+
+function GroupCard({
+  group,
+  collapsed,
+  onToggle,
+  onChange,
+}: {
+  group: SettingGroup
+  collapsed: boolean
+  onToggle: () => void
+  onChange: (key: string, value: string) => void
+}) {
+  return (
+    // The boundary is a real BORDER, and it has to be. Card's own edge is
+    // `ring-1`, which is a box-shadow: its spread does not participate in layout
+    // and so is not snapped to the device pixel grid. Under Windows display
+    // scaling a 1px ring anti-aliases to a fraction of a pixel and disappears —
+    // visibly so over the white rows, where the header's tint was left doing the
+    // whole job of suggesting an edge. A border is laid out, so it snaps and
+    // stays crisp. `ring-0` retires the inherited one rather than stacking.
+    //
+    // The cost is one pixel of radius: a border insets the padding box, so the
+    // card's inner curve is a pixel tighter than its outer one, and a header
+    // asking for the outer radius would bleed its tint past the curve. It asks
+    // for `--radius-xl` minus that pixel, derived rather than hardcoded so the
+    // two stay in step. That keeps `overflow-hidden` unnecessary — and it has to stay
+    // unnecessary, because it is the property that clips the WiFi scan dropdown
+    // out of existence.
+    <Card
+      size="sm"
+      className="gap-0 overflow-visible rounded-xl border border-border py-0 shadow-sm ring-0"
+    >
+      <CardHeader className="gap-0 rounded-t-[calc(var(--radius-xl)_-_1px)] border-b bg-muted/40 p-0">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          title={collapsed ? `Expand ${group.label}` : `Collapse ${group.label}`}
+          className="flex w-full items-center gap-1.5 rounded-t-[calc(var(--radius-xl)_-_1px)] px-3 py-2 text-left"
+        >
+          {/* Desktop has no chevron; the affordance appears where collapsing is
+              what makes one tall column usable. */}
+          <ChevronDownIcon
+            className={`size-3.5 shrink-0 text-muted-foreground transition-transform lg:hidden ${
+              collapsed ? "-rotate-90" : ""
+            }`}
+          />
+          <span className="truncate text-sm font-semibold">{group.label}</span>
+        </button>
+      </CardHeader>
+      {!collapsed && (
+        <CardContent className="px-0">
+          <ul className="divide-y">
+            {group.items.map((setting) => (
+              <SettingRow
+                key={setting.key}
+                setting={setting}
+                onChange={(value) => onChange(setting.key, value)}
+              />
+            ))}
+          </ul>
+        </CardContent>
+      )}
+    </Card>
+  )
+}
+
 // ── Setting row ──────────────────────────────────────────────
 
 const sensitiveKeys = ["password", "pass"]
@@ -350,6 +509,12 @@ function isSensitive(key: string): boolean {
   const field = key.split(".").pop() ?? ""
   return sensitiveKeys.includes(field)
 }
+
+// Every control sits in this fixed-width well, so the right edge of a card is a
+// single line whatever the mix of switches, inputs and the SSID picker above it.
+// It is the widest thing a row can afford: the label beside it truncates, and a
+// URL or an SSID is the value most worth reading in full.
+const CONTROL_WELL = "flex w-44 shrink-0 items-center justify-end sm:w-64"
 
 function SettingRow({
   setting,
@@ -362,36 +527,40 @@ function SettingRow({
   const isPassword = setting.type === "string" && isSensitive(setting.key)
 
   return (
-    <li className="flex items-center justify-between gap-4 p-4">
+    <li className="flex items-center justify-between gap-3 px-3 py-1.5">
       <div className="min-w-0">
-        <div className="text-sm font-medium">{setting.label}</div>
-        <div className="font-mono text-xs text-muted-foreground">{setting.key}</div>
+        <div className="truncate text-[13px] font-medium leading-tight">{setting.label}</div>
+        <div className="truncate font-mono text-[10px] leading-tight text-muted-foreground">
+          {setting.key}
+        </div>
       </div>
 
-      {setting.type === "bool" ? (
-        <Switch
-          checked={Boolean(setting.value)}
-          onCheckedChange={(checked) => onChange(checked ? "true" : "false")}
-        />
-      ) : isWifiSsid ? (
-        <WifiSsidInput value={String(setting.value)} onChange={onChange} />
-      ) : (
-        <Input
-          className="w-48"
-          type={isPassword ? "password" : NUMERIC_SETTING_TYPES.includes(setting.type) ? "number" : "text"}
-          defaultValue={String(setting.value)}
-          onBlur={(e) => {
-            if (e.target.value !== String(setting.value)) {
-              onChange(e.target.value)
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              ;(e.target as HTMLInputElement).blur()
-            }
-          }}
-        />
-      )}
+      <div className={CONTROL_WELL}>
+        {setting.type === "bool" ? (
+          <Switch
+            checked={Boolean(setting.value)}
+            onCheckedChange={(checked) => onChange(checked ? "true" : "false")}
+          />
+        ) : isWifiSsid ? (
+          <WifiSsidInput value={String(setting.value)} onChange={onChange} />
+        ) : (
+          <Input
+            className="h-7 w-full text-[13px]"
+            type={isPassword ? "password" : NUMERIC_SETTING_TYPES.includes(setting.type) ? "number" : "text"}
+            defaultValue={String(setting.value)}
+            onBlur={(e) => {
+              if (e.target.value !== String(setting.value)) {
+                onChange(e.target.value)
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                ;(e.target as HTMLInputElement).blur()
+              }
+            }}
+          />
+        )}
+      </div>
     </li>
   )
 }
@@ -455,20 +624,21 @@ function WifiSsidInput({
   }
 
   return (
-    <div className="relative">
-      <div className="flex gap-1.5">
+    <div className="relative w-full">
+      <div className="flex gap-1">
         <Button
           variant="outline"
           size="icon-sm"
           onClick={handleScan}
           disabled={scanning}
           title="Scan WiFi networks"
+          className="shrink-0"
         >
           <SearchIcon className="size-3.5" />
         </Button>
         <Input
           ref={inputRef}
-          className="w-48"
+          className="h-7 w-full text-[13px]"
           defaultValue={value}
           onBlur={(e) => {
             if (e.target.value !== value) {

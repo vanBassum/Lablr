@@ -154,36 +154,54 @@ void RelayManager::BuildUri()
     snprintf(uri_, sizeof(uri_), "%s%sid=%s", url, sep, deviceId_);
 }
 
-// Appends a JSON "key":"value" pair, skipping it entirely when the value is empty —
-// an absent key means "this build does not report that", which the relay shows as a
-// blank rather than as the word "unknown".
-static void AppendPair(char* out, size_t cap, const char* key, const char* value)
+// How many bytes `value` occupies once escaped. Only the two characters JSON
+// requires, and control characters dropped: a device name is typed by a human and
+// may hold a quote or a backslash; it may not hold a newline, because nothing that
+// sets one allows it.
+static size_t EscapedLen(const char* value)
 {
-    if (!value || value[0] == '\0') return;
-
-    size_t n = strlen(out);
-    if (n + 6 >= cap) return;
-
-    out[n++] = ',';
-    out[n++] = '"';
-    for (const char* k = key; *k && n + 4 < cap; ++k) out[n++] = *k;
-    out[n++] = '"';
-    out[n++] = ':';
-    out[n++] = '"';
-
-    // Only the two characters JSON requires, and control characters dropped. A device
-    // name is typed by a human and may hold a quote or a backslash; it may not hold a
-    // newline, because nothing that sets one allows it.
-    for (const char* v = value; *v && n + 3 < cap; ++v)
+    size_t n = 0;
+    for (const char* v = value; *v; ++v)
     {
         const unsigned char c = static_cast<unsigned char>(*v);
         if (c < 0x20) continue;
-        if (c == '"' || c == '\\') out[n++] = '\\';
-        out[n++] = static_cast<char>(c);
+        n += (c == '"' || c == '\\') ? 2 : 1;
+    }
+    return n;
+}
+
+// Appends a JSON "key":"value" pair, whole or not at all. False means it did not
+// fit, and the caller decides what that is worth — this function cannot know which
+// key mattered. Whole-or-nothing because the alternative is a truncated value that
+// still looks like a value: a device list showing half a commit sha is worse than
+// one showing none, and a cut in the middle of an escape would not even parse.
+static bool AppendPair(char* out, size_t cap, const char* key, const char* value)
+{
+    const size_t n = strlen(out);
+
+    //          ,     "key"            :     "value"
+    const size_t need = 1 + 1 + strlen(key) + 1 + 1 + 1 + EscapedLen(value) + 1;
+    if (n + need + 1 > cap) return false;   // +1 for the NUL
+
+    size_t w = n;
+    out[w++] = ',';
+    out[w++] = '"';
+    for (const char* k = key; *k; ++k) out[w++] = *k;
+    out[w++] = '"';
+    out[w++] = ':';
+    out[w++] = '"';
+
+    for (const char* v = value; *v; ++v)
+    {
+        const unsigned char c = static_cast<unsigned char>(*v);
+        if (c < 0x20) continue;
+        if (c == '"' || c == '\\') out[w++] = '\\';
+        out[w++] = static_cast<char>(c);
     }
 
-    out[n++] = '"';
-    out[n] = '\0';
+    out[w++] = '"';
+    out[w] = '\0';
+    return true;
 }
 
 void RelayManager::SendHello()
@@ -196,26 +214,85 @@ void RelayManager::SendHello()
     char built[32] = {};
     if (app) snprintf(built, sizeof(built), "%s %s", app->date, app->time);
 
+    // The address the device has on its OWN network, which is the only party that
+    // knows it. What the relay sees on the socket is wherever the connection came
+    // out — a NAT, and behind a reverse proxy its own docker-network peer — so the
+    // column it filled from that was showing 172.18.0.x for every device on the
+    // list. 16 bytes is "255.255.255.255" and its NUL.
+    char ip[16] = {};
+    strux_.getNetworkManager().GetIpv4(ip, sizeof(ip));
+
     // Built in the outbound framing buffer rather than on the stack: this task's
     // stack is sized for the heaviest command handler and must not also carry this.
     // Safe to borrow — a hello goes out before any session exists on this pipe.
     char* body = reinterpret_cast<char*>(sessionFrame_ + session::HEADER_LEN);
     const size_t cap = sizeof(sessionFrame_) - session::HEADER_LEN;
 
+    // ── Everything this device tells the relay about itself ──────────────────
+    //
+    // The relay takes whatever keys arrive, so this table IS the contract: one row
+    // per key, the expression its value comes from, and whether this firmware
+    // considers it required. Adding a fact is a row and nothing else, on either side.
+    //
+    // `required` is the device's own statement, not the server's. It marks a key
+    // whose value this build can always produce, so an empty one is a bug HERE — a
+    // manager that did not initialise, an app descriptor that did not load — and it
+    // says so in the log rather than quietly shipping a device list entry that
+    // cannot be told apart from another board's. The hello still goes out: a partial
+    // one identifies the device better than none.
+    //
+    // An optional key that is empty is a fact this build does not have, not a
+    // failure. It is omitted entirely, and the relay shows a blank rather than the
+    // word "unknown".
+    struct HelloField
+    {
+        const char* key;
+        const char* value;
+        bool        required;
+    };
+
+    const HelloField fields[] = {
+        //  key         value                                required
+        //  ───────────────────────────────────────────────────────────────────────
+        {   "name",     name,                                true    },  // what a human calls this board; falls back to the project name
+        {   "project",  app ? app->project_name : nullptr,   true    },  // the firmware's identity — which product this is
+        {   "desc",     strux_.getSystemManager().GetDescription(),
+                                                             false   },  // one line saying what this product IS, registered by the
+                                                                         // application (DeviceDoc.h). Optional: a fork that has not
+                                                                         // written one yet is a device with no description, not a
+                                                                         // broken hello. The LONG form is not here, it is served by
+                                                                         // `system describe` -- a README does not belong in a chunk
+                                                                         // every reconnect re-sends.
+        {   "fw",       app ? app->version : nullptr,        true    },  // the git TAG (0.1.0), so two builds can share it
+        {   "commit",   STRUX_GIT_COMMIT,                    false   },  // short sha + "-dirty", which is what tells those two apart.
+                                                                         // Optional because a source drop with no .git is a legitimate
+                                                                         // way to build this, and it yields an empty string.
+        {   "idf",      app ? app->idf_ver : nullptr,        false   },  // ESP-IDF version the image was built against
+        {   "built",    built,                               false   },  // compile date and time, from esp_app_desc_t
+        {   "ip",       ip,                                  true    },  // this device's address on its own LAN. Required: the hello goes
+                                                                         // out over a socket that is already up, so an IPv4 exists by
+                                                                         // definition here, and an empty one is a bug in this firmware.
+    };
+
     // `type` is for whoever reads a packet capture; the relay drops it, because the
     // SESSION id is what actually names this chunk.
     snprintf(body, cap, "{\"type\":\"relay hello\"");
-    AppendPair(body, cap, "fw",      app ? app->version : nullptr);
-    AppendPair(body, cap, "commit",  STRUX_GIT_COMMIT);
-    AppendPair(body, cap, "project", app ? app->project_name : nullptr);
-    AppendPair(body, cap, "name",    name);
-    // One line, so the relay's device list — and anything discovering devices through
-    // it — can say what a board IS without asking it anything. The long form (how to
-    // drive it) is NOT here: it is served by `system describe`, on demand, because a
-    // README does not belong in a chunk every reconnect re-sends.
-    AppendPair(body, cap, "desc",    strux_.getSystemManager().GetDescription());
-    AppendPair(body, cap, "idf",     app ? app->idf_ver : nullptr);
-    AppendPair(body, cap, "built",   built);
+
+    // cap - 1 throughout: the closing brace below is reserved, so a pair can never
+    // fill the buffer and leave the JSON unterminated.
+    for (const HelloField& f : fields)
+    {
+        if (!f.value || f.value[0] == '\0')
+        {
+            if (f.required)
+                ESP_LOGW(TAG, "hello: required field '%s' is empty", f.key);
+            continue;
+        }
+
+        if (!AppendPair(body, cap - 1, f.key, f.value))
+            ESP_LOGW(TAG, "hello: '%s' does not fit — it is omitted", f.key);
+    }
+
     strlcat(body, "}", cap);
 
     const size_t len = strlen(body);

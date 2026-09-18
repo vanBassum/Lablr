@@ -64,7 +64,7 @@ export default function FirmwarePage() {
         <div className="border-b p-4">
           <h2 className="text-lg font-semibold">Partitions</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Upload targets non-running OTA slots and the www FAT image. Download is always available.
+            Upload targets non-running OTA slots. Download is always available.
           </p>
         </div>
 

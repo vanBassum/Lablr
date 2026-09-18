@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/gzip.mjs",
+    "build": "tsc -b && vite build",
     "typecheck": "tsc -b --force",
     "preview": "vite preview"
   },

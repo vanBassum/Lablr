@@ -9,26 +9,35 @@ Last updated 2026-09-18.
 
 ## Now
 
-**This repository was re-based on Strux on 2026-09-18 and holds nothing of its own yet.**
-The 218 tracked files of [Strux](https://github.com/vanBassum/Strux) were copied in from
-`c:\Workspace\Strux` at its working-tree state (commit `03a6817` plus 27 files of
-uncommitted framework work that had been built green that morning), and the project
-identity was renamed: `project(Lablr)`, `PROJECT_NAME: "Lablr"` in the release workflow,
-and `DEV_HOST`/`GITHUB_REPO`/`PRODUCT_NAME` in `frontend/src/config.ts`. `main/strux/` was
-deliberately left untouched — it is the template's, and renaming it would cost the ability
-to trade improvements with upstream. So what builds here today is the Strux demo:
-`app/LedManager` and its home page, and nothing else.
+**Synced to Strux `050a4b6`.** This repository is still the template plus a name: the
+only files that differ from upstream are `README.md`, `CLAUDE.md`, `CMakeLists.txt`
+(`project(Lablr)`), `.github/workflows/release.yml`, `frontend/src/config.ts` and this
+file. A sync is therefore a re-copy of every tracked file except those, then re-applying
+the identity. `main/strux/` is never edited here; product code goes in `main/app/`, which
+today still holds Strux's LED demo.
 
-**Outstanding: the previous Lablr is only in git history.** Everything before this — the
-C# render/print API, the label config tree, the web UI — was deleted from the working tree
-before the copy and is still reachable at commit `f0679f0`. Nothing has been committed
-since, so the pivot is not yet a decision the repository records.
+**The www partition is gone, which is what the flash plan was waiting for.** Upstream
+packs the built frontend into one blob linked into the app image
+(`main/strux/WebAssets/`), so `partitions.csv` is now nvs + otadata + phy + two OTA slots
+that fill 4 MB exactly. The intent here is the opposite of upstream's: on a 16 MB ESP32-S3,
+give the OTA slots what they need and make **the rest a FAT partition** for `/labels`,
+`/media` and `/fonts`. Three things that removal took with it and this will need back:
+`fatfs` and `wear_levelling` in `COMPONENT_REQUIRES`, and `CONFIG_FATFS_LFN_HEAP` /
+`CONFIG_FATFS_MAX_LFN` in the defaults.
 
-**Outstanding: no board, no product code.** The boards that came with the template are
-`esp32_devkit` and `esp32c3_supermini`; if this is to be the phone→BLE→USB→Dymo bridge
-that an earlier `lablr-bridge` scaffold aimed at, it wants an ESP32-S3 board folder and
-two managers of its own. That is a decision, not a task — it is not started.
+**Outstanding: the flash-size assertion will refuse the board that needs it.** The root
+`sdkconfig.defaults` asserts `CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y`, and the drift guard in
+`CMakeLists.txt` walks *every* composed defaults file and fails the build naming any line
+that did not take. A board overlay selecting 16 MB makes the root's line lose, so the
+assertion has to move into the per-board overlays before an S3 board can exist. The same
+applies to `CONFIG_PARTITION_TABLE_CUSTOM_FILENAME` if the S3 wants its own layout.
 
-**Outstanding: not built here.** The copy has not been through `idf.py set-target` /
-`build` in this directory, and the frontend has not been `pnpm install`ed. It compiled in
-Strux minutes before the copy, which is evidence and not the same thing.
+**Outstanding: no board, no product code.** Boards are `esp32_devkit` and
+`esp32c3_supermini`. The product is a Strux-connected DYMO LabelWriter: ESP32-S3 driving
+the printer over USB host, SVG labels on FAT rendered on-device (ThorVG is the candidate)
+to a monochrome bitmap, with a render/preview command that returns the bitmap without
+printing. ThorVG and the USB host component go in `main/idf_component.yml` — a board
+fragment cannot add REQUIRES.
+
+**Outstanding: not built here.** No `idf.py set-target`, no `pnpm install` in this
+directory since the re-base.

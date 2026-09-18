@@ -88,7 +88,7 @@ Desktop.ini
 frontend/node_modules/
 frontend/.pnpm-store/
 
-# Frontend build output (baked into firmware via FAT image)
+# Frontend build output (packed into the app image, see main/strux/WebAssets/)
 www/
 
 # IDE

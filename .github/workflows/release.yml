@@ -97,7 +97,6 @@ jobs:
           base="${{ env.PROJECT_NAME }}-${{ matrix.board }}"
           cp build/merged-factory.bin "dist/$base-factory.bin"
           cp "build/${{ env.PROJECT_NAME }}.bin" "dist/$base-app.bin"
-          cp build/www.bin "dist/$base-www.bin"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
@@ -127,7 +126,6 @@ jobs:
 
             One set per board: `esp32_devkit` (ESP32-WROOM-32) and `esp32c3_supermini` (ESP32-C3).
 
-            - **`${{ env.PROJECT_NAME }}-<board>-factory.bin`** — full image (bootloader + partition table + app + web UI). For a first flash or a recovery, from offset zero: `esptool write-flash 0x0 <file>`.
+            - **`${{ env.PROJECT_NAME }}-<board>-factory.bin`** — full image (bootloader + partition table + app, the web UI linked into it). For a first flash or a recovery, from offset zero: `esptool write-flash 0x0 <file>`.
             - **`${{ env.PROJECT_NAME }}-<board>-app.bin`** — application only. Upload it to the inactive `ota_0`/`ota_1` partition from the device's Firmware page.
-            - **`${{ env.PROJECT_NAME }}-<board>-www.bin`** — the web UI as a FAT image. Upload it to the `www` partition from the same page to update the frontend on its own.
           files: dist/*.bin

@@ -159,7 +159,8 @@ private:
     void BuildUri();
 
     /// Tell the relay what this device is: one chunk on the reserved hello session,
-    /// sent immediately after every connect. See SendHello's definition.
+    /// sent immediately after every connect. The fields it sends, and which of them
+    /// are required, are the HelloField table at the top of SendHello's definition.
     void SendHello();
     void ResolveDeviceId();
     void ResolveToken();

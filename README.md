@@ -15,7 +15,7 @@ improvements can travel both ways with the template.
 
 - **WiFi** — Station mode with automatic AP fallback (`Lablr-AP`) after failed connections
 - **Web UI** — React + TypeScript dashboard served from flash, accessible from any browser
-- **OTA Updates** — Dual-partition firmware updates and independent web UI updates, no USB after initial flash
+- **OTA Updates** — Dual-partition firmware updates, no USB after initial flash. The web UI is linked into the app image, so one OTA carries both
 - **Live Console** — Stream device logs to the browser in real time over WebSocket
 - **Settings** — Key/value store backed by NVS with a dynamic settings UI
 - **Time Sync** — SNTP client with timezone support
@@ -49,7 +49,7 @@ Lablr/
 │   │   ├── SystemManager/             # Device identity, ping/info/reboot
 │   │   ├── TelemetryManager/          # Measurements out via the relay
 │   │   ├── TimeManager/               # SNTP + timezone
-│   │   ├── UpdateManager/             # OTA firmware + www partition
+│   │   ├── UpdateManager/             # OTA firmware, any partition by label
 │   │   ├── WebServerManager/          # HTTP + WebSocket server
 │   │   └── lib/                       # Reusable utilities
 │   │       ├── common/                # Stream, MemoryStream, BufferStream, Fatal
@@ -76,7 +76,7 @@ Lablr/
 │   │       ├── GpioLed.h              # GPIO implementation of the Led role
 │   │       └── MockLed.h              # Led role without hardware (state only)
 ├── frontend/                          # React web UI (Vite + Tailwind + shadcn)
-├── www/                               # Build output — gzipped, embedded in flash
+├── www/                               # Build output — packed into one blob, linked into the app
 ├── CMakeLists.txt                     # Root ESP-IDF project config
 ├── partitions.csv                     # Flash partition layout
 └── sdkconfig.defaults                 # ESP-IDF defaults
@@ -149,7 +149,7 @@ idf.py -B build_c3 -D SDKCONFIG=sdkconfig.c3 -DBOARD=esp32c3_supermini set-targe
 idf.py -B build_c3 -D SDKCONFIG=sdkconfig.c3 -DBOARD=esp32c3_supermini build
 ```
 
-If [pnpm](https://pnpm.io/) is installed, the frontend is built automatically as part of `idf.py build`. The React app is compiled, gzipped, and embedded into a FAT partition on flash. No SD card or external storage needed.
+If [pnpm](https://pnpm.io/) is installed, the frontend is built automatically as part of `idf.py build`. The React app is compiled, gzipped per file, packed into one blob by `main/strux/WebAssets/pack_web_assets.py` and linked into the app image as rodata — no partition, no filesystem, no mount. A firmware image is the whole product.
 
 If pnpm is not available, the firmware still builds — you just won't have a web UI until you build the frontend manually (`cd frontend && pnpm install && pnpm build`) and reflash.
 
@@ -228,15 +228,13 @@ That is the whole file. The order *within* each layer lives in that layer's cont
 After initial USB flash, the device can be updated entirely over the web UI:
 
 - **Firmware > Application Firmware** — Writes to the inactive OTA slot, then reboots into it
-- **Firmware > WWW Partition** — Updates the web UI independently of firmware
 
-The CI pipeline produces three artifacts per release:
+The CI pipeline produces two artifacts per release:
 
 | File | Purpose |
 |------|---------|
-| `Lablr-factory.bin` | Full image (bootloader + partitions + app + www) for initial flash |
-| `Lablr-app.bin` | Firmware only, for OTA update via web UI |
-| `Lablr-www.bin` | Web UI only, for updating the frontend independently |
+| `Lablr-factory.bin` | Full image (bootloader + partition table + app, web UI included) for initial flash |
+| `Lablr-app.bin` | Firmware only, for OTA update via web UI — carries the web UI too |
 
 ---
 

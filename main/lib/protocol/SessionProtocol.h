@@ -33,7 +33,13 @@ namespace session
     // Reserved session id for the device's HELLO: one chunk sent immediately after
     // connect saying what this device is — name, project, firmware version, the commit
     // it was built from, and whatever else a build cares to report. A flat JSON map of
-    // string keys to string values, all optional.
+    // string keys to string values.
+    //
+    // Every key is optional *to the relay*, which stores what arrives and shows what it
+    // understands. Which keys this firmware actually sends, and which of them it treats
+    // as required of itself, is one table: the HelloField array in
+    // RelayManager::SendHello. That is the only place to look, and the only place to
+    // edit to add a fact.
     //
     // A THIRD reserved id rather than a command, because a hello is not a request: the
     // device is not waiting on an answer, nothing replies to it, and the relay already

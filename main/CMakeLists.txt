@@ -15,6 +15,7 @@ set(STRUX_SOURCES
     "strux/NetworkManager/NetworkInterface.cpp"
     "strux/NetworkManager/WiFiInterface.cpp"
     "strux/NetworkManager/DnsConfiguration.cpp"
+    "strux/WebAssets/WebAssets.cpp"
     "strux/WebServerManager/WebServerManager.cpp"
     "strux/WebServerManager/Authenticator.cpp"
     "strux/WebServerManager/StaticFileHandler.cpp"
@@ -57,6 +58,7 @@ set(INCLUDE_DIRS_LIST
     "lib/protocol"
     "lib/system"
     "strux"
+    "strux/WebAssets"
     "strux/NetworkManager"
     "strux/WebServerManager"
     "strux/RelayManager"
@@ -84,8 +86,6 @@ set(COMPONENT_REQUIRES
     app_update
     esp_partition
     spi_flash
-    fatfs
-    wear_levelling
     esp_driver_gpio
     mdns
     # Only to report the DFS bounds in `system info` — the scaling itself is
@@ -131,11 +131,33 @@ list(APPEND INCLUDE_DIRS_LIST "hardware/boards/${BOARD}")
 list(APPEND SOURCE_FILES_LIST ${BOARD_SOURCES})
 message(STATUS "Building for BOARD=${BOARD}")
 
+# ── The embedded frontend ─────────────────────────────────────
+# The built frontend does not live on a partition of its own: it is packed into
+# one blob and linked into the app image, so a firmware image is the whole
+# product and an OTA carries the UI with the code that serves it.
+#
+# Chain:  frontend/src/**  ->  (pnpm build)  ->  www/
+#         www/             ->  (pack_web_assets.py)  ->  web_assets.bin
+#         web_assets.bin   ->  (EMBED_FILES)  ->  rodata in the app image
+#
+# It is one blob rather than one EMBED_FILES entry per asset because vite
+# content-hashes its filenames, and EMBED_FILES needs its list when CMake
+# configures — long before vite has run. A single fixed name sidesteps that
+# entirely, and the blob's directory is the manifest WebAssets.cpp reads.
+idf_build_get_property(_python PYTHON)
+
+set(FRONTEND_DIR   "${CMAKE_CURRENT_LIST_DIR}/../frontend")
+set(WWW_DIR        "${CMAKE_CURRENT_LIST_DIR}/../www")
+set(PACK_SCRIPT    "${CMAKE_CURRENT_LIST_DIR}/strux/WebAssets/pack_web_assets.py")
+set(WEB_ASSETS_BIN "${CMAKE_CURRENT_BINARY_DIR}/web_assets.bin")
+set(FRONTEND_STAMP "${CMAKE_CURRENT_BINARY_DIR}/frontend.stamp")
+
 # Register component with ESP-IDF
 idf_component_register(
     SRCS ${SOURCE_FILES_LIST}
     INCLUDE_DIRS ${INCLUDE_DIRS_LIST}
     REQUIRES ${COMPONENT_REQUIRES}
+    EMBED_FILES ${WEB_ASSETS_BIN}
 )
 
 # Board identity define for the (rare) code-level conditionals.
@@ -146,3 +168,51 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE BOARD_${BOARD_UPPER})
 # so that adding an enum value flags every converter that wasn't updated.
 # That flag is only a warning by default — make it the error it's meant to be.
 target_compile_options(${COMPONENT_LIB} PRIVATE -Werror=switch)
+
+# ── Building and packing the frontend ─────────────────────────
+# Everything below runs only in the second pass — idf_component_register returns
+# early while ESP-IDF is still collecting requirements (the REQUIRES note above),
+# and registering these rules twice would be an error.
+
+# What a frontend rebuild depends on. CONFIGURE_DEPENDS re-runs the glob when
+# ninja checks the build, so a newly added .tsx is picked up without a manual
+# reconfigure. node_modules is not globbed: pnpm owns it, and walking it would
+# cost more than the whole build.
+file(GLOB_RECURSE FRONTEND_SOURCES CONFIGURE_DEPENDS "${FRONTEND_DIR}/src/*")
+list(APPEND FRONTEND_SOURCES
+    "${FRONTEND_DIR}/index.html"
+    "${FRONTEND_DIR}/package.json"
+    "${FRONTEND_DIR}/vite.config.ts")
+
+find_program(PNPM pnpm)
+if(PNPM)
+    # --no-frozen-lockfile lets a package.json edit update the lockfile rather
+    # than failing a firmware build; --config.confirm-modules-purge=false skips
+    # the prompt pnpm shows when node_modules is out of sync, which would
+    # otherwise hang a build with nobody watching.
+    add_custom_command(OUTPUT "${FRONTEND_STAMP}"
+        COMMAND "${PNPM}" install --no-frozen-lockfile --config.confirm-modules-purge=false
+        COMMAND "${PNPM}" build
+        COMMAND "${CMAKE_COMMAND}" -E touch "${FRONTEND_STAMP}"
+        WORKING_DIRECTORY "${FRONTEND_DIR}"
+        DEPENDS ${FRONTEND_SOURCES}
+        COMMENT "Building frontend (pnpm install && pnpm build)"
+        VERBATIM USES_TERMINAL)
+else()
+    # A device must still build on a machine without node. The packer falls back
+    # to a placeholder page, so the firmware always has a valid blob and no code
+    # anywhere has to handle a missing one.
+    message(STATUS "pnpm not found — the frontend will not be rebuilt")
+    add_custom_command(OUTPUT "${FRONTEND_STAMP}"
+        COMMAND "${CMAKE_COMMAND}" -E touch "${FRONTEND_STAMP}"
+        VERBATIM)
+endif()
+
+# The packer's output is what EMBED_FILES names, so this rule is what teaches
+# CMake how to produce it — the embed step depends on the file, this rule makes
+# it, and the stamp in between forces the frontend to build first.
+add_custom_command(OUTPUT "${WEB_ASSETS_BIN}"
+    COMMAND "${_python}" "${PACK_SCRIPT}" --src "${WWW_DIR}" --out "${WEB_ASSETS_BIN}"
+    DEPENDS "${FRONTEND_STAMP}" "${PACK_SCRIPT}"
+    COMMENT "Packing web assets into web_assets.bin"
+    VERBATIM)
