@@ -6,27 +6,27 @@ dependencies:
   # ESP-IDF resolves REQUIRES in a pass that cannot see -DBOARD - see the note
   # in main/CMakeLists.txt.
   #
-  # FONT SUPPORT NEEDS A FORKED COMPONENT. The registry build passes
-  # -D__linux__ to ThorVG's meson, and ThorVG 1.1.0 reads that as "mmap is
-  # available": its font loader includes <sys/mman.h>, which ESP-IDF has not
+  # FONT SUPPORT NEEDS A FORKED COMPONENT, so this points at a fork of
+  # espressif/idf-extra-components rather than the registry. The registry build
+  # passes -D__linux__ to ThorVG's meson, and ThorVG 1.1.0 reads that as "mmap
+  # is available": its font loader includes <sys/mman.h>, which ESP-IDF has not
   # got, so CONFIG_THORVG_TTF_LOADER_SUPPORT=y fails to compile. An SVG <text>
   # element with no font renders as nothing at all, so this is not optional.
   #
-  # The fix is one token. Fork espressif/idf-extra-components, and in
-  # thorvg/cross_file.txt.in drop '-D__linux__' from cpp_args - ThorVG then
-  # takes its own portable fopen path, which is what every other non-Linux
-  # target uses. Nothing else in the built sources reads __linux__ (only the
-  # font loader and the GL backend, and the GL backend is not built here).
-  # Then replace the line below with:
+  # The fork is one token: '-D__linux__' dropped from cpp_args in
+  # thorvg/cross_file.txt.in. ThorVG then takes its own portable fopen path,
+  # which is what every other non-Linux target uses. Nothing else in the built
+  # sources reads __linux__ (only the font loader and the GL backend, and the
+  # GL backend is not built here).
   #
-  #   espressif/thorvg:
-  #     version: "*"
-  #     git: https://github.com/vanBassum/idf-extra-components.git
-  #     path: thorvg
-  #
-  # Until then the root CMakeLists refuses the build with these instructions
-  # rather than letting it fail inside the dependency. Worth a PR upstream.
-  espressif/thorvg: "~1.1.0"
+  # Pinned to the commit, not the branch: a git dependency with a moving ref is
+  # not a reproducible build, and this one exists to be reproducible. Offered
+  # upstream; when it lands, this whole stanza goes back to being
+  # `espressif/thorvg: "~1.1.0"`.
+  espressif/thorvg:
+    version: "6cbb7fab5706d546a9a247f87ea3d45afd2ff64c"
+    git: https://github.com/vanBassum/idf-extra-components.git
+    path: thorvg
 # esp_websocket_client is deliberately absent: the relay drives a WebSocket through
 # the built-in tcp_transport layer instead, so the reading happens on the task that
 # runs the command. See Application/RelayManager/RelaySocket.h.

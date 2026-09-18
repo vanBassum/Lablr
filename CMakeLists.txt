@@ -159,9 +159,12 @@ if(CONFIG_THORVG_TTF_LOADER_SUPPORT)
                 "mmap and the build will fail on <sys/mman.h>.
 
 "
-                "Point main/idf_component.yml at a fork of espressif/idf-extra-components "
-                "whose thorvg/cross_file.txt.in drops '-D__linux__' from cpp_args (see the "
-                "commented stanza in that file), or remove that token from:
+                "main/idf_component.yml is meant to pin a fork of "
+                "espressif/idf-extra-components whose thorvg/cross_file.txt.in drops "
+                "'-D__linux__' from cpp_args. Either it no longer does, or a stale "
+                "managed_components/ is being reused - delete it and dependencies.lock "
+                "and let the component manager re-resolve. Failing that, remove the token "
+                "by hand from:
 "
                 "  ${_tvg_cross}
 

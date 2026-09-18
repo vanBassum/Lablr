@@ -95,7 +95,8 @@ private:
           "Mark an app partition as the one to boot next. Takes effect at the next "
           "reboot; an image that does not validate is refused." },
         { "partition", "read",     &InvokeCommand<&UpdateManager::Cmd_DownloadPartition>,
-          "Read a partition back. The reply is a JSON header record, a newline, "
-          "then the raw partition bytes - which can be megabytes." },
+          "Read a partition back. The reply is the raw partition bytes and nothing "
+          "else - no header record - streamed until the session closes, which can "
+          "be megabytes. The size is what 'partition list' reports." },
     };
 };
