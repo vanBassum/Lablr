@@ -1,17 +1,38 @@
 # Lablr
 
-ESP32 firmware built on [Strux](https://github.com/vanBassum/Strux), the template this
-repository was copied from. Strux supplies the foundation — WiFi with AP fallback, a React
-web UI served from flash, OTA for firmware and UI, a live console, NVS-backed settings and
-the relay link — and the rest of this document describes it, because that is what the code
-here still is. Product code belongs in `main/app/`; `main/strux/` stays generic so
-improvements can travel both ways with the template.
+**A network label printer that anything can drive.** Lablr is an ESP32-S3 with a DYMO
+LabelWriter on its USB host port. A label is an ordinary SVG file on the device's own
+filesystem; the device rasterises it with ThorVG at the label stock's real dot geometry and
+puts it on paper. It is driven from its own web UI, from a script over a WebSocket, or
+off-LAN through a relay — all three speak the same commands, because there is only one set.
+
+The device describes itself: `help describe` returns every command and argument, and
+`system describe` returns what this product is and how it is meant to be used. So a caller
+that has never seen this repository — a person, a script, or a model at the other end of the
+relay — can find out what to send without being told.
+
+It is built on [Strux](https://github.com/vanBassum/Strux), the template this repository was
+copied from, which supplies the foundation — WiFi with AP fallback, a React web UI served
+from flash, OTA for firmware and UI, a live console, NVS-backed settings and the relay link.
+Much of this document describes that foundation, because much of the code is still it.
+Product code belongs in `main/app/`; `main/strux/` stays generic so improvements can travel
+both ways with the template.
 
 <img width="1096" height="591" alt="image" src="https://github.com/user-attachments/assets/cc282e06-f84b-497d-8e5a-3e04add95bac" />
 
 ---
 
 ## What's Included
+
+### This product
+
+- **Printing** — an SVG plus a named label stock goes on paper: `print svg -path /labels/x.svg -media square25`. Also a test pattern and a calibration grid, which is how a new roll's offsets get measured rather than guessed
+- **Label storage** — a FAT filesystem on flash holding `/labels` (SVG designs), `/fonts` (TrueType, registered at boot) and `/media` (one JSON file per roll of stock)
+- **Rendering** — ThorVG on a dedicated worker, into PSRAM. `render svg` returns raw pixels or a PNG, and the printer and the preview come from that one rasteriser, so a preview predicts a print
+- **Media** — label stock is data, not firmware: "I bought 36 x 89 mm labels" is a `media set`, not a release
+- **USB host** — enumerates whatever is plugged in and asks it to name itself (IEEE-1284 device ID) rather than guessing a protocol from a model number
+
+### From the Strux foundation
 
 - **WiFi** — Station mode with automatic AP fallback (`Lablr-AP`) after failed connections
 - **Web UI** — React + TypeScript dashboard served from flash, accessible from any browser
@@ -27,8 +48,9 @@ improvements can travel both ways with the template.
 |-------|-------|
 | Firmware | C++, ESP-IDF v6.0, FreeRTOS |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui |
-| Target | ESP32 (4 MB flash) |
-| CI/CD | GitHub Actions — builds firmware + frontend, publishes releases |
+| Target | ESP32-S3 (16 MB flash, 8 MB octal PSRAM) |
+| Printer | DYMO LabelWriter over USB host, 300 DPI, 672-dot head |
+| CI/CD | GitHub Actions — host tests, frontend and firmware on every push; releases on a `v*` tag |
 
 ---
 
@@ -50,17 +72,22 @@ Lablr/
 │   │   ├── TelemetryManager/          # Measurements out via the relay
 │   │   ├── TimeManager/               # SNTP + timezone
 │   │   ├── UpdateManager/             # OTA firmware, any partition by label
-│   │   ├── WebServerManager/          # HTTP + WebSocket server
-│   │   └── lib/                       # Reusable utilities
-│   │       ├── common/                # Stream, MemoryStream, BufferStream, Fatal
-│   │       ├── json/                  # JsonWriter, JsonReader
-│   │       ├── protocol/              # CommandContext, ArgReader, ReplyWriter, Session
-│   │       ├── rtos/                  # Task, Mutex, Timer, InitState
-│   │       └── system/                # DateTime, TimeSpan
+│   │   └── WebServerManager/          # HTTP + WebSocket server
+│   ├── lib/                           # THE SUBSTRATE — part of no layer, used by all
+│   │   ├── common/                    # Stream, BufferStream, PathResolve, Fatal
+│   │   ├── json/                      # JsonWriter, JsonReader
+│   │   ├── protocol/                  # CommandContext, ArgReader, ReplyWriter, Session
+│   │   ├── rtos/                      # Task, Mutex, Timer, InitState
+│   │   └── system/                    # DateTime, TimeSpan
 │   ├── app/                           # THE APPLICATION — this is what a fork writes
 │   │   ├── AppContext.h               # Owns this product's managers
 │   │   ├── AppProvider.h              # Peers + getStrux() + getBoard()
-│   │   └── LedManager/                # Worked example — delete when you have real ones
+│   │   ├── DeviceDoc.h                # What this product IS, in the device's own words
+│   │   ├── StorageManager/            # The label filesystem: fs info/list/read/write/delete
+│   │   ├── MediaManager/              # Label stock as data — one JSON file per roll
+│   │   ├── RenderManager/             # ThorVG on its own worker; render svg, render fonts
+│   │   ├── PrintManager/              # The LabelWriter's raster dialect; print svg/test/calibrate
+│   │   └── UsbHostManager/            # The USB OTG port in host mode, nothing about printing
 │   ├── hardware/                      # THE BOARD — depends on nothing above it
 │   │   ├── boards/                    # One folder per target board (-DBOARD=<name>)
 │   │   │   └── esp32s3_n16r8/         # ESP32-S3, 16 MB flash, 8 MB octal PSRAM
@@ -76,9 +103,10 @@ Lablr/
 │   │       └── MockLed.h              # Led role without hardware (state only)
 ├── frontend/                          # React web UI (Vite + Tailwind + shadcn)
 ├── www/                               # Build output — packed into one blob, linked into the app
-├── CMakeLists.txt                     # Root ESP-IDF project config
-├── partitions.csv                     # Flash partition layout
-└── sdkconfig.defaults                 # ESP-IDF defaults
+├── test/host/                          # The parts that need no device, run on every push
+├── CMakeLists.txt                      # Root ESP-IDF project config
+├── partitions-16mb.csv                 # Flash layout (3 MB + 3 MB OTA, 9.875 MB storage)
+└── sdkconfig.defaults                  # ESP-IDF defaults
 ```
 
 ### The key separation
@@ -94,7 +122,7 @@ Lablr/
 
 **Rule of thumb:** if the code changes when you swap the board, it belongs in `hardware/boards/<name>/`. If it's a chip driver several boards could use, it belongs in `hardware/drivers/`. If it changes when you add a feature to this product, it belongs in `app/`. If every fork would want it, it belongs in `strux/`.
 
-Dependencies run one way: the board depends on nothing, the framework depends on the board's *nothing* (it never touches hardware), and the application depends on both. Anything the framework needs from the application arrives by registration — a command, a setting, a telemetry point — never by reaching upward. `app/LedManager/` is the worked example of all three edges at once.
+Dependencies run one way: the board depends on nothing, the framework depends on the board's *nothing* (it never touches hardware), and the application depends on both. Anything the framework needs from the application arrives by registration — a command, a setting, a telemetry point — never by reaching upward. `app/PrintManager/` is the worked example of all of it at once.
 
 ### Multiple boards
 
@@ -102,7 +130,7 @@ The target board is selected at configure time with `-DBOARD=<name>`. One board 
 
 | `-DBOARD=` | Chip | Notes |
 |---|---|---|
-| `esp32s3_n16r8` | ESP32-S3 (Xtensa LX7) | 16 MB flash, 8 MB **octal** PSRAM. No LED bound yet — the role is a `MockLed` until the board's LED is known |
+| `esp32s3_n16r8` | ESP32-S3 (Xtensa LX7) | 16 MB flash, 8 MB **octal** PSRAM. The printer goes on the S3's native USB pins, with 5 V fed to VBUS from outside — the board cannot source it. No LED: the `Led` role is bound to a `MockLed`, because it is a role every Strux board owes rather than something this product uses |
 
  Only the selected board folder is put on the include path, so application code just includes `BoardConfig.h` or `BoardContext.h` and gets the right one. The application never changes between boards: it compiles against the `BoardContext` class's surface, and each board makes itself compatible — with real hardware or a mock. Every board implements [`BoardProvider`](main/hardware/interfaces/BoardProvider.h), the list of roles a board owes, so a board that forgets one fails in the board rather than at some call site. To support a new board:
 
@@ -200,7 +228,11 @@ StruxContext (the framework — answers StruxProvider)
 └── TelemetryManager      — Measurements out through the relay
 
 AppContext (the top — answers AppProvider, holds Board& and StruxProvider&)
-└── LedManager            — Worked example; replace with your product's managers
+├── StorageManager        — The label filesystem, mounted at /storage
+├── MediaManager          — What a roll of label stock is, as data
+├── RenderManager         — ThorVG on a pthread worker; the one rasteriser
+├── UsbHostManager        — The USB host port; knows nothing about printing
+└── PrintManager          — SVG + stock into raster into the printer's ESC dialect
 ```
 
 ### Boot sequence (main.cpp)
@@ -318,13 +350,13 @@ This is a template — copy it, rename it, and build on top of it:
 1. **Rename the project** in `CMakeLists.txt` (`project(YourProject)`), `.github/workflows/release.yml`, and `frontend/src/config.ts` (dev-server host + GitHub repo for the release check) — the UI itself needs no renaming: it shows the device name and project name reported by the firmware
 2. **Update `BoardConfig.h`** (or add a new board folder under `hardware/boards/`) with your board's pin assignments
 3. **Add hardware drivers** in `hardware/drivers/` and instantiate them in the board's `BoardContext` class
-4. **Add application logic** as new managers in `app/` — and delete `app/LedManager/`, which is only there as a worked example. Nothing in `strux/` needs editing to add a feature.
+4. **Add application logic** as new managers in `app/` — and delete this product's five, which are a label printer and not your product. Nothing in `strux/` needs editing to add a feature.
 5. **Extend the web UI** — add pages in `frontend/src/pages/`, register routes in the sidebar
 6. **Add settings** by declaring typed setting members in the owning manager and registering them in its `Init()` (see [Settings](#settings))
 
 ### Adding a New Manager
 
-Almost always an *application* manager — see [`app/LedManager/`](main/app/LedManager/) for the worked example:
+Almost always an *application* manager — see [`app/PrintManager/`](main/app/PrintManager/) for the worked example, which owns a domain, registers its own commands, and reaches every peer it needs through `AppProvider`:
 
 1. Create a new directory under `app/YourManager/`
 2. Implement your manager class, accepting `AppProvider&` in the constructor. It reaches the framework through `services.getStrux()` and the hardware through `services.getBoard()`
