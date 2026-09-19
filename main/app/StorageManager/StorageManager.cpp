@@ -155,6 +155,14 @@ RequestError StorageManager::Cmd_List(CommandContext& ctx)
             item.field("name", e->d_name);
             item.field("dir", e->d_type == DT_DIR);
             item.field("size", statted ? static_cast<uint32_t>(st.st_size) : 0u);
+            // Unix seconds, straight off the stat this loop already does.
+            //
+            // FAT cannot represent a date before 1980, so a file written while
+            // the clock was unset carries 1980-01-01 rather than 0 - which means
+            // "older than anything real", not "unknown". A caller sorting by this
+            // wants a second key for the ties that produces, and 0 only ever
+            // means the stat itself failed.
+            item.field("mtime", statted ? static_cast<uint32_t>(st.st_mtime) : 0u);
         }
     }
     closedir(dir);

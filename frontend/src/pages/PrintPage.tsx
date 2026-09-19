@@ -55,6 +55,20 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : "Unknown error"
 }
 
+/** A file's date, short enough to sit on the same line as its size. Anything
+ *  from 1980 is not a date: FAT's epoch starts there, so that is what a file
+ *  written before the clock was set carries. Saying so beats printing a
+ *  confident 1980. */
+function fmtWhen(unixSeconds: number): string {
+  const d = new Date(unixSeconds * 1000)
+  if (d.getFullYear() <= 1980) return "no date"
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  return sameDay
+    ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+}
+
 /** ARGB8888S is one 32-bit LITTLE-ENDIAN word per pixel, so in memory the bytes
  *  are B,G,R,A. ImageData wants R,G,B,A. Un-premultiplied is what makes this a
  *  channel swap and not an un-multiply, which is why the device sends the S
@@ -124,6 +138,7 @@ export default function PrintPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const [labels, setLabels] = useState<string[]>([])
+  const [mtimes, setMtimes] = useState<Record<string, number>>({})
   const [selected, setSelected] = useState<string | null>(null)
   const [filter, setFilter] = useState("")
   const [fonts, setFonts] = useState<FontEntry[] | null>(null)
@@ -203,11 +218,23 @@ export default function PrintPage() {
       .then((r) => {
         // Only SVGs. /labels is where designs live, but nothing stops someone
         // dropping a note in it, and offering a .txt here only buys a parse error.
+        //
+        // Newest first: the label somebody just uploaded is the one they came
+        // here to print, and it is also what `setSelected` below then opens.
+        //
+        // Name is the tie-break, not a fallback. FAT cannot store a date before
+        // 1980, so every file written while the clock was unset shares one
+        // timestamp - without a second key those would shuffle between loads.
         const svgs = r.entries
           .filter((e) => !e.dir && e.name.toLowerCase().endsWith(".svg"))
+          .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0) || a.name.localeCompare(b.name))
           .map((e) => `/labels/${e.name}`)
-          .sort((a, b) => a.localeCompare(b))
         setLabels(svgs)
+        setMtimes(
+          Object.fromEntries(
+            r.entries.filter((e) => e.mtime).map((e) => [`/labels/${e.name}`, e.mtime as number]),
+          ),
+        )
         setSelected((cur) => (cur && svgs.includes(cur) ? cur : (svgs[0] ?? null)))
       })
       .catch(() => setLabels([]))
@@ -514,6 +541,7 @@ export default function PrintPage() {
                       <span className="block truncate text-sm font-medium">{name}</span>
                       <span className="block text-xs tabular-nums text-muted-foreground">
                         {d ? `${d.w} \u00d7 ${d.h}` : "unknown size"}
+                        {mtimes[path] ? ` \u00b7 ${fmtWhen(mtimes[path])}` : ""}
                       </span>
                       {mismatch && (
                         <span className="block text-xs text-amber-600">

@@ -1041,6 +1041,11 @@ export interface FsEntry {
   name: string
   dir: boolean
   size: number
+  /** Unix seconds. Optional because a device from before `fs list` reported it
+   *  simply omits the field. FAT has no date before 1980, so a file written
+   *  while the clock was unset comes back as 1980-01-01 - older than anything
+   *  real, rather than unknown. 0 means the stat failed. */
+  mtime?: number
 }
 
 export interface FsListResult {

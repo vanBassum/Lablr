@@ -84,8 +84,10 @@ private:
           "used and free bytes." },
         { "fs", "list",   &InvokeCommand<&StorageManager::Cmd_List>,
           "List one directory. Returns each entry's name, whether it is a "
-          "directory, and its size in bytes. Start at '/' to see the top "
-          "level: /labels, /fonts and /media." },
+          "directory, its size in bytes, and its modification time as Unix "
+          "seconds. Start at '/' to see the top level: /labels, /fonts and "
+          "/media. Note that FAT has no date before 1980, so a file written "
+          "while the clock was unset reports 1980-01-01 rather than nothing." },
         { "fs", "read",   &InvokeCommand<&StorageManager::Cmd_Read>,
           "Read one file. The reply is a JSON header line (ok, size), a "
           "newline, then the raw file bytes - so an SVG comes back exactly as "
