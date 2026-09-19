@@ -16,8 +16,8 @@
 // flash partition, and is checked by driving the device over its own wire. See
 // CLAUDE.md. Do not grow this file into a mock of the device.
 //
-//   g++ -std=c++17 -I main/lib/common -I main/app/PrintManager \
-//       test/host/test_pure.cpp -o test_pure && ./test_pure
+//   g++ -std=c++17 -Wall -Wextra -Werror -I main/lib/common -I main/app/PrintManager test/host/test_pure.cpp -o test_pure
+//   ./test_pure
 // ──────────────────────────────────────────────────────────────
 
 #include "PathResolve.h"
