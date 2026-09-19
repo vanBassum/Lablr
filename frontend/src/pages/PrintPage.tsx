@@ -322,14 +322,19 @@ export default function PrintPage() {
   //
   //   1. the selected label's own SVG        - it stands in for the preview, so
   //      it is what turns a blank panel into a picture, and it is one file read
-  //   2. the selected label's full preview    - the only slow job on the list
-  //   3. the SVGs of the other rows on screen - the strip fills in behind it
+  //   2. the SVGs of the other rows on screen - the strip fills in
+  //   3. the selected label's full preview    - the only slow job on the list
   //
-  // The preview used to come last, behind every visible row, because a thumbnail
-  // was a device render too and putting the expensive job first would have made
-  // the strip crawl. Now that a thumbnail is a file read, the preview is the one
-  // thing worth waiting for and everything else can happen behind it. It still
-  // replaces something correct rather than nothing, because step 1 ran first.
+  // Every cheap job goes before the expensive one, and that ordering is only
+  // affordable because a thumbnail stopped being a device render: the whole
+  // visible strip is now a handful of small file reads, so putting it first
+  // delays the preview by almost nothing and the list stops looking
+  // half-loaded. When a thumbnail WAS a render, this same order meant the
+  // preview waited behind a second per visible row.
+  //
+  // The preview going last still costs nothing visually, because step 1 already
+  // put this label's own SVG in the panel: the render replaces something
+  // correct rather than nothing.
   //
   // There is no queue object. `pick` is a pure function of current state, so a
   // change of selection or a scroll re-prioritises what happens next without
@@ -337,8 +342,8 @@ export default function PrintPage() {
   const pick = useCallback((): Job | null => {
     if (!selected) return null
     if (!tried[selected]) return { kind: "thumb", path: selected }
-    if (drawnKey !== previewKeyOf(selected, w, h)) return { kind: "preview", path: selected }
     for (const path of labels) if (seen[path] && !tried[path]) return { kind: "thumb", path }
+    if (drawnKey !== previewKeyOf(selected, w, h)) return { kind: "preview", path: selected }
     return null
   }, [selected, labels, seen, tried, drawnKey, w, h])
 
