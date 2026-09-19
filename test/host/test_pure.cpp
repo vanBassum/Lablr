@@ -14,6 +14,10 @@
 //   xml::DecodeCharData - the one pass that rewrites a label's bytes before the
 //                         renderer parses them, where getting the bookkeeping
 //                         wrong corrupts an SVG rather than mis-drawing it.
+//   svg::PushDownFontAttrs
+//                       - the second such pass, and the one that has to agree
+//                         with itself twice: it is called once to measure and
+//                         once to fill, so a disagreement is a buffer overrun.
 //
 // Everything else about this firmware needs a printer, a WiFi network or a
 // flash partition, and is checked by driving the device over its own wire. See
@@ -26,6 +30,7 @@
 #include "PathResolve.h"
 #include "Raster.h"
 #include "XmlEntities.h"
+#include "SvgFontAttrs.h"
 
 #include <cstdio>
 #include <cstring>
@@ -340,6 +345,217 @@ static void test_decode_a_whole_label()
     CHECK_DECODE(in, want);
 }
 
+// --------------------------------------------------------------
+// svg::PushDownFontAttrs
+// --------------------------------------------------------------
+
+/// Runs the two-call protocol the renderer uses - measure, allocate, fill - and
+/// returns what was written. Measuring and filling disagreeing about the length
+/// is the failure this is really guarding, so it is checked here every time.
+static std::string PushDown(const char* in)
+{
+    const size_t len  = std::strlen(in);
+    const size_t need = svg::PushDownFontAttrs(in, len, nullptr, 0);
+
+    std::vector<char> out(need + 1, 0);
+    const size_t wrote = svg::PushDownFontAttrs(in, len, out.data(), need);
+    CHECK(wrote == need);
+
+    return std::string(out.data(), need);
+}
+
+#define CHECK_PUSHDOWN(in, want)                                               \
+    do {                                                                       \
+        const std::string got = PushDown(in);                                  \
+        if (got != (want)) {                                                   \
+            std::printf("FAIL %s:%d\n  in   %s\n  got  %s\n  want %s\n",       \
+                        __FILE__, __LINE__, (in), got.c_str(), (want));        \
+            ++failures;                                                        \
+        }                                                                      \
+    } while (0)
+
+static void test_pushdown_the_bug_that_started_it()
+{
+    // The list on laser-connectors-box-v4.svg. ThorVG read no font property off
+    // the <g> and drew all five lines at its own default of 10.
+    CHECK_PUSHDOWN(
+        "<g font-family=\"DejaVuSans\" font-size=\"42\">"
+        "<text x=\"500\" y=\"245\">Laserblanks</text>"
+        "</g>",
+
+        "<g font-family=\"DejaVuSans\" font-size=\"42\">"
+        "<text x=\"500\" y=\"245\" font-family=\"DejaVuSans\" font-size=\"42\">Laserblanks</text>"
+        "</g>");
+}
+
+static void test_pushdown_leaves_an_explicit_text_alone()
+{
+    // The title on the same label, which was always right. Nothing to add means
+    // the output is the input byte for byte, which is what lets the renderer
+    // skip the second allocation entirely.
+    const char* in =
+        "<text x=\"62\" y=\"120\" font-family=\"DejaVuSans-Bold\" font-size=\"58\">L</text>";
+    CHECK_PUSHDOWN(in, in);
+    CHECK(svg::PushDownFontAttrs(in, std::strlen(in), nullptr, 0) == std::strlen(in));
+}
+
+static void test_pushdown_own_attribute_beats_the_ancestor()
+{
+    CHECK_PUSHDOWN(
+        "<g font-size=\"42\"><text font-size=\"58\">T</text></g>",
+        "<g font-size=\"42\"><text font-size=\"58\">T</text></g>");
+
+    // One of the two can be inherited while the other is the element's own.
+    // What is added goes on the end of the tag, after what was already there.
+    CHECK_PUSHDOWN(
+        "<g font-family=\"A\" font-size=\"42\"><text font-size=\"58\">T</text></g>",
+        "<g font-family=\"A\" font-size=\"42\"><text font-size=\"58\" font-family=\"A\">T</text></g>");
+}
+
+static void test_pushdown_nearest_ancestor_wins()
+{
+    CHECK_PUSHDOWN(
+        "<g font-size=\"10\"><g font-size=\"42\"><text>T</text></g></g>",
+        "<g font-size=\"10\"><g font-size=\"42\"><text font-size=\"42\">T</text></g></g>");
+
+    // ...and the inner group's value must not leak out to a later sibling.
+    CHECK_PUSHDOWN(
+        "<g font-size=\"10\"><g font-size=\"42\"><text>A</text></g><text>B</text></g>",
+        "<g font-size=\"10\"><g font-size=\"42\"><text font-size=\"42\">A</text></g>"
+        "<text font-size=\"10\">B</text></g>");
+}
+
+static void test_pushdown_rewrites_style_the_loader_ignores()
+{
+    // font-size is not in ThorVG's styleTags[], so style="" is dropped even on
+    // the <text> itself. Re-emitted as the attribute the loader does read.
+    CHECK_PUSHDOWN(
+        "<text style=\"font-size:58px\">T</text>",
+        "<text style=\"font-size:58px\" font-size=\"58px\">T</text>");
+
+    // And on an ancestor, where it has to be inherited as well as rewritten.
+    CHECK_PUSHDOWN(
+        "<g style=\"fill:red; font-family:DejaVuSans ; font-size: 42 \"><text>T</text></g>",
+        "<g style=\"fill:red; font-family:DejaVuSans ; font-size: 42 \">"
+        "<text font-family=\"DejaVuSans\" font-size=\"42\">T</text></g>");
+
+    // An attribute on the same element still wins over its own style="".
+    CHECK_PUSHDOWN(
+        "<g font-size=\"42\" style=\"font-size:10\"><text>T</text></g>",
+        "<g font-size=\"42\" style=\"font-size:10\"><text font-size=\"42\">T</text></g>");
+
+    // The `font:` shorthand is not half-understood: it is not a longhand, so it
+    // supplies nothing and nothing is written.
+    CHECK_PUSHDOWN(
+        "<g style=\"font:42px DejaVuSans\"><text>T</text></g>",
+        "<g style=\"font:42px DejaVuSans\"><text>T</text></g>");
+}
+
+static void test_pushdown_never_touches_a_tspan()
+{
+    // A <tspan> inherits correctly from its <text> inside ThorVG already, and
+    // writing attributes onto one would stop _spliceTspanClose merging it.
+    CHECK_PUSHDOWN(
+        "<g font-size=\"42\"><text><tspan>T</tspan></text></g>",
+        "<g font-size=\"42\"><text font-size=\"42\"><tspan>T</tspan></text></g>");
+}
+
+static void test_pushdown_self_closing_tags()
+{
+    // A self-closing <text/> takes its attributes INSIDE the tag, before the
+    // slash - not after it, which would put them in the character data.
+    CHECK_PUSHDOWN(
+        "<g font-size=\"42\"><text x=\"1\"/></g>",
+        "<g font-size=\"42\"><text x=\"1\" font-size=\"42\"/></g>");
+
+    // A self-closing element must not push a frame, or everything after it
+    // inherits from a group that already closed.
+    CHECK_PUSHDOWN(
+        "<g font-size=\"42\"><rect font-size=\"10\" width=\"1\"/><text>T</text></g>",
+        "<g font-size=\"42\"><rect font-size=\"10\" width=\"1\"/><text font-size=\"42\">T</text></g>");
+}
+
+static void test_pushdown_leaves_markup_alone()
+{
+    // A comment, a CDATA section and a declaration are copied through and none
+    // of them opens a scope. The markup inside the CDATA is literal.
+    CHECK_PUSHDOWN(
+        "<?xml version=\"1.0\"?><!-- <g font-size=\"99\"> -->"
+        "<g font-size=\"42\"><![CDATA[<text>x</text>]]><text>T</text></g>",
+
+        "<?xml version=\"1.0\"?><!-- <g font-size=\"99\"> -->"
+        "<g font-size=\"42\"><![CDATA[<text>x</text>]]><text font-size=\"42\">T</text></g>");
+}
+
+static void test_pushdown_survives_odd_input()
+{
+    // A '>' inside an attribute value does not end the tag.
+    CHECK_PUSHDOWN(
+        "<g data-note=\"a > b\" font-size=\"42\"><text>T</text></g>",
+        "<g data-note=\"a > b\" font-size=\"42\"><text font-size=\"42\">T</text></g>");
+
+    // Single-quoted values are values too.
+    CHECK_PUSHDOWN(
+        "<g font-size='42'><text>T</text></g>",
+        "<g font-size='42'><text font-size=\"42\">T</text></g>");
+
+    // A value holding a double quote cannot be written back as one, so it is
+    // left where it is rather than escaped into something else.
+    CHECK_PUSHDOWN(
+        "<g style='font-family:He\"llo'><text>T</text></g>",
+        "<g style='font-family:He\"llo'><text>T</text></g>");
+
+    // Truncated markup terminates instead of running off the buffer.
+    CHECK_PUSHDOWN("<g font-size=\"42\"><text", "<g font-size=\"42\"><text");
+    CHECK(svg::PushDownFontAttrs("", 0, nullptr, 0) == 0);
+    CHECK(svg::PushDownFontAttrs(nullptr, 7, nullptr, 0) == 0);
+
+    // More closing tags than opening ones must not walk the stack negative.
+    CHECK_PUSHDOWN("</g></g><text>T</text>", "</g></g><text>T</text>");
+}
+
+static void test_pushdown_never_writes_past_the_cap()
+{
+    // The renderer only ever passes the measured length, but a short buffer
+    // must still be a truncated answer and not a corrupted heap.
+    const char* in   = "<g font-size=\"42\"><text>T</text></g>";
+    const size_t len = std::strlen(in);
+    const size_t need = svg::PushDownFontAttrs(in, len, nullptr, 0);
+    CHECK(need > len);
+
+    const char GUARD = 0x7f;
+    for (size_t cap = 0; cap < need; ++cap)
+    {
+        std::vector<char> buf(need + 8, GUARD);
+        CHECK(svg::PushDownFontAttrs(in, len, buf.data(), cap) == need);
+        for (size_t i = cap; i < buf.size(); ++i) CHECK(buf[i] == GUARD);
+    }
+}
+
+static void test_pushdown_a_whole_label()
+{
+    // The representative label, cut down: a title that sizes itself, a rotated
+    // group, and a list that does not. Only the list lines change.
+    const char* in =
+        "<svg width=\"638\" height=\"1193\" viewBox=\"0 0 638 1193\">"
+        "<rect width=\"638\" height=\"1193\" fill=\"white\"/>"
+        "<g transform=\"translate(638 0) rotate(90)\">"
+        "<text x=\"62\" y=\"120\" font-family=\"DejaVuSans-Bold\" font-size=\"58\">LASER</text>"
+        "<g font-family=\"DejaVuSans\" font-size=\"42\">"
+        "<text x=\"500\" y=\"245\">A</text><text x=\"500\" y=\"315\">B</text>"
+        "</g></g></svg>";
+    const char* want =
+        "<svg width=\"638\" height=\"1193\" viewBox=\"0 0 638 1193\">"
+        "<rect width=\"638\" height=\"1193\" fill=\"white\"/>"
+        "<g transform=\"translate(638 0) rotate(90)\">"
+        "<text x=\"62\" y=\"120\" font-family=\"DejaVuSans-Bold\" font-size=\"58\">LASER</text>"
+        "<g font-family=\"DejaVuSans\" font-size=\"42\">"
+        "<text x=\"500\" y=\"245\" font-family=\"DejaVuSans\" font-size=\"42\">A</text>"
+        "<text x=\"500\" y=\"315\" font-family=\"DejaVuSans\" font-size=\"42\">B</text>"
+        "</g></g></svg>";
+    CHECK_PUSHDOWN(in, want);
+}
+
 int main()
 {
     test_resolve_joins();
@@ -363,6 +579,18 @@ int main()
     test_decode_leaves_markup_alone();
     test_decode_handles_truncation();
     test_decode_a_whole_label();
+
+    test_pushdown_the_bug_that_started_it();
+    test_pushdown_leaves_an_explicit_text_alone();
+    test_pushdown_own_attribute_beats_the_ancestor();
+    test_pushdown_nearest_ancestor_wins();
+    test_pushdown_rewrites_style_the_loader_ignores();
+    test_pushdown_never_touches_a_tspan();
+    test_pushdown_self_closing_tags();
+    test_pushdown_leaves_markup_alone();
+    test_pushdown_survives_odd_input();
+    test_pushdown_never_writes_past_the_cap();
+    test_pushdown_a_whole_label();
 
     if (failures == 0) std::printf("all host tests passed\n");
     else               std::printf("%d host check(s) failed\n", failures);

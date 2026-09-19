@@ -5,6 +5,7 @@
 #include "ReplyBody.h"
 #include "PngStream.h"
 #include "XmlEntities.h"
+#include "SvgFontAttrs.h"
 
 #include <esp_log.h>
 #include <esp_heap_caps.h>
@@ -241,6 +242,36 @@ void RenderManager::RunJob()
     // and shrinking, so there is no second allocation and nothing to free.
     // See lib/common/XmlEntities.h for what it deliberately leaves alone.
     svgSize = xml::DecodeCharData(reinterpret_cast<char*>(svg), svgSize);
+
+    // The same loader inherits no font property, so `<g font-size="42">` around
+    // a <text> draws at ThorVG's default 10 and the label comes out with its
+    // list a quarter of the size the SVG asked for. Write the inherited value
+    // onto the element, where the loader does read it. This one GROWS, so it
+    // measures first and only allocates when there is something to add - an SVG
+    // that already sizes every <text> costs one extra pass and no memory.
+    // See lib/common/SvgFontAttrs.h.
+    const size_t inherited = svg::PushDownFontAttrs(
+        reinterpret_cast<const char*>(svg), svgSize, nullptr, 0);
+    if (inherited > svgSize)
+    {
+        uint8_t* grown = static_cast<uint8_t*>(
+            heap_caps_malloc(inherited, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (grown)
+        {
+            svg::PushDownFontAttrs(reinterpret_cast<const char*>(svg), svgSize,
+                                   reinterpret_cast<char*>(grown), inherited);
+            heap_caps_free(svg);
+            svg     = grown;
+            svgSize = inherited;
+        }
+        else
+        {
+            // A label drawn at the wrong size beats no label at all, and the
+            // render below is about to report its own memory trouble anyway.
+            ESP_LOGW(TAG, "No PSRAM to apply inherited font attributes (%u bytes)",
+                     (unsigned)inherited);
+        }
+    }
 
     const size_t pixelBytes = static_cast<size_t>(job_.width) * job_.height * 4u;
     uint32_t* pixels = static_cast<uint32_t*>(
