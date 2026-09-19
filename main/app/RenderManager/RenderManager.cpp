@@ -4,6 +4,7 @@
 #include "CommandManager.h"
 #include "ReplyBody.h"
 #include "PngStream.h"
+#include "XmlEntities.h"
 
 #include <esp_log.h>
 #include <esp_heap_caps.h>
@@ -233,6 +234,13 @@ void RenderManager::RunJob()
     size_t svgSize = 0;
     uint8_t* svg = ReadFileToPsram(job_.path, svgSize);
     if (!svg) { job_.error = "cannot read svg"; return; }
+
+    // ThorVG's SVG loader appends a text node's bytes verbatim and resolves no
+    // character reference, so a label that correctly writes `AT&amp;T` prints
+    // the `&amp;`. Resolve them before the parser sees the buffer - in place
+    // and shrinking, so there is no second allocation and nothing to free.
+    // See lib/common/XmlEntities.h for what it deliberately leaves alone.
+    svgSize = xml::DecodeCharData(reinterpret_cast<char*>(svg), svgSize);
 
     const size_t pixelBytes = static_cast<size_t>(job_.width) * job_.height * 4u;
     uint32_t* pixels = static_cast<uint32_t*>(
