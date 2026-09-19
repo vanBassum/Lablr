@@ -142,12 +142,40 @@ private:
         float    scale         = 1.0f;
     };
 
+    // ── Telling a caller how far along a print is ──
+    //
+    // A print is seconds of work behind one reply, and the browser used to have
+    // nothing but a spinner for it - and, worse, a 10 second client-side reply
+    // timeout, so a long label reported a timeout while the printer was still
+    // happily feeding paper. Progress records fix both: they give the UI a bar,
+    // and each one resets that idle timer.
+    //
+    // The shape is `partition write`'s, because a caller that already understands
+    // one streaming command should not have to learn a second dialect.
+    struct Progress
+    {
+        CommandContext* ctx    = nullptr;
+        size_t          total  = 0;   ///< job bytes, so a record can carry a fraction
+        size_t          last   = 0;   ///< bytes at the last record, for throttling
+    };
+
+    /// How often a send reports. The job is a few hundred KB and a record is a
+    /// WebSocket frame of its own, so every chunk would be chatter.
+    static constexpr size_t REPORT_EVERY = 32 * 1024;
+
+    /// Write one `{"phase":...}` record and push it now. Null ctx is a no-op, so
+    /// the internal callers that have no session need no special case.
+    static void Report(CommandContext* ctx, const char* phase,
+                       uint32_t done = 0, uint32_t total = 0);
+
     /// Render `wirePath` and print it at `p`. Returns null, or a static reason.
-    const char* PrintSvg(const char* wirePath, const Placement& p, JobStats& stats);
+    const char* PrintSvg(const char* wirePath, const Placement& p, JobStats& stats,
+                         CommandContext* ctx = nullptr);
 
     /// Emit one complete job into a PSRAM buffer and push it at the printer.
     /// `pixels` may be null, which prints blank lines - used by the patterns.
-    const char* SendJob(const uint32_t* pixels, const Placement& p, JobStats& stats);
+    const char* SendJob(const uint32_t* pixels, const Placement& p, JobStats& stats,
+                        CommandContext* ctx = nullptr);
 
     /// How many bytes per raster line this placement needs. Always measured
     /// from head column 0, because ESC D is a count and not an origin.

@@ -43,6 +43,19 @@ export class UploadCancelled extends Error {
   }
 }
 
+/** Options for one command. `onMessage` receives every NON-final reply record,
+ *  which is how a streaming command reports progress. */
+export interface SendOptions {
+  timeoutMs?: number
+  onMessage?: (msg: Record<string, unknown>) => void
+}
+
+/** How far along a print is. `render` carries no number because ThorVG reports
+ *  nothing while it draws - it means "started, no progress available yet". */
+export type JobProgress =
+  | { phase: "render" }
+  | { phase: "send"; done: number; total: number }
+
 export type ConnectionStatus = "connected" | "connecting" | "disconnected"
 type StatusHandler = (status: ConnectionStatus) => void
 type AuthHandler = (authenticated: boolean) => void
@@ -338,8 +351,9 @@ class BackendService {
   async send<T>(
     type: string,
     params: Record<string, unknown> = {},
+    opts: SendOptions = {},
   ): Promise<T> {
-    return this.enqueue(() => this.sendUnqueued<T>(type, params))
+    return this.enqueue(() => this.sendUnqueued<T>(type, params, opts))
   }
 
   /** One command, WITHOUT taking a queue slot. Only for a caller that already
@@ -347,10 +361,11 @@ class BackendService {
   private async sendUnqueued<T>(
     type: string,
     params: Record<string, unknown> = {},
+    opts: SendOptions = {},
   ): Promise<T> {
     await this.ensureConnected()
     const session = this.allocSession()
-    const reply = this.awaitReply<T>(session)
+    const reply = this.awaitReply<T>(session, opts)
     // Request = one FINAL session chunk: the command JSON + '\n' (the device
     // splits the header line from any body; these commands have no body).
     const body = new TextEncoder().encode(JSON.stringify({ type, ...params }) + "\n")
@@ -878,15 +893,19 @@ class BackendService {
   /** Render an SVG and return the framebuffer with the header describing it.
    *  Timed here because the device does not report a duration - this is
    *  round-trip including the transfer, and the page says so. */
+  /** `onProgress` reports BYTES RECEIVED, which only starts once the device has
+   *  finished rasterising - ThorVG reports nothing while it draws. So a caller
+   *  shows an indeterminate bar until the first byte and a real one after. */
   async renderSvg(
     path: string,
     width: number,
     height: number,
+    onProgress?: (received: number) => void,
   ): Promise<{ header: RenderHeader; bytes: Uint8Array; elapsedMs: number }> {
     const started = performance.now()
     const res = await this.downloadSessionWithHeader<RenderHeader>("render svg", {
       path, width, height,
-    })
+    }, onProgress)
     const elapsedMs = performance.now() - started
     if (!res.header.ok) throw new Error(res.header.error ?? "render failed")
     return { ...res, elapsedMs }
@@ -921,8 +940,26 @@ class BackendService {
   }
 
   /** Render and print in one device-side call, so the bitmap never travels. */
-  async printSvg(args: PrintArgs): Promise<PrintResult> {
-    const res = await this.send<PrintResult>("print svg", { ...args })
+  /** Print, reporting the device's own progress as it goes.
+   *
+   *  The timeout is idle-based and generous for a reason: a print is seconds of
+   *  device work behind one reply, and on the default 10 s cap a long label
+   *  reported a client-side timeout while the printer was still feeding paper.
+   *  Each progress record also bumps that timer, so the bound is silence rather
+   *  than duration. */
+  async printSvg(args: PrintArgs, onProgress?: (p: JobProgress) => void): Promise<PrintResult> {
+    const res = await this.send<PrintResult>("print svg", { ...args }, {
+      timeoutMs: 60000,
+      onMessage: (msg) => {
+        if (msg.phase === "render") onProgress?.({ phase: "render" })
+        else if (msg.phase === "send")
+          onProgress?.({
+            phase: "send",
+            done: typeof msg.p === "number" ? msg.p : 0,
+            total: typeof msg.total === "number" ? msg.total : 0,
+          })
+      },
+    })
     if (!res.ok) throw new Error(res.error ?? "print failed")
     return res
   }

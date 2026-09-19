@@ -474,7 +474,8 @@ void UsbHostManager::RecoverOutEndpoint(usb_device_handle_t dev, uint8_t ep)
         ESP_LOGW(TAG, "endpoint clear failed");
 }
 
-int UsbHostManager::Send(const uint8_t* data, size_t len, uint32_t timeoutMs)
+int UsbHostManager::Send(const uint8_t* data, size_t len, uint32_t timeoutMs,
+                         ProgressFn onProgress, void* progressContext)
 {
     if (!data || len == 0) return -1;
 
@@ -537,6 +538,8 @@ int UsbHostManager::Send(const uint8_t* data, size_t len, uint32_t timeoutMs)
         }
 
         sent += outXfer_->actual_num_bytes;
+        if (onProgress) onProgress(progressContext, sent);
+
         if (outXfer_->actual_num_bytes != static_cast<int>(chunk))
         {
             ESP_LOGW(TAG, "short write %d/%u - printer stopped accepting",

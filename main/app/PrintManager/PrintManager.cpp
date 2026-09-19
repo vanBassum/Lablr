@@ -69,7 +69,20 @@ uint32_t PrintManager::RasteriseRow(const uint32_t* row, uint32_t width, uint8_t
 // The job
 // ──────────────────────────────────────────────────────────────
 
-const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, JobStats& stats)
+void PrintManager::Report(CommandContext* ctx, const char* phase,
+                          uint32_t done, uint32_t total)
+{
+    if (!ctx) return;
+    {
+        auto rec = ctx->reply.object();
+        rec.field("phase", phase);
+        if (total) { rec.field("p", done); rec.field("total", total); }
+    }   // closed before the flush, or the chunk carries half a record
+    ctx->out.flush();
+}
+
+const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, JobStats& stats,
+                                  CommandContext* ctx)
 {
     auto& usb = app_.getUsbHostManager();
     if (!usb.IsReady()) return "no printer attached";
@@ -124,7 +137,23 @@ const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, Jo
 
     // 30 s: a long label at the printer's own feed rate is slow, and a timeout
     // shorter than the paper takes is a truncated label.
-    const int sent = usb.Send(job, n, 30000);
+    //
+    // The callback is capture-less on purpose, so it converts to a plain
+    // function pointer and the transfer loop allocates nothing. Everything it
+    // needs travels in `prog`.
+    Progress prog{ ctx, n, 0 };
+    Report(ctx, "send", 0, static_cast<uint32_t>(n));
+    const int sent = usb.Send(job, n, 30000,
+        [](void* v, size_t done) {
+            auto* pr = static_cast<Progress*>(v);
+            // Throttled, and the last chunk always reports: a bar that stops at
+            // 97% because the tail was under the threshold looks like a hang.
+            if (done - pr->last < REPORT_EVERY && done != pr->total) return;
+            pr->last = done;
+            Report(pr->ctx, "send", static_cast<uint32_t>(done),
+                   static_cast<uint32_t>(pr->total));
+        },
+        &prog);
     const int64_t t2 = esp_timer_get_time();
     heap_caps_free(job);
 
@@ -140,7 +169,8 @@ const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, Jo
     return nullptr;
 }
 
-const char* PrintManager::PrintSvg(const char* wirePath, const Placement& p, JobStats& stats)
+const char* PrintManager::PrintSvg(const char* wirePath, const Placement& p, JobStats& stats,
+                                   CommandContext* ctx)
 {
     if (!app_.getStorageManager().IsMounted()) return "not mounted";
 
@@ -149,6 +179,10 @@ const char* PrintManager::PrintSvg(const char* wirePath, const Placement& p, Job
 
     // One job at a time on the wire, and one render behind it.
     LOCK(printLock_);
+
+    // ThorVG reports nothing as it draws, so this is a phase marker rather than
+    // a number: the UI shows an indeterminate bar until the send starts.
+    Report(ctx, "render");
 
     const int64_t t0 = esp_timer_get_time();
     RenderManager::Bitmap bmp;
@@ -165,7 +199,7 @@ const char* PrintManager::PrintSvg(const char* wirePath, const Placement& p, Job
     stats.workerStack  = bmp.stackLeft;
     stats.scale        = bmp.scale;
 
-    const char* err = SendJob(bmp.pixels, p, stats);
+    const char* err = SendJob(bmp.pixels, p, stats, ctx);
     heap_caps_free(bmp.pixels);
     return err;
 }
@@ -272,7 +306,7 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
     const char* error = Resolve(media, p,
                                 width != UNSET_U, height != UNSET_U,
                                 offsetX != UNSET_I, offsetY != UNSET_I);
-    if (!error) error = PrintSvg(path, p, stats);
+    if (!error) error = PrintSvg(path, p, stats, &ctx);
 
     auto resp = ctx.reply.object();
     resp.field("ok", error == nullptr);

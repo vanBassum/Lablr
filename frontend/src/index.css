@@ -112,3 +112,11 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* The indeterminate progress bar on the Print page. A phase the device cannot
+   put a number on - ThorVG reports nothing while it draws - gets a sliding bar
+   rather than one parked at 0%, which reads as stuck rather than as working. */
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

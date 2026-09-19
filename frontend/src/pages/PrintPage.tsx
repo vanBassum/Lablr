@@ -25,6 +25,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   backend,
   type FontEntry,
+  type JobProgress,
   type Medium,
   type PrintResult,
   type PrintStatus,
@@ -116,6 +117,30 @@ function svgDataUrl(bytes: Uint8Array): string {
   return `data:image/svg+xml;base64,${btoa(binary)}`
 }
 
+/** A thin progress bar. `fraction` of null means the work has started but has
+ *  no number attached - a ThorVG render reports nothing while it draws - so the
+ *  bar animates instead of sitting at 0%, which reads as stuck. */
+function ProgressBar({ label, fraction }: { label: string; fraction: number | null }) {
+  return (
+    <div className="mt-2">
+      <div className="mb-1 flex justify-between text-xs text-muted-foreground">
+        <span>{label}</span>
+        {fraction !== null && <span className="tabular-nums">{Math.round(fraction * 100)}%</span>}
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
+        {fraction === null ? (
+          <div className="h-full w-1/3 animate-[progress-slide_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+        ) : (
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${Math.round(fraction * 100)}%` }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
 /** Identifies one preview: a picture is the current one only if it is of this
  *  label AT this geometry. One function so the request side and the "is what is
  *  on screen still current" side cannot drift apart. */
@@ -152,6 +177,12 @@ export default function PrintPage() {
 
   const [busy, setBusy] = useState(false)
   const [printing, setPrinting] = useState(false)
+  // Where the print is. null when nothing is printing; `render` carries no
+  // number, `send` carries bytes out of the job's total.
+  const [printProgress, setPrintProgress] = useState<JobProgress | null>(null)
+  // Bytes of the preview bitmap received so far, out of what the header
+  // promised. Only meaningful once the device has finished rasterising.
+  const [renderProgress, setRenderProgress] = useState<number | null>(null)
   const [zoom, setZoom] = useState(1)
   // What the canvas actually holds. The canvas is ONE element that outlives a
   // selection change, so without this the previous label's pixels stay on screen
@@ -281,8 +312,12 @@ export default function PrintPage() {
   const renderPreview = useCallback(
     async (path: string, seq: number) => {
       const key = previewKeyOf(path, w, h)
+      setRenderProgress(null)
       try {
-        const res = await backend.renderSvg(path, w, h)
+        const expected = w * h * 4
+        const res = await backend.renderSvg(path, w, h, (received) =>
+          setRenderProgress(Math.min(1, received / expected)),
+        )
         // Nothing else may have asked in the meantime. A slow render of a label
         // that is no longer selected must never reach the canvas.
         if (seq !== requestSeq.current) return
@@ -302,6 +337,8 @@ export default function PrintPage() {
         // Marked done anyway, so a design the rasteriser refuses does not have
         // the queue asking for it again on every tick.
         setDrawnKey(key)
+      } finally {
+        setRenderProgress(null)
       }
     },
     [w, h],
@@ -420,6 +457,7 @@ export default function PrintPage() {
           custom
             ? { path: selected, width: custom.w, height: custom.h, threshold }
             : { path: selected, media: mediaId, threshold },
+          setPrintProgress,
         )
         setLastJob(res)
         if (res.warning) {
@@ -434,6 +472,7 @@ export default function PrintPage() {
       toast.error("Print failed", { description: errorMessage(e) })
     } finally {
       setPrinting(false)
+      setPrintProgress(null)
       backend.printStatus().then(setPrinter).catch(() => {})
     }
   }
@@ -677,7 +716,9 @@ export default function PrintPage() {
                       }}
                     />
                   ) : (
-                    <p className="text-sm text-muted-foreground">Rendering on the device...</p>
+                    <div className="w-48">
+                      <ProgressBar label="Rendering on the device" fraction={renderProgress} />
+                    </div>
                   ))}
               </>
             ) : (
@@ -804,6 +845,23 @@ export default function PrintPage() {
             <PrinterIcon className="size-4" />
             {printing ? "Printing..." : "Print label"}
           </Button>
+
+          {printing && (
+            <ProgressBar
+              label={
+                printProgress?.phase === "send"
+                  ? quantity > 1
+                    ? `Sending to the printer (${printProgress.done} of ${printProgress.total} bytes)`
+                    : "Sending to the printer"
+                  : "Rendering the label"
+              }
+              fraction={
+                printProgress?.phase === "send" && printProgress.total
+                  ? printProgress.done / printProgress.total
+                  : null
+              }
+            />
+          )}
 
           <div className="border-t pt-3">
             <button

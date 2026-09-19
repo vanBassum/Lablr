@@ -116,10 +116,20 @@ public:
     /// A consistent copy of what is attached. False when nothing is.
     bool Snapshot(Attached& out) const;
 
+    /// Called after each chunk of a Send lands, with the running total. A plain
+    /// function pointer and a context pointer rather than std::function: this is
+    /// called from inside the transfer loop, and a std::function that outgrew its
+    /// small-object buffer would put a heap allocation on the print path.
+    using ProgressFn = void (*)(void* context, size_t sent);
+
     /// Push bytes at the bulk OUT endpoint, blocking until they are all gone.
     /// Returns bytes accepted, or -1 on error / nothing attached. Serialised:
     /// there is one transfer buffer and one printer.
-    int Send(const uint8_t* data, size_t len, uint32_t timeoutMs = 5000);
+    ///
+    /// `onProgress` reports after every chunk, which is every 4 KB at most. It
+    /// is the caller's job to decide that is too often and throttle.
+    int Send(const uint8_t* data, size_t len, uint32_t timeoutMs = 5000,
+             ProgressFn onProgress = nullptr, void* progressContext = nullptr);
 
     /// Read the printer-class status byte over the control pipe (GET_PORT_STATUS).
     /// Returns false if the device has no printer interface or refuses.
