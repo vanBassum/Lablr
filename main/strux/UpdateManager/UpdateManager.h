@@ -92,8 +92,11 @@ private:
           "Erase a partition. Destructive and immediate - the running app slot is "
           "refused, anything else is erased." },
         { "partition", "activate", &InvokeCommand<&UpdateManager::Cmd_ActivatePartition>,
-          "Mark an app partition as the one to boot next. Takes effect at the next "
-          "reboot; an image that does not validate is refused." },
+          "Choose which app partition boots, and optionally reboot into it now. "
+          "This is the only command that changes the boot slot: an upload leaves "
+          "it alone, so a written image sits inert until this says otherwise, and "
+          "'system reboot' returns to the same image every time. An image that "
+          "does not validate is refused." },
         { "partition", "read",     &InvokeCommand<&UpdateManager::Cmd_DownloadPartition>,
           "Read a partition back. The reply is the raw partition bytes and nothing "
           "else - no header record - streamed until the session closes, which can "

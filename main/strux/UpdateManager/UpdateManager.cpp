@@ -3,6 +3,9 @@
 #include "CommandManager.h"
 #include "esp_log.h"
 #include "esp_app_desc.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <cstring>
 #include <cstdio>
 
@@ -319,17 +322,40 @@ RequestError UpdateManager::Cmd_ClearPartition(CommandContext& ctx)
 RequestError UpdateManager::Cmd_ActivatePartition(CommandContext& ctx)
 {
     char label[17] = {};
-    RETURN_IF_ERROR(ctx.readArgs(Required("partition", label,
-        "Label of the partition, as 'partition list' reports it.")));
+    bool restart   = false;
+    RETURN_IF_ERROR(ctx.readArgs(
+        Required("partition", label,
+                 "Label of the partition, as 'partition list' reports it."),
+        Optional("restart", restart,
+                 "true to reboot into it now. Default false, which leaves the "
+                 "switch to take effect whenever the device next restarts. This "
+                 "command is the ONLY thing that changes which image boots - "
+                 "uploading one does not, and 'system reboot' always comes back "
+                 "into the same image it was running.")));
 
-    auto resp = ctx.reply.object();
-    if (const char* err = PartitionWriter::Activate(label))
+    bool activated = false;
     {
-        resp.field("ok", false);
-        resp.field("error", err);
-        return RequestError::Ok;
+        auto resp = ctx.reply.object();
+        if (const char* err = PartitionWriter::Activate(label))
+        {
+            resp.field("ok", false);
+            resp.field("error", err);
+            return RequestError::Ok;
+        }
+        resp.field("ok", true);
+        resp.field("restarting", restart);
+        activated = true;
+    }   // close the scope BEFORE restarting so the reply is complete
+
+    if (activated && restart)
+    {
+        ESP_LOGI(TAG, "rebooting into '%s'", label);
+        // The same half second `system reboot` takes, and for the same reason:
+        // the reply is written but the socket has not drained yet. It is the one
+        // sleep a handler is allowed, because the task is about to stop existing.
+        vTaskDelay(pdMS_TO_TICKS(500));
+        esp_restart();
     }
-    resp.field("ok", true);
     return RequestError::Ok;
 }
 

@@ -34,6 +34,15 @@ export type LoginOutcome =
   | { ok: true }
   | { ok: false; error?: string; retryAfter?: number }
 
+/** Thrown when an upload was cancelled from the UI. A distinct type because a
+ *  cancel is not a failure and must not be reported as one. */
+export class UploadCancelled extends Error {
+  constructor() {
+    super("Upload cancelled")
+    this.name = "UploadCancelled"
+  }
+}
+
 export type ConnectionStatus = "connected" | "connecting" | "disconnected"
 type StatusHandler = (status: ConnectionStatus) => void
 type AuthHandler = (authenticated: boolean) => void
@@ -247,6 +256,15 @@ class BackendService {
 
   // Run `task` after every previously-enqueued task has settled — the
   // open-serialization queue. A task's failure never stalls the queue.
+  /** Serialize socket access: each task runs only after the previous settled.
+   *
+   *  A task queued from INSIDE a running task deadlocks - the inner one chains
+   *  onto a queue whose tail is the outer one, so it waits for the task that is
+   *  waiting for it. There is no timeout on that and no error: it simply never
+   *  happens, which is what made an upload sit at 0% forever with the device
+   *  idle. A multi-command sequence that must own the socket (see
+   *  uploadPartition) therefore calls `sendUnqueued` for its inner steps - it
+   *  already holds the slot. */
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const run = this.queue.then(task, task)
     this.queue = run.then(
@@ -321,16 +339,23 @@ class BackendService {
     type: string,
     params: Record<string, unknown> = {},
   ): Promise<T> {
-    return this.enqueue(async () => {
-      await this.ensureConnected()
-      const session = this.allocSession()
-      const reply = this.awaitReply<T>(session)
-      // Request = one FINAL session chunk: the command JSON + '\n' (the device
-      // splits the header line from any body; these commands have no body).
-      const body = new TextEncoder().encode(JSON.stringify({ type, ...params }) + "\n")
-      this.sendChunk(session, FLAG_FINAL, body)
-      return reply
-    })
+    return this.enqueue(() => this.sendUnqueued<T>(type, params))
+  }
+
+  /** One command, WITHOUT taking a queue slot. Only for a caller that already
+   *  holds one - see the deadlock note on `enqueue`. */
+  private async sendUnqueued<T>(
+    type: string,
+    params: Record<string, unknown> = {},
+  ): Promise<T> {
+    await this.ensureConnected()
+    const session = this.allocSession()
+    const reply = this.awaitReply<T>(session)
+    // Request = one FINAL session chunk: the command JSON + '\n' (the device
+    // splits the header line from any body; these commands have no body).
+    const body = new TextEncoder().encode(JSON.stringify({ type, ...params }) + "\n")
+    this.sendChunk(session, FLAG_FINAL, body)
+    return reply
   }
 
   // Reassemble a reply from its session chunks. Each chunk is
@@ -579,14 +604,19 @@ class BackendService {
     partition: string,
     file: File,
     onProgress?: (percent: number) => void,
+    signal?: AbortSignal,
   ): Promise<UploadResult> {
     return this.enqueue(async () => {
       await this.ensureConnected()
 
+      // sendUnqueued, not send: this task already holds the queue slot, and
+      // re-entering enqueue from here waits for this task to finish. See the
+      // note on `enqueue`.
+      //
       // Erase first: `partition write` never erases, and flash bits only clear on
       // erase, so writing over stale content would produce an image that fails
       // validation at activate.
-      const cleared = await this.send<{ ok: boolean; error?: string }>("partition clear", { partition })
+      const cleared = await this.sendUnqueued<{ ok: boolean; error?: string }>("partition clear", { partition })
       if (!cleared.ok) throw new Error(cleared.error ?? "partition clear failed")
 
       const session = this.allocSession()
@@ -616,6 +646,16 @@ class BackendService {
       const CHUNK = 4096
       let sent = 0
       while (sent < total) {
+        if (signal?.aborted) {
+          // Stopping mid-body cannot just stop: the device is blocked reading
+          // this session and would wait for a FINAL that is never coming, and a
+          // FINAL sent early would be read as a COMPLETE upload - a truncated
+          // image that passes for a whole one. Dropping the socket is what ends
+          // it honestly: the device's read fails, `partition write` reports the
+          // failure, and the boot slot was never touched anyway.
+          this.ws?.close()
+          throw new UploadCancelled()
+        }
         const end = Math.min(sent + CHUNK, total)
         const slice = new Uint8Array(await file.slice(sent, end).arrayBuffer())
         const isLast = end >= total
@@ -629,14 +669,24 @@ class BackendService {
       const res = await reply
       if (!res.ok) throw new Error(res.error ?? "partition write failed")
 
-      // Validate and switch the boot slot only once every byte landed. Until this
-      // point the old slot still boots, so a failed upload leaves the device intact.
-      const act = await this.send<{ ok: boolean; error?: string }>("partition activate", { partition })
-      if (!act.ok) throw new Error(act.error ?? "partition activate failed")
-
+      // NOTHING is activated here. An upload writes bytes; choosing what boots is
+      // `partition activate`, which the Firmware page offers as its own button.
+      // Uploading used to switch the boot slot as its last step, which meant the
+      // only way to stage an image was to commit to it.
       onProgress?.(100)
       return { ok: true, size: res.size ?? sent }
     })
+  }
+
+  /** Choose which app partition boots. `restart` reboots into it immediately;
+   *  without it the switch waits for the next restart. This is the only call
+   *  that changes the boot slot - `reboot()` never does. */
+  async activatePartition(partition: string, restart = false): Promise<void> {
+    const res = await this.send<{ ok: boolean; error?: string }>("partition activate", {
+      partition,
+      restart,
+    })
+    if (!res.ok) throw new Error(res.error ?? "partition activate failed")
   }
 
   // Backpressure: don't let the browser-side WS buffer outrun the socket.
