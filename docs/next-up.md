@@ -5,7 +5,7 @@ lands or is dropped — never ticked off in place. Everything else lives in
 GitHub issues (work for later) or `docs/reasoning/` (why things are the way they are).
 If a fact wants to survive, it does not belong in this file.
 
-Last updated 2026-09-18.
+Last updated 2026-09-19.
 
 ## Now
 
@@ -23,6 +23,16 @@ media definitions would supply the size "later".
 from `main/app/`, from the nav and from `backend.ts`. `MockLed` stays bound in
 `BoardContext` because `Led` is still a role every Strux board owes — that is a template
 decision, not this product's.
+
+**Outstanding: two fixes built but never flashed.** The S3 was not on the bench when
+they were written, so both are compile-verified only. (1) `xml::DecodeCharData` resolves
+character references before ThorVG parses, because ThorVG resolves none - a label
+written `AT&amp;T` printed the entity. Host tests cover the function; what is unchecked
+is that a real label draws `&`. (2) The Print page's preview asks for `format: "png"`
+instead of the device's raw ARGB, which was three quarters of a megabyte down a
+512-byte session window. `check_amp.py` (written to the session scratchpad, not kept)
+drives both over the wire; the ampersand check is decisive on its own, because a
+`&amp;` render and a CDATA `&` render must come back byte-identical.
 
 **Outstanding: the browser Print button is still the one path never physically
 exercised.** Everything it calls has been driven from a script and works, and the page

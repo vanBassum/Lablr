@@ -896,16 +896,32 @@ class BackendService {
   /** `onProgress` reports BYTES RECEIVED, which only starts once the device has
    *  finished rasterising - ThorVG reports nothing while it draws. So a caller
    *  shows an indeterminate bar until the first byte and a real one after. */
+  /** Rasterise a label on the device.
+   *
+   *  `format` is the one decision worth making here rather than at the call
+   *  site's convenience. The device's native answer is `raw` - ARGB8888S,
+   *  four bytes a pixel - and it is the right answer for something that wants
+   *  the pixels themselves. It is the wrong answer for something that only
+   *  wants to LOOK at them: the local session window is 512 bytes, so a
+   *  300x640 dot label is three quarters of a megabyte in about 1,500
+   *  WebSocket frames, and the wait is all framing. The same label as a PNG is
+   *  a flat-colour image compressed in the device's ROM deflate, which is a
+   *  couple of dozen kilobytes and a few dozen frames.
+   *
+   *  A PNG's length is not known until it has been encoded, so it streams and
+   *  the header declares no `bytes`. `onProgress` therefore has nothing to be
+   *  a fraction OF - which is why the caller that asks for a PNG shows an
+   *  indeterminate bar rather than a percentage. */
   async renderSvg(
     path: string,
     width: number,
     height: number,
-    onProgress?: (received: number) => void,
+    opts?: { format?: "raw" | "png"; onProgress?: (received: number) => void },
   ): Promise<{ header: RenderHeader; bytes: Uint8Array; elapsedMs: number }> {
     const started = performance.now()
     const res = await this.downloadSessionWithHeader<RenderHeader>("render svg", {
-      path, width, height,
-    }, onProgress)
+      path, width, height, ...(opts?.format ? { format: opts.format } : {}),
+    }, opts?.onProgress)
     const elapsedMs = performance.now() - started
     if (!res.header.ok) throw new Error(res.header.error ?? "render failed")
     return { ...res, elapsedMs }

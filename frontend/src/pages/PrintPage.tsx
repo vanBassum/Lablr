@@ -70,21 +70,6 @@ function fmtWhen(unixSeconds: number): string {
     : d.toLocaleDateString(undefined, { day: "numeric", month: "short" })
 }
 
-/** ARGB8888S is one 32-bit LITTLE-ENDIAN word per pixel, so in memory the bytes
- *  are B,G,R,A. ImageData wants R,G,B,A. Un-premultiplied is what makes this a
- *  channel swap and not an un-multiply, which is why the device sends the S
- *  variant. */
-function toImageData(bytes: Uint8Array, width: number, height: number): ImageData {
-  const out = new Uint8ClampedArray(width * height * 4)
-  for (let i = 0; i < out.length; i += 4) {
-    out[i] = bytes[i + 2]
-    out[i + 1] = bytes[i + 1]
-    out[i + 2] = bytes[i]
-    out[i + 3] = bytes[i + 3]
-  }
-  return new ImageData(out, width, height)
-}
-
 /** A design's own size, from its root element. width/height first, viewBox as
  *  the fallback - an SVG is allowed to carry only the latter. This is what says
  *  whether a design was drawn FOR the selected stock or merely fits on it, which
@@ -180,9 +165,6 @@ export default function PrintPage() {
   // Where the print is. null when nothing is printing; `render` carries no
   // number, `send` carries bytes out of the job's total.
   const [printProgress, setPrintProgress] = useState<JobProgress | null>(null)
-  // Bytes of the preview bitmap received so far, out of what the header
-  // promised. Only meaningful once the device has finished rasterising.
-  const [renderProgress, setRenderProgress] = useState<number | null>(null)
   const [zoom, setZoom] = useState(1)
   // What the canvas actually holds. The canvas is ONE element that outlives a
   // selection change, so without this the previous label's pixels stay on screen
@@ -309,25 +291,42 @@ export default function PrintPage() {
   }, [])
 
   // The full preview, at the medium's real geometry, straight onto the canvas.
+  //
+  // As a PNG, not as the device's native ARGB8888S. The rasterisation is
+  // identical either way - it is the same `Render()` the printer calls - but
+  // the reply is not: raw is four bytes a pixel down a 512-byte session
+  // window, so a 300x640 dot label was three quarters of a megabyte in about
+  // 1,500 WebSocket frames. That, and not the drawing, is why a preview felt so
+  // much slower than a print, which sends the label to the printer and only a
+  // few hundred bytes of stats back here. A label is flat colour, so the PNG is
+  // a fraction of that and the browser decodes it natively.
   const renderPreview = useCallback(
     async (path: string, seq: number) => {
       const key = previewKeyOf(path, w, h)
-      setRenderProgress(null)
       try {
-        const expected = w * h * 4
-        const res = await backend.renderSvg(path, w, h, (received) =>
-          setRenderProgress(Math.min(1, received / expected)),
-        )
+        // No onProgress: a streamed PNG declares no length, so there is no
+        // total to be a fraction of and the bar animates instead. Honest, and
+        // no longer the several-second wait that made a number worth having.
+        const res = await backend.renderSvg(path, w, h, { format: "png" })
         // Nothing else may have asked in the meantime. A slow render of a label
         // that is no longer selected must never reach the canvas.
         if (seq !== requestSeq.current) return
-        const rw = res.header.width ?? w
-        const rh = res.header.height ?? h
+        // Decoded by the browser, which knows PNG; the device's own idea of the
+        // size is still what the canvas is sized to, so a reply that disagreed
+        // with the request would show as the wrong shape rather than silently
+        // scaling.
+        const bitmap = await createImageBitmap(
+          new Blob([res.bytes as BlobPart], { type: "image/png" }),
+        )
         const canvas = canvasRef.current
-        if (!canvas) return
-        canvas.width = rw
-        canvas.height = rh
-        canvas.getContext("2d")?.putImageData(toImageData(res.bytes, rw, rh), 0, 0)
+        if (seq !== requestSeq.current || !canvas) {
+          bitmap.close()
+          return
+        }
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+        canvas.getContext("2d")?.drawImage(bitmap, 0, 0)
+        bitmap.close()
         // Only now is the canvas this label's, and only now does the markup
         // below stop showing the thumbnail standing in for it.
         setDrawnKey(key)
@@ -337,8 +336,6 @@ export default function PrintPage() {
         // Marked done anyway, so a design the rasteriser refuses does not have
         // the queue asking for it again on every tick.
         setDrawnKey(key)
-      } finally {
-        setRenderProgress(null)
       }
     },
     [w, h],
@@ -717,7 +714,10 @@ export default function PrintPage() {
                     />
                   ) : (
                     <div className="w-48">
-                      <ProgressBar label="Rendering on the device" fraction={renderProgress} />
+                      {/* Always indeterminate: a render reports nothing while
+                          it draws, and the PNG that follows it declares no
+                          length to count against. */}
+                      <ProgressBar label="Rendering on the device" fraction={null} />
                     </div>
                   ))}
               </>
