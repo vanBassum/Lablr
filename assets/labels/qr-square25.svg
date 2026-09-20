@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="295" height="295" viewBox="0 0 295 295">
+  <rect x="0" y="0" width="295" height="295" fill="#ffffff"/>
+  <rect x="10" y="10" width="275" height="275" fill="none" stroke="#000000" stroke-width="3"/>
+
+  <!-- The whole QR declaration: a payload and a box. The device encodes it at
+       render time, so this file has no module matrix in it and the URL below
+       can still be read back out of the label. 200 dots is comfortable here -
+       a 25-character URL at ECC M is 25 modules, which with its 8 modules of
+       quiet zone leaves 6 whole dots per module. -->
+  <rect x="47" y="24" width="200" height="200"
+        data-qr="https://parts.local/bc547" data-qr-ecc="M"/>
+
+  <text x="147.5" y="252" font-family="DejaVuSans-Bold" font-size="26"
+        text-anchor="middle" fill="#000000">BC547</text>
+  <text x="147.5" y="274" font-family="DejaVuSans" font-size="14"
+        text-anchor="middle" fill="#000000">parts.local/bc547</text>
+</svg>

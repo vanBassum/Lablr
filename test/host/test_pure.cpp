@@ -18,6 +18,9 @@
 //                       - the second such pass, and the one that has to agree
 //                         with itself twice: it is called once to measure and
 //                         once to fill, so a disagreement is a buffer overrun.
+//   svg::ExpandQrCodes  - the third, where the geometry decides whether a
+//                         printed code scans at all, and where the encoder
+//                         itself is the one part a host cannot check.
 //
 // Everything else about this firmware needs a printer, a WiFi network or a
 // flash partition, and is checked by driving the device over its own wire. See
@@ -31,6 +34,7 @@
 #include "Raster.h"
 #include "XmlEntities.h"
 #include "SvgFontAttrs.h"
+#include "SvgQrCode.h"
 
 #include <cstdio>
 #include <cstring>
@@ -556,6 +560,317 @@ static void test_pushdown_a_whole_label()
     CHECK_PUSHDOWN(in, want);
 }
 
+// ──────────────────────────────────────────────────────────────
+// svg::ExpandQrCodes
+//
+// The encoder is not tested here - it is espressif/qrcode, on the device, and
+// a Reed-Solomon implementation is not something a stub can stand in for. What
+// IS tested is everything around it, which is where this firmware's own
+// mistakes would live: reading the placeholder, resolving the payload, snapping
+// the module size to whole dots, centring, the quiet zone, and the measure/fill
+// agreement that a two-pass writer lives or dies by.
+// ──────────────────────────────────────────────────────────────
+
+/// Stands in for the encoder. It is NOT a QR encoder and does not pretend to
+/// be: it reports a side length and a single controllable run of dark modules,
+/// which is all the geometry needs in order to be checked exactly.
+struct StubQr : svg::QrEncoder
+{
+    int  side;
+    int  darkRow  = -1;
+    int  darkFrom = 0;
+    int  darkLen  = 0;
+    bool refuse   = false;
+
+    int         calls = 0;
+    std::string lastText;
+    svg::QrEcc  lastEcc = svg::QrEcc::Medium;
+
+    explicit StubQr(int s) : side(s) {}
+
+    int Encode(const char* text, size_t len, svg::QrEcc ecc) override
+    {
+        ++calls;
+        lastText.assign(text, len);
+        lastEcc = ecc;
+        // The pass promises the encoder a NUL-terminated string.
+        CHECK(text[len] == '\0');
+        return refuse ? 0 : side;
+    }
+
+    bool Module(int x, int y) const override
+    {
+        return y == darkRow && x >= darkFrom && x < darkFrom + darkLen;
+    }
+};
+
+static size_t MeasureQr(const char* in, StubQr& enc, svg::QrDiagnostic& diag)
+{
+    return svg::ExpandQrCodes(in, std::strlen(in), nullptr, 0, enc, diag);
+}
+
+static std::string RunQr(const char* in, StubQr& enc, svg::QrDiagnostic& diag)
+{
+    const size_t len  = std::strlen(in);
+    const size_t need = svg::ExpandQrCodes(in, len, nullptr, 0, enc, diag);
+    if (need == 0) return std::string();
+
+    std::vector<char> buf(need + 1, 0);
+    const size_t wrote = svg::ExpandQrCodes(in, len, buf.data(), need, enc, diag);
+    CHECK(wrote == need);                       // measuring and filling agree
+    return std::string(buf.data(), need);
+}
+
+static void test_qr_expands_a_placeholder()
+{
+    // 21 modules + 8 quiet = 29; 200 / 29 = 6 dots per module (6.89 floored);
+    // extent 174; centred in 200 leaves 13 on each side; the modules then start
+    // a four-module quiet zone in, at 13 + 24 = 37.
+    StubQr enc(21);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 3;
+
+    svg::QrDiagnostic diag;
+    const std::string out = RunQr(
+        "<svg><rect x=\"0\" y=\"0\" width=\"200\" height=\"200\" "
+        "data-qr=\"HELLO\"/></svg>", enc, diag);
+
+    CHECK(diag.status == svg::QrStatus::Ok);
+    CHECK(out ==
+          "<svg><g><rect x=\"13\" y=\"13\" width=\"174\" height=\"174\" fill=\"#ffffff\"/>"
+          "<path fill=\"#000000\" d=\"M37 37h18v6h-18z\"/></g></svg>");
+
+    // The run was merged: three dark modules are one subpath, not three.
+    CHECK(out.find("M37 37h18v6h-18z") != std::string::npos);
+    CHECK(enc.lastText == "HELLO");
+    CHECK(enc.lastEcc == svg::QrEcc::Medium);    // the default
+}
+
+static void test_qr_snaps_the_module_size_to_whole_dots()
+{
+    // 205 / 29 = 7.07, so 7 dots per module and an extent of 203. The 2 dots
+    // that do not divide become margin, 1 on each side - they are NOT spread
+    // across the modules, which is the whole point.
+    StubQr enc(21);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 1;
+
+    svg::QrDiagnostic diag;
+    const std::string out = RunQr(
+        "<rect x=\"0\" y=\"0\" width=\"205\" height=\"205\" data-qr=\"X\"/>", enc, diag);
+
+    CHECK(out.find("x=\"1\" y=\"1\" width=\"203\" height=\"203\"") != std::string::npos);
+    CHECK(out.find("M29 29h7v7h-7z") != std::string::npos);    // 1 + 4*7 = 29
+}
+
+static void test_qr_centres_in_a_rectangle_and_honours_the_origin()
+{
+    // A non-square box is sized by its SMALLER side, then centred in both, and
+    // the rect's own x/y are the origin it is centred about.
+    StubQr enc(21);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 1;
+
+    svg::QrDiagnostic diag;
+    const std::string out = RunQr(
+        "<rect x=\"100\" y=\"50\" width=\"300\" height=\"200\" data-qr=\"X\"/>", enc, diag);
+
+    // min(300,200) = 200 -> 6 dots per module, extent 174.
+    // x: 100 + (300-174)/2 = 163.  y: 50 + (200-174)/2 = 63.
+    CHECK(out.find("x=\"163\" y=\"63\" width=\"174\" height=\"174\"") != std::string::npos);
+}
+
+static void test_qr_quiet_zone_is_inside_the_declared_box()
+{
+    // The white field is the whole extent; the first module sits four modules
+    // in from it on both axes. A quiet zone outside the box would put the code
+    // over its neighbours instead.
+    StubQr enc(25);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 1;
+
+    svg::QrDiagnostic diag;
+    const std::string out = RunQr(
+        "<rect x=\"0\" y=\"0\" width=\"330\" height=\"330\" data-qr=\"X\"/>", enc, diag);
+
+    // 25 + 8 = 33 modules; 330/33 = 10 exactly, so no margin at all.
+    CHECK(out.find("x=\"0\" y=\"0\" width=\"330\" height=\"330\"") != std::string::npos);
+    CHECK(out.find("M40 40h10v10h-10z") != std::string::npos);   // 4 modules in
+}
+
+static void test_qr_refuses_a_box_too_small_rather_than_shrinking()
+{
+    // 29 modules of quiet-included code at the 3-dot floor needs 87; 60 is not
+    // enough, and the answer is a refusal carrying the number that would work -
+    // not a 2-dot module that prints and does not scan.
+    StubQr enc(21);
+    svg::QrDiagnostic diag;
+
+    const size_t need = MeasureQr("<rect width=\"60\" height=\"60\" data-qr=\"X\"/>",
+                                  enc, diag);
+
+    CHECK(need == 0);
+    CHECK(diag.status == svg::QrStatus::BoxTooSmall);
+    CHECK(diag.modules == 21);
+    CHECK(diag.boxDots == 60);
+    CHECK(diag.needDots == 29 * svg::QR_MIN_MODULE_DOTS);       // 87
+}
+
+static void test_qr_resolves_character_references_in_the_payload()
+{
+    // DecodeCharData copies markup through whole, so an attribute value still
+    // holds its entities when this pass reads it. A URL with two query
+    // parameters is the case that matters, and getting it wrong encodes a
+    // working link to the wrong address.
+    StubQr enc(21);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 1;
+
+    svg::QrDiagnostic diag;
+    RunQr("<rect width=\"200\" height=\"200\" "
+          "data-qr=\"https://x/p?a=1&amp;b=2\"/>", enc, diag);
+
+    CHECK(enc.lastText == "https://x/p?a=1&b=2");
+}
+
+static void test_qr_reads_the_ecc_attribute()
+{
+    StubQr enc(21);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 1;
+    svg::QrDiagnostic diag;
+
+    RunQr("<rect width=\"200\" height=\"200\" data-qr=\"X\" data-qr-ecc=\"L\"/>", enc, diag);
+    CHECK(enc.lastEcc == svg::QrEcc::Low);
+
+    RunQr("<rect width=\"200\" height=\"200\" data-qr=\"X\" data-qr-ecc=\"Q\"/>", enc, diag);
+    CHECK(enc.lastEcc == svg::QrEcc::Quartile);
+
+    RunQr("<rect width=\"200\" height=\"200\" data-qr=\"X\" data-qr-ecc=\"h\"/>", enc, diag);
+    CHECK(enc.lastEcc == svg::QrEcc::High);
+
+    // Absent is M, which is what the device documents.
+    RunQr("<rect width=\"200\" height=\"200\" data-qr=\"X\"/>", enc, diag);
+    CHECK(enc.lastEcc == svg::QrEcc::Medium);
+
+    // Anything else is an error, not a quiet fallback to a weaker level.
+    MeasureQr("<rect width=\"200\" height=\"200\" data-qr=\"X\" data-qr-ecc=\"medium\"/>",
+              enc, diag);
+    CHECK(diag.status == svg::QrStatus::BadEcc);
+}
+
+static void test_qr_refuses_a_placeholder_without_geometry()
+{
+    StubQr enc(21);
+    svg::QrDiagnostic diag;
+
+    CHECK(MeasureQr("<rect data-qr=\"X\"/>", enc, diag) == 0);
+    CHECK(diag.status == svg::QrStatus::MissingGeometry);
+
+    CHECK(MeasureQr("<rect width=\"0\" height=\"9\" data-qr=\"X\"/>", enc, diag) == 0);
+    CHECK(diag.status == svg::QrStatus::MissingGeometry);
+}
+
+static void test_qr_reports_an_encoder_refusal()
+{
+    StubQr enc(21);
+    enc.refuse = true;
+    svg::QrDiagnostic diag;
+
+    CHECK(MeasureQr("<rect width=\"200\" height=\"200\" data-qr=\"X\"/>", enc, diag) == 0);
+    CHECK(diag.status == svg::QrStatus::EncodeFailed);
+}
+
+static void test_qr_refuses_an_oversized_payload()
+{
+    StubQr enc(21);
+    svg::QrDiagnostic diag;
+
+    std::string in = "<rect width=\"200\" height=\"200\" data-qr=\"";
+    in.append(svg::QR_MAX_PAYLOAD + 1, 'x');
+    in += "\"/>";
+
+    CHECK(svg::ExpandQrCodes(in.c_str(), in.size(), nullptr, 0, enc, diag) == 0);
+    CHECK(diag.status == svg::QrStatus::PayloadTooLong);
+}
+
+static void test_qr_leaves_everything_else_alone()
+{
+    // No placeholder means no change at all - the caller can then parse the
+    // input as it stands, which is what a result equal to the length says.
+    StubQr enc(21);
+    svg::QrDiagnostic diag;
+
+    const char*  in  = "<svg><rect x=\"1\" width=\"2\" height=\"3\"/><text>hi</text></svg>";
+    const size_t len = std::strlen(in);
+
+    CHECK(svg::ExpandQrCodes(in, len, nullptr, 0, enc, diag) == len);
+    CHECK(enc.calls == 0);
+    CHECK(RunQr(in, enc, diag) == in);
+}
+
+static void test_qr_ignores_a_placeholder_inside_markup()
+{
+    // A comment is copied through whole, so a placeholder written in one is
+    // still a comment - the same rule the other two passes follow.
+    StubQr enc(21);
+    svg::QrDiagnostic diag;
+
+    const char*  in  = "<!-- <rect width=\"200\" height=\"200\" data-qr=\"X\"/> --><g/>";
+    const size_t len = std::strlen(in);
+
+    CHECK(svg::ExpandQrCodes(in, len, nullptr, 0, enc, diag) == len);
+    CHECK(enc.calls == 0);
+}
+
+static void test_qr_swallows_a_separate_closing_tag()
+{
+    // `<rect ...></rect>` is not how a shape is written, but if it is written
+    // that way the closing tag must not be left behind as an orphan.
+    StubQr enc(21);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 1;
+    svg::QrDiagnostic diag;
+
+    const std::string out = RunQr(
+        "<a><rect width=\"200\" height=\"200\" data-qr=\"X\"></rect></a>", enc, diag);
+
+    CHECK(out.find("</rect>") == std::string::npos);
+    CHECK(out.substr(0, 3) == "<a>");
+    CHECK(out.substr(out.size() - 4) == "</a>");
+}
+
+static void test_qr_expands_every_placeholder()
+{
+    StubQr enc(21);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 1;
+    svg::QrDiagnostic diag;
+
+    const std::string out = RunQr(
+        "<rect width=\"200\" height=\"200\" data-qr=\"A\"/>"
+        "<rect width=\"200\" height=\"200\" data-qr=\"B\"/>", enc, diag);
+
+    size_t n = 0;
+    for (size_t p = out.find("<path"); p != std::string::npos; p = out.find("<path", p + 1)) ++n;
+    CHECK(n == 2);
+    CHECK(enc.lastText == "B");
+}
+
+static void test_qr_never_writes_past_the_cap()
+{
+    // Measuring and filling are two walks over the same input, and the second
+    // one trusts the first. A short buffer must truncate, never overrun.
+    StubQr enc(21);
+    enc.darkRow = 0; enc.darkFrom = 0; enc.darkLen = 3;
+    svg::QrDiagnostic diag;
+
+    const char*  in   = "<rect width=\"200\" height=\"200\" data-qr=\"X\"/>";
+    const size_t len  = std::strlen(in);
+    const size_t need = svg::ExpandQrCodes(in, len, nullptr, 0, enc, diag);
+    CHECK(need > len);
+
+    const char GUARD = 0x7f;
+    for (size_t cap = 0; cap < need; ++cap)
+    {
+        std::vector<char> buf(need + 8, GUARD);
+        CHECK(svg::ExpandQrCodes(in, len, buf.data(), cap, enc, diag) == need);
+        for (size_t i = cap; i < buf.size(); ++i) CHECK(buf[i] == GUARD);
+    }
+}
+
 int main()
 {
     test_resolve_joins();
@@ -591,6 +906,22 @@ int main()
     test_pushdown_survives_odd_input();
     test_pushdown_never_writes_past_the_cap();
     test_pushdown_a_whole_label();
+
+    test_qr_expands_a_placeholder();
+    test_qr_snaps_the_module_size_to_whole_dots();
+    test_qr_centres_in_a_rectangle_and_honours_the_origin();
+    test_qr_quiet_zone_is_inside_the_declared_box();
+    test_qr_refuses_a_box_too_small_rather_than_shrinking();
+    test_qr_resolves_character_references_in_the_payload();
+    test_qr_reads_the_ecc_attribute();
+    test_qr_refuses_a_placeholder_without_geometry();
+    test_qr_reports_an_encoder_refusal();
+    test_qr_refuses_an_oversized_payload();
+    test_qr_leaves_everything_else_alone();
+    test_qr_ignores_a_placeholder_inside_markup();
+    test_qr_swallows_a_separate_closing_tag();
+    test_qr_expands_every_placeholder();
+    test_qr_never_writes_past_the_cap();
 
     if (failures == 0) std::printf("all host tests passed\n");
     else               std::printf("%d host check(s) failed\n", failures);

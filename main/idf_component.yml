@@ -23,6 +23,13 @@ dependencies:
   # offered upstream, merged as espressif/idf-extra-components 6cbb7fab, and
   # released in 1.1.2 - so the fork is gone and this is the registry again.
   espressif/thorvg: "~1.1.2"
+  # The QR encoder. A label declares only the payload on a <rect data-qr="...">
+  # and the device builds the code, because a QR is an error-correcting code
+  # rather than a drawing: nothing upstream - least of all a model composing a
+  # label - can be relied on to emit a correct module matrix, and a matrix that
+  # is subtly wrong SCANS, to the wrong thing, on a label already stuck to
+  # something. See main/lib/common/SvgQrCode.h.
+  espressif/qrcode: "^0.2.0"
 # esp_websocket_client is deliberately absent: the relay drives a WebSocket through
 # the built-in tcp_transport layer instead, so the reading happens on the task that
 # runs the command. See Application/RelayManager/RelaySocket.h.

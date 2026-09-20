@@ -135,6 +135,18 @@ The product's own two managers, both in `main/app/`, both clients of nothing in 
 
 `RenderManager` owns ThorVG. `render svg` returns a JSON header then the raw pixels in `ARGB8888S` - one 32-bit little-endian word per pixel, so the bytes are B,G,R,A, un-premultiplied so a viewer can use them directly. Canvas and SVG buffers are `heap_caps_malloc(MALLOC_CAP_SPIRAM)`, never the internal heap the radios need.
 
+**Three passes rewrite the SVG before ThorVG parses it, and they are the device's own dialect.** They live in `main/lib/common/` because they name no layer, which is also what makes them the only part of the renderer the host tests can reach. The first two exist because ThorVG is wrong; the third exists because ThorVG is not a QR encoder and should not become one:
+
+| Pass | Why |
+|---|---|
+| `xml::DecodeCharData` ([XmlEntities.h](main/lib/common/XmlEntities.h)) | ThorVG resolves no character reference, so `AT&amp;T` printed the entity. Leaves `&lt;` alone on purpose - a `<` in character data would make the rest of the file parse as markup. |
+| `svg::PushDownFontAttrs` ([SvgFontAttrs.h](main/lib/common/SvgFontAttrs.h)) | ThorVG inherits no font property, so `<g font-size="42">` drew at its default 10. Writes the inherited value onto the `<text>`, never onto a `<tspan>`. |
+| `svg::ExpandQrCodes` ([SvgQrCode.h](main/lib/common/SvgQrCode.h)) | A label declares `<rect data-qr="payload"/>` and the device encodes it, because a QR is an error-correcting code and not a drawing - a matrix from anything that is not an encoder is wrong in the dangerous way, which is that it still scans. |
+
+Two rules hold across all three. **They run in RenderManager's `RunJob`, in that order**, each measuring into `nullptr` first and only allocating when it has something to add - and the second call must produce the same bytes as the first, or it is a buffer overrun, which is what the host tests check hardest. And **what reaches ThorVG is ordinary SVG**: the dialect is entirely upstream of the parser, so no handler, no printer path and no part of ThorVG knows any of it exists.
+
+The QR pass takes its modules through `svg::QrEncoder`, bound on the device to `espressif/qrcode` ([EspQrEncoder.h](main/app/RenderManager/EspQrEncoder.h)) and in the tests to a stub. That split is what keeps the geometry - module size snapped to whole dots, centring, the quiet zone inside the declared box - testable on a host, while the one part a host cannot check stays behind the interface. A box too small is a **refusal naming the size that would work**, never a smaller module: a QR that prints and does not scan is worse than one that does not print.
+
 **Four things about ThorVG on ESP-IDF, each of which cost a debugging session:**
 
 - **It cannot be built without its thread pool.** ThorVG's meson links `pthread` unconditionally on any non-Windows host, while the Espressif component only puts pthread on the linker path when `THORVG_THREAD_ENABLED=y`. Turning off the option the Kconfig help invites fails with "C++ shared or static library 'pthread' not found".

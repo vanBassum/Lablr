@@ -56,6 +56,8 @@
 // kilobytes of PSRAM churn per label.
 // ──────────────────────────────────────────────────────────────
 
+namespace svg { struct QrDiagnostic; }
+
 class RenderManager
 {
     static constexpr const char* TAG = "RenderManager";
@@ -141,10 +143,16 @@ private:
         uint32_t    psramUsed;
         uint32_t    internalUsed;
         uint32_t    stackLeft;
+        /// Backing store for `error` when the message carries numbers - a QR
+        /// box that is too small has to say how small and what would fit.
+        char        errorBuf[192];
     };
     Job job_{};
 
     void RunJob();
+
+    /// Turn a QR expansion failure into a message that says what to change.
+    void DescribeQrFailure(const svg::QrDiagnostic& diag);
 
     struct LoadedFont
     {
@@ -173,7 +181,12 @@ private:
           "caller that will draw or print them itself. This is the preview: use "
           "it to see what a label will look like before committing it. Nothing "
           "is consumed and no paper moves, so it can be repeated freely - "
-          "unlike 'print svg', which spends a label." },
+          "unlike 'print svg', which spends a label. QR CODES: do not "
+          "generate QR modules yourself - put the payload on a rect, as "
+          "<rect x=.. y=.. width=.. height=.. data-qr=\"<text>\" "
+          "data-qr-ecc=\"M\"/>, and this device encodes it while "
+          "rendering. See 'system describe' for the attributes, the "
+          "defaults and the minimum box size." },
         { "render", "fonts", &InvokeCommand<&RenderManager::Cmd_Fonts>,
           "List the fonts registered with the renderer. An SVG's font-family "
           "must match one of these names exactly or its text renders as "

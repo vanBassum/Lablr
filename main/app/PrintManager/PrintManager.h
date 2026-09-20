@@ -231,7 +231,9 @@ private:
           "it, so the preview is what comes out. This is the PHYSICAL one: it "
           "advances the roll and consumes a label, with no undo. 'render svg' "
           "with the medium's widthDots and heightDots shows the same picture "
-          "and costs nothing." },
+          "and costs nothing. A <rect data-qr=\"...\"> in the SVG is "
+          "encoded into a real QR code here exactly as it is in the "
+          "preview; see 'system describe'." },
         { "print", "test",      &InvokeCommand<&PrintManager::Cmd_PrintTest>,
           "Print a built-in striped test pattern at full head width. No "
           "filesystem, no renderer and no medium, so it separates a USB or "

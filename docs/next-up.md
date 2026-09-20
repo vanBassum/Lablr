@@ -35,6 +35,16 @@ sheet - five font pairs that must match and five character references that must
 read as the source above them - so `render svg` at 638 x 827 settles it without
 printing anything. Its own README says what each row must show.
 
+**Outstanding: QR codes are built and proved, but never printed.** A label declares
+`<rect data-qr="payload"/>` and the device encodes it while rendering. Verified hard
+off-device: the host tests cover the geometry with a stub encoder, and the real encoder
+was run through the real pass on a host for nine payloads across all four ECC levels -
+each emitted matrix identical to the encoder's own, each one decoded back to its payload
+by an independent reader, quiet zone and centring asserted, and the too-small box refused
+with the right numbers. What is unproven is the only thing a host cannot show: that a
+*printed* one scans. `assets/labels/qr-square25.svg` is the label for that, and 3 dots per
+module is the floor being tested when you scan it.
+
 **Outstanding: the browser Print button is still the one path never physically
 exercised.** Everything it calls has been driven from a script and works, and the page
 around it is new. It is one click on the Print page.

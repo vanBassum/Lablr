@@ -16,6 +16,7 @@ between the two calibration files below.
 | `cal54x70-fit.svg` | 638 x 827 | Confirming one, at scale 1 |
 | `bc547-square25.svg` | 295 x 295 | An ordinary label for the 25 x 25 mm stock |
 | `thorvg-text-check.svg` | 638 x 827 | Checking the two text fixes after a ThorVG change |
+| `qr-square25.svg` | 295 x 295 | A QR label for the 25 x 25 mm stock, and the placeholder's worked example |
 
 ## How the calibration designs work
 
@@ -82,3 +83,31 @@ working.
 
 Every caption and heading on the sheet carries its own `font-family` and `font-size`,
 so the page stays readable even when the thing it is testing is broken.
+
+## The QR label
+
+`qr-square25.svg` is what a QR label looks like in this system, and the shortest
+possible answer to "how do I put a QR code on a label": you do not draw one. The
+file contains a payload and a box,
+
+```xml
+<rect x="47" y="24" width="200" height="200"
+      data-qr="https://parts.local/bc547" data-qr-ecc="M"/>
+```
+
+and the device encodes it while rendering
+([SvgQrCode.h](../../main/lib/common/SvgQrCode.h)). There is no module matrix in
+the file, which is why the URL is still readable in it - and re-readable by
+anything that opens the label later.
+
+What to check when you print it: that a phone scans it, and that the code has
+white space all round it. The quiet zone lives *inside* the 200-dot box, so the
+declared rectangle is the footprint of the whole code and nothing else belongs
+in it.
+
+Sizing, for a label of your own: the shorter side of the box must be at least
+`(modules + 8) * 3` dots. The payload above is 25 modules, so 33 with its quiet
+zone, at 6 dots each - 198 of the 200 declared, leaving one dot of margin on each
+side. Ask for a box too small and the render fails and names the size that would
+have worked; it never shrinks the modules below 3 dots, because a code that
+prints and does not scan is worse than one that does not print.

@@ -6,6 +6,8 @@
 #include "PngStream.h"
 #include "XmlEntities.h"
 #include "SvgFontAttrs.h"
+#include "SvgQrCode.h"
+#include "EspQrEncoder.h"
 
 #include <esp_log.h>
 #include <esp_heap_caps.h>
@@ -221,6 +223,60 @@ void RenderManager::LoadFonts()
 // The render itself, on the worker thread
 // ──────────────────────────────────────────────────────────────
 
+// A QR failure is nearly always the caller's to fix, and the caller may be a
+// model that cannot see this file - so the message carries the numbers and the
+// remedy, not just the fault.
+void RenderManager::DescribeQrFailure(const svg::QrDiagnostic& diag)
+{
+    // The payload can be up to 512 bytes; a message quoting all of it would
+    // bury the part that says what to do.
+    char shown[49];
+    const size_t n = diag.payload.n < sizeof(shown) - 1 ? diag.payload.n : sizeof(shown) - 1;
+    if (diag.payload.p) memcpy(shown, diag.payload.p, n);
+    shown[diag.payload.p ? n : 0] = '\0';
+
+    switch (diag.status)
+    {
+        case svg::QrStatus::MissingGeometry:
+            snprintf(job_.errorBuf, sizeof(job_.errorBuf),
+                     "qr: rect with data-qr=\"%s\" needs a positive width and height",
+                     shown);
+            break;
+
+        case svg::QrStatus::BadEcc:
+            snprintf(job_.errorBuf, sizeof(job_.errorBuf),
+                     "qr: data-qr-ecc must be L, M, Q or H");
+            break;
+
+        case svg::QrStatus::PayloadTooLong:
+            snprintf(job_.errorBuf, sizeof(job_.errorBuf),
+                     "qr: data-qr payload is %u bytes, the limit is %u",
+                     (unsigned)diag.payload.n, (unsigned)svg::QR_MAX_PAYLOAD);
+            break;
+
+        case svg::QrStatus::EncodeFailed:
+            snprintf(job_.errorBuf, sizeof(job_.errorBuf),
+                     "qr: cannot encode \"%s\" - shorten it or lower data-qr-ecc",
+                     shown);
+            break;
+
+        case svg::QrStatus::BoxTooSmall:
+            snprintf(job_.errorBuf, sizeof(job_.errorBuf),
+                     "qr: box is %d dots but \"%s\" needs %d (%d modules + %d quiet "
+                     "at %d dots each) - enlarge the rect, shorten the payload, or "
+                     "lower data-qr-ecc",
+                     diag.boxDots, shown, diag.needDots, diag.modules,
+                     2 * svg::QR_QUIET_MODULES, svg::QR_MIN_MODULE_DOTS);
+            break;
+
+        case svg::QrStatus::Ok:
+            snprintf(job_.errorBuf, sizeof(job_.errorBuf), "qr: no failure");
+            break;
+    }
+
+    ESP_LOGW(TAG, "%s", job_.errorBuf);
+}
+
 void RenderManager::RunJob()
 {
     job_.pixels = nullptr;
@@ -270,6 +326,51 @@ void RenderManager::RunJob()
             // render below is about to report its own memory trouble anyway.
             ESP_LOGW(TAG, "No PSRAM to apply inherited font attributes (%u bytes)",
                      (unsigned)inherited);
+        }
+    }
+
+    // A QR code is an error-correcting code, not a drawing, so nothing upstream
+    // of the device can be trusted to produce one: a label declares the PAYLOAD
+    // on a <rect data-qr="...">, and this expands it into a white field and a
+    // path of modules that ThorVG needs to know nothing about. It GROWS like
+    // the pass above, and the encoder is deterministic, so measuring and then
+    // filling produce the same bytes. See lib/common/SvgQrCode.h.
+    {
+        EspQrEncoder    encoder;
+        svg::QrDiagnostic diag;
+
+        const size_t expanded = svg::ExpandQrCodes(
+            reinterpret_cast<const char*>(svg), svgSize, nullptr, 0, encoder, diag);
+
+        if (diag.status != svg::QrStatus::Ok)
+        {
+            DescribeQrFailure(diag);
+            heap_caps_free(svg);
+            job_.error = job_.errorBuf;
+            return;
+        }
+
+        if (expanded > svgSize)
+        {
+            uint8_t* grown = static_cast<uint8_t*>(
+                heap_caps_malloc(expanded, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+            if (!grown)
+            {
+                // Unlike the font pass, carrying on is not an option: the
+                // placeholder would reach ThorVG as a plain rect and print a
+                // black square where a scannable code was asked for.
+                heap_caps_free(svg);
+                snprintf(job_.errorBuf, sizeof(job_.errorBuf),
+                         "no PSRAM to expand QR codes (%u bytes)", (unsigned)expanded);
+                job_.error = job_.errorBuf;
+                return;
+            }
+
+            svg::ExpandQrCodes(reinterpret_cast<const char*>(svg), svgSize,
+                               reinterpret_cast<char*>(grown), expanded, encoder, diag);
+            heap_caps_free(svg);
+            svg     = grown;
+            svgSize = expanded;
         }
     }
 
