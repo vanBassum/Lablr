@@ -913,14 +913,22 @@ class BackendService {
    *  a fraction OF - which is why the caller that asks for a PNG shows an
    *  indeterminate bar rather than a percentage. */
   async renderSvg(
-    path: string,
+    path: string | null,
     width: number,
     height: number,
-    opts?: { format?: "raw" | "png"; onProgress?: (received: number) => void },
+    opts?: {
+      format?: "raw" | "png"
+      onProgress?: (received: number) => void
+      /** Render a built-in design instead of a stored file. The device
+       *  generates it at this size and runs it through the same renderer the
+       *  printer uses, so this preview IS what `print svg -pattern` lays down. */
+      pattern?: "calibration" | "test"
+    },
   ): Promise<{ header: RenderHeader; bytes: Uint8Array; elapsedMs: number }> {
     const started = performance.now()
     const res = await this.downloadSessionWithHeader<RenderHeader>("render svg", {
-      path, width, height, ...(opts?.format ? { format: opts.format } : {}),
+      ...(opts?.pattern ? { pattern: opts.pattern } : { path }),
+      width, height, ...(opts?.format ? { format: opts.format } : {}),
     }, opts?.onProgress)
     const elapsedMs = performance.now() - started
     if (!res.header.ok) throw new Error(res.header.error ?? "render failed")
@@ -942,6 +950,19 @@ class BackendService {
 
   mediaList(): Promise<MediaListResult> {
     return this.send<MediaListResult>("media list")
+  }
+
+  // ── The printer ────────────────────────────────────────────────
+  // What the MACHINE is, as against what the paper is. Its dead zone is
+  // subtracted from every medium's printable area, which is why the Print
+  // page reads it to draw one.
+
+  printerList(): Promise<PrinterListResult> {
+    return this.send<PrinterListResult>("printer list")
+  }
+
+  printerGet(id?: string): Promise<Printer> {
+    return this.send<Printer>("printer get", id ? { id } : {})
   }
 
   async mediaSet(m: MediaWrite): Promise<Medium> {
@@ -1147,18 +1168,35 @@ export interface Medium {
   name: string
   widthUm: number
   heightUm: number
-  /** Head column the label's left edge sits at, in micrometres. Calibration. */
-  offsetXUm: number
-  /** Raster line the label's top edge sits at, in micrometres. Negative means
-   *  the printer starts after the label's edge, cropping the design's top. */
-  offsetYUm: number
+  /** Where the artwork sits, in micrometres. Signed, and a PREFERENCE - the one
+   *  part of a medium that is chosen rather than measured. It never changes how
+   *  much of the label can be printed. */
+  alignXUm?: number
+  alignYUm?: number
+  /** Paper THIS roll loses beyond what the machine loses, by sitting deeper in
+   *  the guide. Non-negative, usually 0, and it makes the printable area
+   *  smaller. The machine's own dead zone is on the printer. */
+  marginLeftUm?: number
+  marginTopUm?: number
+  /** True while this medium still carries the pre-split offsets. It prints
+   *  where it always did; saving it converts it and clears this. */
+  legacyOffsets?: boolean
+  /** Only present while legacyOffsets is true. */
+  offsetXUm?: number
+  offsetYUm?: number
   widthDots?: number
   heightDots?: number
-  offsetXDots?: number
-  offsetYDots?: number
-  /** What a design can actually use. Derived by the device from the offsets: a
-   *  negative offset puts that much of the label before the head's origin,
-   *  where nothing can be printed. */
+  /** Head column and raster line the artwork's top-left lands at, which is
+   *  alignment minus the printer's dead zone minus this roll's margin. */
+  placeXDots?: number
+  placeYDots?: number
+  /** The dead zone, split by whose fact it is. */
+  deadLeftDots?: number
+  deadTopDots?: number
+  marginLeftDots?: number
+  marginTopDots?: number
+  /** Label size minus the printer's dead zone minus this roll's margin.
+   *  Alignment is NOT in it: moving artwork never changes this. */
   printableWidthDots?: number
   printableHeightDots?: number
 }
@@ -1170,28 +1208,68 @@ export interface MediaWrite {
   name?: string
   widthUm?: number
   heightUm?: number
-  offsetXUm?: number
-  offsetYUm?: number
+  /** Placement only. Never changes the printable area. */
+  alignXUm?: number
+  alignYUm?: number
+  /** This roll's own unreachable strip, beyond the machine's. Non-negative. */
+  marginLeftUm?: number
+  marginTopUm?: number
 }
 
 export interface MediaListResult {
   ok: boolean
-  /** The PRINTER's resolution, not any medium's. */
+  /** The PRINTER's, not any medium's. */
   dpi: number
   headDots: number
+  printer?: string
+  /** The strip the machine itself cannot print on, subtracted from every
+   *  medium's printable area. */
+  deadLeftDots?: number
+  deadTopDots?: number
   media: Medium[]
+}
+
+/** The machine: resolution, head width, and the strip it cannot reach. A fact
+ *  about the printer, the same for every roll. */
+export interface Printer {
+  ok?: boolean
+  id: string
+  name: string
+  model?: string
+  builtIn?: boolean
+  dpi: number
+  headDots: number
+  maxLines?: number
+  deadLeftUm: number
+  deadTopUm: number
+  deadLeftDots?: number
+  deadTopDots?: number
+  active?: boolean
+}
+
+export interface PrinterListResult {
+  active: string
+  printers: Printer[]
 }
 
 /** Geometry for `print svg`, all in PRINTER DOTS. Millimetres would need a
  *  media definition to convert, and that layer does not exist yet - see
  *  docs/next-up.md. */
 export interface PrintArgs {
-  path: string
+  /** The stored design. Omit it when `pattern` names a built-in instead. */
+  path?: string
+  /** A built-in design: the centre-origin calibration grid, or the test
+   *  pattern. Generated at the medium's dot size and put through the same
+   *  renderer and placement a label gets, so a preview of one is what prints. */
+  pattern?: "calibration" | "test"
   /** Name a medium and the geometry comes from it - size and calibrated
    *  offsets both. Give this OR width and height. */
   media?: string
   width?: number
   height?: number
+  /** The FINISHED head position, overriding everything the medium works out -
+   *  the printer's dead zone is already in it. For trying a position; a settled
+   *  one belongs in the medium as alignXUm. */
   offsetX?: number
   offsetY?: number
   threshold?: number

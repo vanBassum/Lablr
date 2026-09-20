@@ -129,7 +129,10 @@ function ProgressBar({ label, fraction }: { label: string; fraction: number | nu
 /** Identifies one preview: a picture is the current one only if it is of this
  *  label AT this geometry. One function so the request side and the "is what is
  *  on screen still current" side cannot drift apart. */
-function previewKeyOf(path: string, w: number, h: number): string {
+// What the canvas is currently showing. The MODE is part of it because a
+// calibration grid and a label at the same size are different pictures.
+function previewKeyOf(mode: string, path: string, w: number, h: number): string {
+  if (mode !== "label") return `${mode}:${w}x${h}`
   return `${path}|${w}|${h}`
 }
 
@@ -143,6 +146,17 @@ type Job =
   | { kind: "thumb"; path: string }
   | { kind: "preview"; path: string }
 
+/** Label, or one of the device's built-in designs. A mode is previewed like a
+ *  label and printed like a label - the device generates the pattern at the
+ *  medium's dot size and runs it through the same renderer - so nothing about
+ *  this page has to special-case what is on the canvas. */
+type PrintMode = "label" | "calibration" | "test"
+
+/** Everything the Advanced panel can override, in the units the device's own
+ *  arguments take: dots for geometry, 1-255 for the threshold. Undefined means
+ *  "whatever the medium says", which is what makes Reset a single assignment. */
+type Overrides = { w?: number; h?: number; ox?: number; oy?: number; th?: number }
+
 export default function PrintPage() {
   const connection = useConnectionStatus()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -155,8 +169,11 @@ export default function PrintPage() {
 
   const [printer, setPrinter] = useState<PrintStatus | null>(null)
   const [media, setMedia] = useState<Medium[]>([])
+  const [machine, setMachine] = useState<{
+    dpi: number; headDots: number; printer?: string
+    deadLeftDots: number; deadTopDots: number
+  } | null>(null)
   const [mediaId, setMediaId] = useState("")
-  const [threshold, setThreshold] = useState(128)
   const [quantity, setQuantity] = useState(1)
   const [advanced, setAdvanced] = useState(false)
 
@@ -202,11 +219,32 @@ export default function PrintPage() {
   }, [])
 
   const medium = media.find((m) => m.id === mediaId) ?? null
-  // Custom size is an override for calibration; until someone opens Advanced and
-  // changes it, it simply mirrors the medium.
-  const [custom, setCustom] = useState<{ w: number; h: number } | null>(null)
-  const w = custom?.w ?? medium?.widthDots ?? 400
-  const h = custom?.h ?? medium?.heightDots ?? 200
+
+  // What the page is showing and would print. The calibration grid and the test
+  // pattern are MODES rather than buttons that print immediately: entering one
+  // puts it in the preview, and the ordinary Print button then prints exactly
+  // that. Pressing a button and having a label come out is what the old pair
+  // did, and it meant every look cost a label.
+  const [mode, setMode] = useState<PrintMode>("label")
+
+  // Temporary overrides. They change what is previewed and what is printed and
+  // they touch NOTHING on the device: calibration is a loop of trying values,
+  // and a page that wrote each attempt to flash would make the loop
+  // destructive. "Save to media" is the only thing that stores one.
+  const [ov, setOv] = useState<Overrides>({})
+
+  const w = ov.w ?? medium?.widthDots ?? 400
+  const h = ov.h ?? medium?.heightDots ?? 200
+  // The FINISHED head position - the printer's dead zone is already in it,
+  // which is why it comes from placeXDots and not from the alignment.
+  const ox = ov.ox ?? medium?.placeXDots ?? 0
+  const oy = ov.oy ?? medium?.placeYDots ?? 0
+  const threshold = ov.th ?? 128
+  // Two kinds of dirty. Reset clears everything, but Save writes GEOMETRY, so
+  // a threshold someone nudged must not light up a button that would not store
+  // it - the threshold is a page setting and belongs to no medium.
+  const geomDirty = ov.w != null || ov.h != null || ov.ox != null || ov.oy != null
+  const dirty = geomDirty || ov.th != null
 
   const shown = labels.filter((l) =>
     l.toLowerCase().includes(filter.trim().toLowerCase()),
@@ -215,8 +253,12 @@ export default function PrintPage() {
   // Is the canvas showing the label that is selected now, at the geometry that is
   // selected now? While it is not, the strip's thumbnail stands in for it - the
   // browser already has that picture, and the device render takes seconds.
-  const previewCurrent = selected !== null && drawnKey === previewKeyOf(selected, w, h)
-  const standIn = selected ? thumbs[selected] : undefined
+  const previewCurrent = mode !== "label"
+    ? drawnKey === previewKeyOf(mode, "", w, h)
+    : selected !== null && drawnKey === previewKeyOf(mode, selected, w, h)
+  // A pattern has no thumbnail to stand in for it, and should not borrow the
+  // selected label's.
+  const standIn = mode === "label" && selected ? thumbs[selected] : undefined
 
   const refresh = useCallback(() => {
     // Reload means "the files may have changed underneath me", so what was
@@ -257,6 +299,16 @@ export default function PrintPage() {
       .mediaList()
       .then((r) => {
         setMedia(r.media ?? [])
+        // The machine's own numbers, reported once alongside the media. The
+        // dead zone is what makes a printable area smaller than its label, so
+        // the panel below needs it to say which loss is whose.
+        setMachine({
+          dpi: r.dpi,
+          headDots: r.headDots,
+          printer: r.printer,
+          deadLeftDots: r.deadLeftDots ?? 0,
+          deadTopDots: r.deadTopDots ?? 0,
+        })
         // Steer the selection only when it points at nothing, so a reload does
         // not silently move a print onto different stock.
         setMediaId((cur) =>
@@ -302,12 +354,18 @@ export default function PrintPage() {
   // a fraction of that and the browser decodes it natively.
   const renderPreview = useCallback(
     async (path: string, seq: number) => {
-      const key = previewKeyOf(path, w, h)
+      const key = previewKeyOf(mode, path, w, h)
       try {
         // No onProgress: a streamed PNG declares no length, so there is no
         // total to be a fraction of and the bar animates instead. Honest, and
         // no longer the several-second wait that made a number worth having.
-        const res = await backend.renderSvg(path, w, h, { format: "png" })
+        // A pattern goes through the same command, the same renderer and the
+        // same fit as a label. That is what lets the Print button below print
+        // the picture on the canvas rather than something generated twice.
+        const res = await backend.renderSvg(
+          mode === "label" ? path : null, w, h,
+          { format: "png", ...(mode === "label" ? {} : { pattern: mode }) },
+        )
         // Nothing else may have asked in the meantime. A slow render of a label
         // that is no longer selected must never reach the canvas.
         if (seq !== requestSeq.current) return
@@ -338,7 +396,7 @@ export default function PrintPage() {
         setDrawnKey(key)
       }
     },
-    [w, h],
+    [w, h, mode],
   )
 
   // Which rows the eye has actually reached. A label nobody has scrolled to is a
@@ -401,12 +459,17 @@ export default function PrintPage() {
   // change of selection or a scroll re-prioritises what happens next without
   // anything having to be cancelled or drained.
   const pick = useCallback((): Job | null => {
+    // In a pattern mode there is no file to read and no strip to fill: the one
+    // job is the pattern itself.
+    if (mode !== "label") {
+      return drawnKey !== previewKeyOf(mode, "", w, h) ? { kind: "preview", path: "" } : null
+    }
     if (!selected) return null
     if (!tried[selected]) return { kind: "thumb", path: selected }
     for (const path of labels) if (seen[path] && !tried[path]) return { kind: "thumb", path }
-    if (drawnKey !== previewKeyOf(selected, w, h)) return { kind: "preview", path: selected }
+    if (drawnKey !== previewKeyOf(mode, selected, w, h)) return { kind: "preview", path: selected }
     return null
-  }, [selected, labels, seen, tried, drawnKey, w, h])
+  }, [mode, selected, labels, seen, tried, drawnKey, w, h])
 
   useEffect(() => {
     if (connection !== "connected" || workerBusy.current) return
@@ -442,18 +505,29 @@ export default function PrintPage() {
     }
   }, [connection, pick, tick, loadThumb, renderPreview])
 
+  // Print exactly what the preview is showing. The arguments are built from the
+  // same values the canvas was drawn with, so there is no second opinion about
+  // geometry anywhere on this page.
   async function print() {
-    if (!selected) return
+    if (mode === "label" && !selected) return
+    const copies = mode === "label" ? quantity : 1
     setPrinting(true)
     try {
-      for (let i = 0; i < quantity; i++) {
-        // Send the medium's NAME, not its numbers: the device applies its own
-        // calibration, and a value typed on this page would quietly override it.
-        // Custom size is the deliberate exception, and it is behind Advanced.
+      for (let i = 0; i < copies; i++) {
+        // The medium's NAME carries its size and calibration, and only the
+        // overrides someone actually typed are sent on top - so an untouched
+        // page prints what the device decided, and a calibration run prints
+        // what the panel says.
         const res = await backend.printSvg(
-          custom
-            ? { path: selected, width: custom.w, height: custom.h, threshold }
-            : { path: selected, media: mediaId, threshold },
+          {
+            ...(mode === "label" ? { path: selected! } : { pattern: mode }),
+            media: mediaId || undefined,
+            ...(ov.w != null ? { width: ov.w } : {}),
+            ...(ov.h != null ? { height: ov.h } : {}),
+            ...(ov.ox != null ? { offsetX: ov.ox } : {}),
+            ...(ov.oy != null ? { offsetY: ov.oy } : {}),
+            threshold,
+          },
           setPrintProgress,
         )
         setLastJob(res)
@@ -462,8 +536,15 @@ export default function PrintPage() {
           break
         }
       }
-      if (!custom) {
-        toast.success(quantity > 1 ? `Printed ${quantity} labels` : "Printed")
+      if (mode === "calibration") {
+        toast.success("Calibration grid printed", {
+          description:
+            "Count rings from the centre marker to the middle of the paper, then nudge the offsets in Advanced and print again.",
+        })
+      } else if (mode === "test") {
+        toast.success("Test pattern printed")
+      } else {
+        toast.success(copies > 1 ? `Printed ${copies} labels` : "Printed")
       }
     } catch (e) {
       toast.error("Print failed", { description: errorMessage(e) })
@@ -472,6 +553,42 @@ export default function PrintPage() {
       setPrintProgress(null)
       backend.printStatus().then(setPrinter).catch(() => {})
     }
+  }
+
+  // Alignment is measured from the first dot the machine can reach, while the
+  // offsets on this page are the finished head position. They differ by exactly
+  // the dead zone, so storing one as the other would move every future print by
+  // that much - the same conversion the device does when it migrates an old
+  // medium, and wrong in the same silent way if skipped.
+  async function saveToMedium() {
+    if (!medium || !machine) return
+    const deadX = (medium.deadLeftDots ?? machine.deadLeftDots) + (medium.marginLeftDots ?? 0)
+    const deadY = (medium.deadTopDots ?? machine.deadTopDots) + (medium.marginTopDots ?? 0)
+    const toUm = (d: number) => Math.round((d * 25400) / machine.dpi)
+    try {
+      await backend.mediaSet({
+        id: medium.id,
+        ...(ov.w != null ? { widthUm: toUm(ov.w) } : {}),
+        ...(ov.h != null ? { heightUm: toUm(ov.h) } : {}),
+        alignXUm: toUm(ox + deadX),
+        alignYUm: toUm(oy + deadY),
+      })
+      const r = await backend.mediaList()
+      setMedia(r.media ?? [])
+      setOv({})
+      toast.success(`Saved to ${medium.name || medium.id}`, {
+        description: "Stored as the medium's alignment; every print on this stock uses it now.",
+      })
+    } catch (e) {
+      toast.error("Could not save", { description: errorMessage(e) })
+    }
+  }
+
+  // Entering a mode prints NOTHING. It puts the pattern in the preview, and the
+  // ordinary Print button below is what commits a label to it.
+  function enterMode(next: PrintMode) {
+    setMode(next)
+    setDrawnKey(null)
   }
 
   async function deleteLabel(path: string, name: string) {
@@ -493,23 +610,7 @@ export default function PrintPage() {
     }
   }
 
-  async function printSpecial(kind: "test" | "calibrate") {
-    setPrinting(true)
-    try {
-      const res = kind === "test" ? await backend.printTest() : await backend.printCalibrate()
-      setLastJob(res)
-      toast.success(kind === "test" ? "Test pattern sent" : "Calibration grid sent", {
-        description:
-          kind === "test"
-            ? `${res.jobBytes?.toLocaleString()} bytes`
-            : "Measure where the label's edges fall, then set the offsets in the medium's JSON on the Files page.",
-      })
-    } catch (e) {
-      toast.error("Print failed", { description: errorMessage(e) })
-    } finally {
-      setPrinting(false)
-    }
-  }
+
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
@@ -517,7 +618,16 @@ export default function PrintPage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)_minmax(0,22rem)]">
         {/* ── Labels ── */}
-        <section className="flex max-h-[calc(100vh-11rem)] flex-col rounded-xl border bg-card p-4 shadow-sm">
+        <section
+          className={
+            "flex max-h-[calc(100vh-11rem)] flex-col rounded-xl border bg-card p-4 shadow-sm" +
+            // Dimmed and inert while a pattern is being previewed: the Print
+            // button is about to print the pattern, so offering a label to
+            // select would be offering something that will not happen.
+            (mode !== "label" ? " pointer-events-none opacity-40" : "")
+          }
+          aria-hidden={mode !== "label"}
+        >
           <h2 className="mb-3 text-lg font-semibold">Labels</h2>
           <div className="relative mb-3">
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -661,8 +771,28 @@ export default function PrintPage() {
 
         {/* ── Preview ── */}
         <section className="flex max-h-[calc(100vh-11rem)] flex-col rounded-xl border bg-card p-4 shadow-sm">
+          {mode !== "label" && (
+            <div className="mb-3 flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2">
+              <span className="text-sm">
+                <strong>
+                  {mode === "calibration" ? "Calibration grid" : "Test pattern"}
+                </strong>{" "}
+                <span className="text-muted-foreground">
+                  {mode === "calibration"
+                    ? "- rings every 25 dots from the centre, heavier every 100."
+                    : "- bars and a grey sweep; the first grey to ink is where the threshold sits."}
+                </span>
+              </span>
+              <Button variant="outline" size="sm" onClick={() => enterMode("label")}>
+                Back to label
+              </Button>
+            </div>
+          )}
+
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold">Preview</h2>
+            <h2 className="text-lg font-semibold">
+              {mode === "label" ? "Preview" : "Preview - pattern"}
+            </h2>
             <div className="flex items-center gap-2">
               <span className="rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-muted-foreground">
                 {w} &times; {h} dots
@@ -680,19 +810,44 @@ export default function PrintPage() {
           </div>
 
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg bg-muted/40 p-6">
-            {selected ? (
+            {selected || mode !== "label" ? (
               <>
                 {/* Always mounted, never conditionally rendered: the render
                     effect draws through canvasRef, and a canvas swapped out
                     while a render is in flight would have nothing to draw on.
                     Hidden rather than absent, so it keeps its bitmap too. */}
-                <canvas
-                  ref={canvasRef}
-                  className={
-                    "max-w-full rounded-sm bg-white shadow-sm" + (previewCurrent ? "" : " hidden")
-                  }
-                  style={{ transform: `scale(${zoom})`, transformOrigin: "center", imageRendering: "pixelated" }}
-                />
+                {/* The canvas and the dead-zone overlay share one box, so the
+                    shading scales with the zoom and stays registered to the
+                    picture without measuring anything. */}
+                <div
+                  className={"relative" + (previewCurrent ? "" : " hidden")}
+                  style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}
+                >
+                  <canvas
+                    ref={canvasRef}
+                    className="block max-w-full rounded-sm bg-white shadow-sm"
+                    style={{ imageRendering: "pixelated" }}
+                  />
+                  {/* What the machine cannot reach. A negative placement means
+                      that much of the design falls before the head's first
+                      column or the printer's first line, so it is drawn and
+                      then simply never printed - the one thing a preview that
+                      claims to be the print has to admit. */}
+                  {ox < 0 && (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 left-0 border-r border-red-500/60 bg-red-500/20"
+                      style={{ width: `${Math.min(100, (-ox / w) * 100)}%` }}
+                      title={`${-ox} dots the printer cannot reach`}
+                    />
+                  )}
+                  {oy < 0 && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0 top-0 border-b border-red-500/60 bg-red-500/20"
+                      style={{ height: `${Math.min(100, (-oy / h) * 100)}%` }}
+                      title={`${-oy} dots the printer cannot reach`}
+                    />
+                  )}
+                </div>
                 {!previewCurrent &&
                   (standIn ? (
                     // The SVG the strip already has, in the box the real render
@@ -730,6 +885,13 @@ export default function PrintPage() {
             Rendered on the device at the medium's own dot geometry, by the same rasteriser
             and the same fonts the printer gets - so this is what comes out. Nothing is
             consumed by looking.
+            {(ox < 0 || oy < 0) && (
+              <>
+                {" "}
+                The shaded strips are the {-Math.min(0, ox)} &times; {-Math.min(0, oy)} dots
+                that fall outside what the machine can reach, and will not print.
+              </>
+            )}
           </p>
         </section>
 
@@ -752,7 +914,10 @@ export default function PrintPage() {
                   value={mediaId}
                   onChange={(e) => {
                     setMediaId(e.target.value)
-                    setCustom(null)
+                    // Overrides are calibration for THIS stock; carrying them
+                    // onto another roll would be carrying a measurement to
+                    // paper it was not measured on.
+                    setOv({})
                   }}
                 >
                   {media.map((m) => (
@@ -768,13 +933,9 @@ export default function PrintPage() {
                       {(medium.heightUm / 1000).toFixed(1)} mm &middot; {medium.widthDots} &times;{" "}
                       {medium.heightDots} dots
                     </p>
-                    <span className="inline-block rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-muted-foreground">
-                      offset {(medium.offsetXUm / 1000).toFixed(1)},{" "}
-                      {(medium.offsetYUm / 1000).toFixed(1)} mm
-                    </span>
-                    <p className="text-xs text-muted-foreground">
-                      Printable {medium.printableWidthDots} &times; {medium.printableHeightDots}{" "}
-                      dots - the offsets crop the top and left, so keep content inside it.
+                    <p className="text-xs tabular-nums text-muted-foreground">
+                      Printable {medium.printableWidthDots} &times;{" "}
+                      {medium.printableHeightDots} dots. Keep content inside it.
                     </p>
                   </>
                 )}
@@ -790,11 +951,11 @@ export default function PrintPage() {
               min={1}
               max={255}
               value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
+              onChange={(e) => setOv((o) => ({ ...o, th: Number(e.target.value) || 1 }))}
             />
             <p className="text-xs text-muted-foreground">
               About the artwork, not the paper. Raise it to make thin anti-aliased text
-              print heavier.
+              print heavier. Not stored on the medium.
             </p>
           </div>
 
@@ -840,10 +1001,21 @@ export default function PrintPage() {
             className="w-full"
             size="lg"
             onClick={print}
-            disabled={printing || !selected || !printer?.ready || (!mediaId && !custom)}
+            disabled={
+              printing ||
+              !printer?.ready ||
+              (mode === "label" && !selected) ||
+              (!mediaId && ov.w == null)
+            }
           >
             <PrinterIcon className="size-4" />
-            {printing ? "Printing..." : "Print label"}
+            {printing
+              ? "Printing..."
+              : mode === "calibration"
+                ? "Print calibration grid"
+                : mode === "test"
+                  ? "Print test pattern"
+                  : "Print label"}
           </Button>
 
           {printing && (
@@ -874,55 +1046,131 @@ export default function PrintPage() {
 
             {advanced && (
               <div className="mt-3 space-y-3">
-                <Label>Custom size (dots)</Label>
-                <div className="flex items-center gap-2">
+                {/* What each number is a fact ABOUT, because the fix
+                    differs: the machine's dead zone is measured once, a roll's
+                    margin belongs to that roll, and only the alignment is a
+                    choice. */}
+                {medium && machine && (
+                  <div className="space-y-1 rounded-md bg-muted/50 p-2 text-xs tabular-nums">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Printer {machine.printer ?? ""}</span>
+                      <span>{machine.dpi} dpi &middot; {machine.headDots} dots</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Dead zone (machine)</span>
+                      <span>
+                        {medium.deadLeftDots ?? machine.deadLeftDots} &times;{" "}
+                        {medium.deadTopDots ?? machine.deadTopDots} dots
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Margin (this roll)</span>
+                      <span>
+                        {medium.marginLeftDots ?? 0} &times; {medium.marginTopDots ?? 0} dots
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Alignment</span>
+                      <span>
+                        {((medium.alignXUm ?? 0) / 1000).toFixed(2)},{" "}
+                        {((medium.alignYUm ?? 0) / 1000).toFixed(2)} mm
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t pt-1">
+                      <span className="text-muted-foreground">Printable</span>
+                      <span>
+                        {medium.printableWidthDots} &times; {medium.printableHeightDots} dots
+                      </span>
+                    </div>
+                    {medium.legacyOffsets && (
+                      <p className="pt-1 text-muted-foreground">
+                        Still using its pre-split offsets. Saving below converts it to an
+                        alignment without moving anything.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <Label>Overrides (dots)</Label>
+                <div className="grid grid-cols-[auto_1fr_1fr] items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Size</span>
                   <Input
                     type="number"
-                    className="tabular-nums"
+                    className="h-8 tabular-nums"
                     value={w}
-                    onChange={(e) => setCustom({ w: Number(e.target.value) || 1, h })}
+                    onChange={(e) => setOv((o) => ({ ...o, w: Number(e.target.value) || 1 }))}
                   />
-                  <span className="text-muted-foreground">&times;</span>
                   <Input
                     type="number"
-                    className="tabular-nums"
+                    className="h-8 tabular-nums"
                     value={h}
-                    onChange={(e) => setCustom({ w, h: Number(e.target.value) || 1 })}
+                    onChange={(e) => setOv((o) => ({ ...o, h: Number(e.target.value) || 1 }))}
+                  />
+                  <span className="text-xs text-muted-foreground">Offset</span>
+                  <Input
+                    type="number"
+                    className="h-8 tabular-nums"
+                    value={ox}
+                    onChange={(e) => setOv((o) => ({ ...o, ox: Number(e.target.value) || 0 }))}
+                  />
+                  <Input
+                    type="number"
+                    className="h-8 tabular-nums"
+                    value={oy}
+                    onChange={(e) => setOv((o) => ({ ...o, oy: Number(e.target.value) || 0 }))}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {custom
-                    ? "Overriding the medium - the calibrated offsets are NOT applied. For calibration only; a settled value belongs in the medium's JSON on the Files page."
-                    : "Mirrors the selected medium. Changing it overrides the medium and drops its calibration."}
+                  {dirty
+                    ? "Overriding the medium for this page only - nothing is stored until you save."
+                    : "Mirrors the selected medium. Offset is the finished head position, with the dead zone already in it."}
                 </p>
-                {custom && (
-                  <Button variant="ghost" size="sm" onClick={() => setCustom(null)}>
-                    Back to the medium
-                  </Button>
-                )}
 
                 <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1"
+                    disabled={!dirty}
+                    onClick={() => setOv({})}
+                  >
+                    Reset to media
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     className="flex-1"
-                    disabled={printing || !printer?.ready}
-                    onClick={() => printSpecial("test")}
+                    disabled={!geomDirty || !medium || !machine}
+                    onClick={saveToMedium}
+                  >
+                    Save to media
+                  </Button>
+                </div>
+
+                <div className="flex gap-2 border-t pt-3">
+                  <Button
+                    variant={mode === "test" ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => enterMode(mode === "test" ? "label" : "test")}
                   >
                     <SquareDashedIcon className="size-4" />
                     Test pattern
                   </Button>
                   <Button
-                    variant="outline"
+                    variant={mode === "calibration" ? "default" : "outline"}
                     size="sm"
                     className="flex-1"
-                    disabled={printing || !printer?.ready}
-                    onClick={() => printSpecial("calibrate")}
+                    onClick={() => enterMode(mode === "calibration" ? "label" : "calibration")}
                   >
                     <GridIcon className="size-4" />
                     Calibration grid
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  These show the design in the preview. Nothing prints until you press
+                  Print.
+                </p>
 
                 {lastJob && (
                   <div className="grid grid-cols-2 gap-2 border-t pt-3 text-xs">
