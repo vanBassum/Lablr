@@ -139,12 +139,17 @@ if(NOT STRUX_ALLOW_SDKCONFIG_DRIFT)
     endif()
 endif()
 
-# ── ThorVG font support needs a patched component ─────────────
-# The registry's espressif/thorvg passes -D__linux__ to ThorVG's meson build.
-# ThorVG 1.1.0's font loader reads that as 'mmap is available' and includes
+# ── ThorVG font support needs a component that does not define __linux__ ──
+# espressif/thorvg before 1.1.2 passed -D__linux__ to ThorVG's meson build.
+# ThorVG's font loader reads that as 'mmap is available' and includes
 # <sys/mman.h>, which ESP-IDF does not have, so enabling the TTF/OTF loader
 # fails to compile. Fonts are not optional here - an SVG <text> element without
-# a font renders as nothing at all - so the fix is to drop that one token.
+# a font renders as nothing at all - so the fix was to drop that one token.
+#
+# It is dropped upstream now (idf-extra-components 6cbb7fab, released in 1.1.2),
+# which is why main/idf_component.yml floors the version there. This check
+# stays because the failure it guards is a version resolving below that floor,
+# and nothing else would say so.
 #
 # Checked here because the alternative is a fresh clone failing deep inside a
 # dependency's build with 'sys/mman.h: No such file or directory', which says
@@ -159,12 +164,11 @@ if(CONFIG_THORVG_TTF_LOADER_SUPPORT)
                 "mmap and the build will fail on <sys/mman.h>.
 
 "
-                "main/idf_component.yml is meant to pin a fork of "
-                "espressif/idf-extra-components whose thorvg/cross_file.txt.in drops "
-                "'-D__linux__' from cpp_args. Either it no longer does, or a stale "
-                "managed_components/ is being reused - delete it and dependencies.lock "
-                "and let the component manager re-resolve. Failing that, remove the token "
-                "by hand from:
+                "main/idf_component.yml asks for espressif/thorvg ~1.1.2, which drops "
+                "'-D__linux__' from thorvg/cross_file.txt.in. So something older got "
+                "resolved, or a stale managed_components/ is being reused - delete it "
+                "and dependencies.lock and let the component manager re-resolve. Failing "
+                "that, remove the token by hand from:
 "
                 "  ${_tvg_cross}
 
