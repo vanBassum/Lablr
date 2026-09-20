@@ -34,13 +34,6 @@ instead of the device's raw ARGB, which was three quarters of a megabyte down a
 drives both over the wire; the ampersand check is decisive on its own, because a
 `&amp;` render and a CDATA `&` render must come back byte-identical.
 
-**Outstanding: ThorVG moved 1.1.0 -> 1.1.2 and no label has been printed since.** The
-forked component is gone - the one-token `-D__linux__` fix landed upstream and shipped as
-registry 1.1.2 - but that release bumps the renderer itself, and the last three commits
-here were all ThorVG text quirks. The build is clean; what is unchecked is that text still
-draws at all (the fix's whole purpose) and that the entity and font-size fixes still hold.
-The same flash settles this and the two fixes above.
-
 **Outstanding: the browser Print button is still the one path never physically
 exercised.** Everything it calls has been driven from a script and works, and the page
 around it is new. It is one click on the Print page.
