@@ -328,12 +328,17 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
                  "Design height in PRINTER DOTS, overriding the medium."),
         Optional("offsetX",   offsetX,
                  "Head column the design's left edge goes to, overriding the "
-                 "medium. For calibration; a settled value belongs in the "
-                 "medium, not in every call."),
+                 "whole placement the medium works out. This is the FINISHED "
+                 "position, not an alignment: the printer's dead zone is "
+                 "already in it. For trying a position before storing one - a "
+                 "settled value belongs in the medium as alignXUm, which is "
+                 "measured from the first printable dot instead."),
         Optional("offsetY",   offsetY,
                  "Raster line the design's top edge goes to, overriding the "
-                 "medium. Negative crops that many rows off the top, which is "
-                 "what a printer that starts late needs. For calibration."),
+                 "medium's placement. Negative means that many rows fall before "
+                 "the first line the printer emits and are lost, which is the "
+                 "normal state on a machine that starts late. For trying a "
+                 "position; store a settled one as the medium's alignYUm."),
         Optional("threshold", threshold,
                  "Luminance below which a pixel becomes ink, 1 to 255. Default "
                  "128. Raise it to make thin anti-aliased text print heavier."),
