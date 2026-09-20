@@ -174,13 +174,16 @@ const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, Jo
     return nullptr;
 }
 
-const char* PrintManager::PrintSvg(const char* wirePath, const Placement& p, JobStats& stats,
+const char* PrintManager::PrintSvg(const char* wirePath, svg::Pattern pattern,
+                                   const Placement& p, JobStats& stats,
                                    CommandContext* ctx)
 {
-    if (!app_.getStorageManager().IsMounted()) return "not mounted";
-
     char full[288];
-    if (!StorageManager::Resolve(wirePath, full, sizeof(full))) return "bad path";
+    if (pattern == svg::Pattern::None)
+    {
+        if (!app_.getStorageManager().IsMounted()) return "not mounted";
+        if (!StorageManager::Resolve(wirePath, full, sizeof(full))) return "bad path";
+    }
 
     // One job at a time on the wire, and one render behind it.
     LOCK(printLock_);
@@ -191,11 +194,42 @@ const char* PrintManager::PrintSvg(const char* wirePath, const Placement& p, Job
 
     const int64_t t0 = esp_timer_get_time();
     RenderManager::Bitmap bmp;
-    // White background: the threshold reads paper as white, and a transparent
-    // canvas would make every uncovered dot ambiguous.
-    if (const char* err = app_.getRenderManager().Render(full, p.width, p.height,
-                                                        0xFFFFFFFFu, bmp))
-        return err;
+    const char* renderErr = nullptr;
+
+    if (pattern == svg::Pattern::None)
+    {
+        // White background: the threshold reads paper as white, and a
+        // transparent canvas would make every uncovered dot ambiguous.
+        renderErr = app_.getRenderManager().Render(full, p.width, p.height,
+                                                   0xFFFFFFFFu, bmp);
+    }
+    else
+    {
+        // A built-in design, generated at the job's own dot size and then put
+        // through the very same renderer. Measure, allocate, fill - the SVG is
+        // a few kilobytes of rectangles and it goes in PSRAM, not on the
+        // command task's stack.
+        char* text = nullptr;
+        const size_t need = (pattern == svg::Pattern::Calibration)
+                              ? svg::BuildCalibrationSvg((int)p.width, (int)p.height, nullptr, 0)
+                              : svg::BuildTestSvg((int)p.width, (int)p.height, nullptr, 0);
+        if (need == 0) return "cannot build that pattern at this size";
+
+        text = static_cast<char*>(
+            heap_caps_malloc(need + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!text) return "no PSRAM for the pattern";
+
+        if (pattern == svg::Pattern::Calibration)
+            svg::BuildCalibrationSvg((int)p.width, (int)p.height, text, need + 1);
+        else
+            svg::BuildTestSvg((int)p.width, (int)p.height, text, need + 1);
+
+        renderErr = app_.getRenderManager().RenderText(text, need, p.width, p.height,
+                                                       0xFFFFFFFFu, bmp);
+        heap_caps_free(text);
+    }
+
+    if (renderErr) return renderErr;
     const int64_t t1 = esp_timer_get_time();
 
     stats.renderMs     = static_cast<uint32_t>((t1 - t0) / 1000);
@@ -267,8 +301,9 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
     static constexpr int32_t  UNSET_I = INT32_MIN;
     static constexpr uint32_t UNSET_U = 0;
 
-    char     path[192]  = {};
-    char     media[32]  = {};
+    char     path[192]    = {};
+    char     media[32]    = {};
+    char     patternName[24] = {};
     uint32_t width      = UNSET_U;
     uint32_t height     = UNSET_U;
     int32_t  offsetX    = UNSET_I;
@@ -279,7 +314,7 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
     bool     fullHead   = false;
 
     RETURN_IF_ERROR(ctx.readArgs(
-        Required("path",      path,
+        Optional("path",      path,
                  "SVG to print, rooted at the label filesystem, e.g. "
                  "'/labels/test.svg'."),
         Optional("media",     media,
@@ -310,8 +345,31 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
         Optional("fullHead",  fullHead,
                  "true to emit all 672 head columns instead of stopping at the "
                  "label's right edge. Same picture, a bigger job; for proving "
-                 "that the narrowed raster prints identically.")
+                 "that the narrowed raster prints identically."),
+        Optional("pattern",   patternName,
+                 "Draw a BUILT-IN design instead of a stored file, and leave -path out: "
+                 "'calibration' is the centre-origin alignment grid, 'test' is "
+                 "the bars and grey sweep for telling a printer fault from a "
+                 "label fault. A pattern is generated at the medium's own dot "
+                 "size and then goes through exactly the same renderer, fit and "
+                 "placement as a label, so what you preview is what prints.")
     ));
+
+    svg::Pattern pattern = svg::Pattern::None;
+    if (!svg::ParsePattern(patternName, pattern))
+    {
+        auto bad = ctx.reply.object();
+        bad.field("ok", false);
+        bad.field("error", "pattern must be 'calibration' or 'test'");
+        return RequestError::Ok;
+    }
+    if (pattern == svg::Pattern::None && !path[0])
+    {
+        auto bad = ctx.reply.object();
+        bad.field("ok", false);
+        bad.field("error", "give -path, or -pattern calibration|test");
+        return RequestError::Ok;
+    }
 
     Placement p;
     p.threshold = threshold;
@@ -327,12 +385,13 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
     const char* error = Resolve(media, p,
                                 width != UNSET_U, height != UNSET_U,
                                 offsetX != UNSET_I, offsetY != UNSET_I);
-    if (!error) error = PrintSvg(path, p, stats, &ctx);
+    if (!error) error = PrintSvg(path, pattern, p, stats, &ctx);
 
     auto resp = ctx.reply.object();
     resp.field("ok", error == nullptr);
     if (error) resp.field("error", error);
-    resp.field("path", path);
+    if (pattern == svg::Pattern::None) resp.field("path", path);
+    else resp.field("pattern", patternName);
     if (media[0]) resp.field("media", media);
     resp.field("width", p.width);
     resp.field("height", p.height);

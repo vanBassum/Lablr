@@ -7,6 +7,7 @@
 #include "XmlEntities.h"
 #include "SvgFontAttrs.h"
 #include "SvgQrCode.h"
+#include "SvgPatterns.h"
 #include "EspQrEncoder.h"
 
 #include <esp_log.h>
@@ -288,9 +289,26 @@ void RenderManager::RunJob()
     const size_t freeInternalBefore = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     const size_t freePsramBefore    = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
 
-    size_t svgSize = 0;
-    uint8_t* svg = ReadFileToPsram(job_.path, svgSize);
-    if (!svg) { job_.error = "cannot read svg"; return; }
+    size_t   svgSize = 0;
+    uint8_t* svg     = nullptr;
+
+    if (job_.inlineSvg)
+    {
+        // A generated design - a calibration grid or the test pattern. Copied
+        // into PSRAM like a file would be, so everything below this line is the
+        // same code path a stored label takes.
+        svg = static_cast<uint8_t*>(
+            heap_caps_malloc(job_.inlineLen + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!svg) { job_.error = "no PSRAM for the pattern"; return; }
+        memcpy(svg, job_.inlineSvg, job_.inlineLen);
+        svg[job_.inlineLen] = 0;
+        svgSize = job_.inlineLen;
+    }
+    else
+    {
+        svg = ReadFileToPsram(job_.path, svgSize);
+        if (!svg) { job_.error = "cannot read svg"; return; }
+    }
 
     // ThorVG's SVG loader appends a text node's bytes verbatim and resolves no
     // character reference, so a label that correctly writes `AT&amp;T` prints
@@ -481,6 +499,50 @@ void RenderManager::RunJob()
 // The public entry point: one rasteriser, two callers
 // ──────────────────────────────────────────────────────────────
 
+const char* RenderManager::RenderText(const char* svg, size_t svgLen,
+                                     uint32_t width, uint32_t height,
+                                     uint32_t background, Bitmap& out)
+{
+    out = Bitmap{};
+
+    if (!svg || svgLen == 0)                                  return "no svg given";
+    if (!workerUp_ || !engineUp_)                             return "render engine unavailable";
+    if (width == 0 || height == 0)                            return "width and height must be non-zero";
+    if (width > MAX_DIMENSION || height > MAX_DIMENSION)      return "width or height too large";
+    if (static_cast<uint64_t>(width) * height > MAX_PIXELS)   return "too many pixels";
+
+    LOCK(renderLock_);
+
+    job_.path[0]    = '\0';
+    job_.inlineSvg  = svg;
+    job_.inlineLen  = svgLen;
+    job_.width      = width;
+    job_.height     = height;
+    job_.background = background;
+
+    jobRequest_.Give();
+    jobDone_.Take();
+
+    // The worker is finished with the caller's bytes; do not leave a dangling
+    // pointer in the job for the next render to trip over.
+    job_.inlineSvg = nullptr;
+    job_.inlineLen = 0;
+
+    if (job_.error || !job_.pixels)
+        return job_.error ? job_.error : "render produced nothing";
+
+    out.pixels       = job_.pixels;
+    out.width        = width;
+    out.height       = height;
+    out.scale        = job_.scale;
+    out.psramUsed    = job_.psramUsed;
+    out.internalUsed = job_.internalUsed;
+    out.stackLeft    = job_.stackLeft;
+
+    job_.pixels = nullptr;
+    return nullptr;
+}
+
 const char* RenderManager::Render(const char* vfsPath, uint32_t width, uint32_t height,
                                   uint32_t background, Bitmap& out)
 {
@@ -495,6 +557,8 @@ const char* RenderManager::Render(const char* vfsPath, uint32_t width, uint32_t 
     LOCK(renderLock_);
 
     snprintf(job_.path, sizeof(job_.path), "%s", vfsPath);
+    job_.inlineSvg  = nullptr;
+    job_.inlineLen  = 0;
     job_.width      = width;
     job_.height     = height;
     job_.background = background;
@@ -543,14 +607,16 @@ RequestError RenderManager::Cmd_Fonts(CommandContext& ctx)
 RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
 {
     char     path[192] = {};
+    char     patternName[24] = {};
     uint32_t width = 0, height = 0;
     uint32_t background = 0xFFFFFFFFu;
     char     format[8] = "raw";
 
     RETURN_IF_ERROR(ctx.readArgs(
-        Required("path",   path,
+        Optional("path",   path,
                  "SVG to render, rooted at the label filesystem, e.g. "
-                 "'/labels/test.svg'."),
+                 "'/labels/test.svg'. Required unless -pattern names a built-in "
+                 "design instead."),
         Required("width",  width,
                  "Output width in pixels, 1 to 2000. To preview what a print "
                  "will look like, pass the medium's own widthDots from "
@@ -570,21 +636,64 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
                  "ordinary PNG file. Ask for 'png' if you need to LOOK at the "
                  "result - it is a quarter the size and anything can display "
                  "it, while raw is only useful to something that knows the "
-                 "pixel layout.")
+                 "pixel layout."),
+        Optional("pattern", patternName,
+                 "Render a BUILT-IN design instead of a stored file, leaving "
+                 "-path out: 'calibration' is the centre-origin alignment grid, "
+                 "'test' is the bars and grey sweep. Pass the medium's own "
+                 "widthDots and heightDots and you are previewing exactly what "
+                 "'print svg -pattern <same>' will put on the label - it is the "
+                 "same generator and the same renderer.")
     ));
+
+    svg::Pattern pattern = svg::Pattern::None;
+    const bool patternOk = svg::ParsePattern(patternName, pattern);
 
     // Everything that can be refused before the worker is woken, is.
     const char* error = nullptr;
-    char full[256];
-    if (!app_.getStorageManager().IsMounted())                    error = "not mounted";
-    else if (!StorageManager::Resolve(path, full, sizeof(full)))  error = "bad path";
+    char full[256] = {};
+    if (!patternOk)                            error = "pattern must be 'calibration' or 'test'";
+    else if (pattern == svg::Pattern::None && !path[0])
+        error = "give -path, or -pattern calibration|test";
+    else if (pattern == svg::Pattern::None && !app_.getStorageManager().IsMounted())
+        error = "not mounted";
+    else if (pattern == svg::Pattern::None &&
+             !StorageManager::Resolve(path, full, sizeof(full)))  error = "bad path";
     else if (strcmp(format, "raw") != 0 && strcmp(format, "png") != 0)
         error = "format must be 'raw' or 'png'";
 
     // Rendering itself is Render(), shared with the printer - a preview that
     // came from a different rasteriser would stop predicting a print.
     Bitmap bmp;
-    if (!error) error = Render(full, width, height, background, bmp);
+    if (!error && pattern == svg::Pattern::None)
+    {
+        error = Render(full, width, height, background, bmp);
+    }
+    else if (!error)
+    {
+        // The built-in designs are generated at the size asked for and then put
+        // through the same renderer, so a preview of one is the same picture
+        // 'print svg -pattern' will lay down.
+        const size_t need = (pattern == svg::Pattern::Calibration)
+                              ? svg::BuildCalibrationSvg((int)width, (int)height, nullptr, 0)
+                              : svg::BuildTestSvg((int)width, (int)height, nullptr, 0);
+        if (need == 0) error = "cannot build that pattern at this size";
+        else
+        {
+            char* text = static_cast<char*>(
+                heap_caps_malloc(need + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+            if (!text) error = "no PSRAM for the pattern";
+            else
+            {
+                if (pattern == svg::Pattern::Calibration)
+                    svg::BuildCalibrationSvg((int)width, (int)height, text, need + 1);
+                else
+                    svg::BuildTestSvg((int)width, (int)height, text, need + 1);
+                error = RenderText(text, need, width, height, background, bmp);
+                heap_caps_free(text);
+            }
+        }
+    }
 
     if (error)
     {
@@ -604,7 +713,8 @@ RequestError RenderManager::Cmd_RenderSvg(CommandContext& ctx)
     {
         auto head = ctx.reply.object();
         head.field("ok", true);
-        head.field("path", path);
+        if (pattern == svg::Pattern::None) head.field("path", path);
+        else head.field("pattern", patternName);
         head.field("width", width);
         head.field("height", height);
         // Raw is little-endian 32-bit words, so the bytes on the wire are

@@ -25,6 +25,10 @@
 //                         where the artwork lands. Pure arithmetic that decides
 //                         where ink goes, including whether media calibrated
 //                         under the older model still print in the same place.
+//   svg::BuildCalibrationSvg / BuildTestSvg
+//                       - the built-in designs, where a grid that is not
+//                         symmetric about its own centre would make every
+//                         alignment read off it wrong.
 //
 // Everything else about this firmware needs a printer, a WiFi network or a
 // flash partition, and is checked by driving the device over its own wire. See
@@ -40,6 +44,7 @@
 #include "SvgFontAttrs.h"
 #include "SvgQrCode.h"
 #include "DotGeometry.h"
+#include "SvgPatterns.h"
 
 #include <cstdio>
 #include <cstring>
@@ -1073,6 +1078,145 @@ static void test_geometry_a_printer_with_no_dead_zone()
     CHECK(g.printableWidthDots == 295 && g.printableHeightDots == 295);
 }
 
+// ──────────────────────────────────────────────────────────────
+// svg::BuildCalibrationSvg / BuildTestSvg
+//
+// The built-in designs. They are measured and then filled, like the other
+// generators here, so the agreement between those two passes is the thing that
+// would corrupt a buffer if it slipped. The rest is the property the grid is
+// FOR: it has to be symmetric about the centre, or an off-centre marker on
+// paper would be the drawing's fault rather than the alignment's.
+// ──────────────────────────────────────────────────────────────
+
+static std::string BuildGrid(int w, int h)
+{
+    const size_t need = svg::BuildCalibrationSvg(w, h, nullptr, 0);
+    std::vector<char> buf(need + 1, 0);
+    const size_t wrote = svg::BuildCalibrationSvg(w, h, buf.data(), need + 1);
+    CHECK(wrote == need);                       // measuring and filling agree
+    return std::string(buf.data());
+}
+
+static void test_pattern_measures_what_it_then_writes()
+{
+    for (int w : { 100, 295, 638 })
+    {
+        const size_t need = svg::BuildCalibrationSvg(w, w, nullptr, 0);
+        CHECK(need > 0);
+
+        // A short buffer truncates and never overruns.
+        const char GUARD = 0x7f;
+        std::vector<char> buf(need + 8, GUARD);
+        svg::BuildCalibrationSvg(w, w, buf.data(), need / 2);
+        for (size_t i = need / 2; i < buf.size(); ++i) CHECK(buf[i] == GUARD);
+    }
+}
+
+static void test_pattern_is_a_well_formed_svg_of_the_size_asked_for()
+{
+    const std::string g = BuildGrid(295, 295);
+    CHECK(g.compare(0, 4, "<svg") == 0);
+    CHECK(g.size() > 8 && g.compare(g.size() - 6, 6, "</svg>") == 0);
+    CHECK(g.find("width=\"295\" height=\"295\"") != std::string::npos);
+    CHECK(g.find("viewBox=\"0 0 295 295\"") != std::string::npos);
+
+    // A design, not a head-coordinate raster: it is the label's own size, so it
+    // goes through the same fit and placement a label does.
+    const std::string wide = BuildGrid(638, 827);
+    CHECK(wide.find("width=\"638\" height=\"827\"") != std::string::npos);
+}
+
+static void test_pattern_marker_sits_at_the_centre()
+{
+    // The whole reading depends on this: wherever the marker lands on paper is
+    // where the middle of the label currently is.
+    const std::string g = BuildGrid(295, 295);
+    const int cx = 295 / 2, cy = 295 / 2;
+
+    char marker[96];
+    std::snprintf(marker, sizeof(marker),
+                  "<rect x=\"%d\" y=\"%d\" width=\"9\" height=\"9\" fill=\"#000000\"/>",
+                  cx - 4, cy - 4);
+    CHECK(g.find(marker) != std::string::npos);
+
+    char axisV[96];
+    std::snprintf(axisV, sizeof(axisV),
+                  "<rect x=\"%d\" y=\"0\" width=\"5\" height=\"295\" fill=\"#000000\"/>", cx - 2);
+    CHECK(g.find(axisV) != std::string::npos);
+
+    char axisH[96];
+    std::snprintf(axisH, sizeof(axisH),
+                  "<rect x=\"0\" y=\"%d\" width=\"295\" height=\"5\" fill=\"#000000\"/>", cy - 2);
+    CHECK(g.find(axisH) != std::string::npos);
+}
+
+static void test_pattern_rings_are_symmetric_about_the_centre()
+{
+    // Every ring that fits on one side has its mirror on the other. Drawn from
+    // the centre outwards for exactly this reason - a grid laid out from a
+    // corner would put the asymmetry in the drawing.
+    const int w = 295, h = 295;
+    const std::string g = BuildGrid(w, h);
+    const int cx = w / 2;
+
+    int pairs = 0;
+    for (int d = svg::PATTERN_MINOR_DOTS; d < cx; d += svg::PATTERN_MINOR_DOTS)
+    {
+        const int t = (d % svg::PATTERN_MAJOR_DOTS) == 0 ? 3 : 1;
+        char left[96], right[96];
+        std::snprintf(left,  sizeof(left),
+                      "<rect x=\"%d\" y=\"0\" width=\"%d\" height=\"%d\" fill=\"#000000\"/>", cx - d, t, h);
+        std::snprintf(right, sizeof(right),
+                      "<rect x=\"%d\" y=\"0\" width=\"%d\" height=\"%d\" fill=\"#000000\"/>", cx + d, t, h);
+        const bool hasL = g.find(left)  != std::string::npos;
+        const bool hasR = g.find(right) != std::string::npos;
+        CHECK(hasL == hasR);
+        if (hasL) ++pairs;
+    }
+    CHECK(pairs > 3);          // it actually drew some
+
+    // Majors must be countable against minors, or the hundreds mean nothing.
+    CHECK(svg::PATTERN_MAJOR_DOTS % svg::PATTERN_MINOR_DOTS == 0);
+}
+
+static void test_pattern_names_parse()
+{
+    svg::Pattern p = svg::Pattern::Test;
+
+    CHECK(svg::ParsePattern("calibration", p) && p == svg::Pattern::Calibration);
+    CHECK(svg::ParsePattern("test", p) && p == svg::Pattern::Test);
+
+    // Absent is None rather than an error, so a command can tell "not asked
+    // for" from "asked for something I do not have".
+    CHECK(svg::ParsePattern("", p) && p == svg::Pattern::None);
+    CHECK(svg::ParsePattern(nullptr, p) && p == svg::Pattern::None);
+
+    CHECK(!svg::ParsePattern("grid", p));
+    CHECK(!svg::ParsePattern("Calibration", p));     // names are exact
+}
+
+static void test_pattern_refuses_a_size_it_cannot_draw()
+{
+    char buf[8];
+    CHECK(svg::BuildCalibrationSvg(0, 100, buf, sizeof(buf)) == 0);
+    CHECK(svg::BuildCalibrationSvg(100, -1, nullptr, 0) == 0);
+    CHECK(svg::BuildTestSvg(0, 0, nullptr, 0) == 0);
+}
+
+static void test_test_pattern_has_a_grey_sweep()
+{
+    const size_t need = svg::BuildTestSvg(295, 295, nullptr, 0);
+    std::vector<char> buf(need + 1, 0);
+    CHECK(svg::BuildTestSvg(295, 295, buf.data(), need + 1) == need);
+    const std::string t(buf.data());
+
+    // The greys are what the threshold turns into ink, which is the point of
+    // being able to preview this one at all.
+    CHECK(t.find("#e0e0e0") != std::string::npos);   // 224
+    CHECK(t.find("#1c1c1c") != std::string::npos);   // 28
+    CHECK(t.compare(0, 4, "<svg") == 0);
+}
+
 int main()
 {
     test_resolve_joins();
@@ -1134,6 +1278,14 @@ int main()
     test_geometry_legacy_offsets_do_not_also_crop();
     test_geometry_migrating_a_legacy_medium_does_not_move_it();
     test_geometry_a_printer_with_no_dead_zone();
+
+    test_pattern_measures_what_it_then_writes();
+    test_pattern_is_a_well_formed_svg_of_the_size_asked_for();
+    test_pattern_marker_sits_at_the_centre();
+    test_pattern_rings_are_symmetric_about_the_centre();
+    test_pattern_names_parse();
+    test_pattern_refuses_a_size_it_cannot_draw();
+    test_test_pattern_has_a_grey_sweep();
 
     if (failures == 0) std::printf("all host tests passed\n");
     else               std::printf("%d host check(s) failed\n", failures);

@@ -106,6 +106,17 @@ public:
     const char* Render(const char* vfsPath, uint32_t width, uint32_t height,
                        uint32_t background, Bitmap& out);
 
+    /// Render SVG the caller already has, rather than a stored file. The bytes
+    /// are copied before the worker touches them, so the caller's buffer can be
+    /// a local.
+    ///
+    /// This is what makes the built-in patterns previewable: a calibration grid
+    /// goes through exactly the pipeline a label does - same fit, same scale,
+    /// same placement - so the Print button can print the picture on the screen
+    /// rather than something generated a second way.
+    const char* RenderText(const char* svg, size_t svgLen, uint32_t width, uint32_t height,
+                           uint32_t background, Bitmap& out);
+
     /// The bounds Render enforces, so a caller can refuse before allocating.
     static constexpr uint32_t MaxDimension() { return MAX_DIMENSION; }
     static constexpr uint32_t MaxPixels()    { return MAX_PIXELS; }
@@ -133,6 +144,10 @@ private:
     {
         // in
         char     path[256];
+        /// When set, the design is these bytes and `path` is unused. Owned by
+        /// the caller, which blocks until the worker is done with it.
+        const char* inlineSvg;
+        size_t      inlineLen;
         uint32_t width;
         uint32_t height;
         uint32_t background;

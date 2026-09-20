@@ -3,6 +3,7 @@
 #include "AppProvider.h"
 #include "InitState.h"
 #include "CommandEntry.h"
+#include "SvgPatterns.h"
 #include "Mutex.h"
 #include <cstdint>
 #include <cstddef>
@@ -181,7 +182,12 @@ private:
                        uint32_t done = 0, uint32_t total = 0);
 
     /// Render `wirePath` and print it at `p`. Returns null, or a static reason.
-    const char* PrintSvg(const char* wirePath, const Placement& p, JobStats& stats,
+    /// Render a design and print it. The design is a stored file, or - when
+    /// `pattern` is not None - one of the built-ins, in which case `wirePath` is
+    /// ignored. Everything after the render is identical either way, which is
+    /// what lets the Print button print exactly what the preview is showing.
+    const char* PrintSvg(const char* wirePath, svg::Pattern pattern,
+                         const Placement& p, JobStats& stats,
                          CommandContext* ctx = nullptr);
 
     /// Emit one complete job into a PSRAM buffer and push it at the printer.
