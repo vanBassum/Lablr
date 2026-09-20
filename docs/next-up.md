@@ -49,18 +49,27 @@ module is the floor being tested when you scan it.
 exercised.** Everything it calls has been driven from a script and works, and the page
 around it is new. It is one click on the Print page.
 
-**Outstanding: `roll54x70`'s offsets look invented.** −1100 and −5000 µm against
-`square25`'s measured −1016 and −3133. Round numbers are what a guess looks like, and the
-device's own instructions now say not to do this. Either `print calibrate` on that roll
-and measure them, or set them to zero and say so.
+**Outstanding: `roll54x70`'s offsets look invented.** -1100 and -5000 um against
+`square25`'s measured -1016 and -3133. Round numbers are what a guess looks like. It is
+still a legacy medium, so it prints where it always did, but its printable area now comes
+from the printer rather than from the guess. Calibrate it with `-pattern calibration` and
+save an alignment, or set it to zero and say so.
 
-**Outstanding: is the vertical offset actually a constant?** Every measurement of it so
-far followed a job that *overran* the label — the 400-line rulers on a 295-dot label, whose
-tails are visible at the top of each calibration photo. If raster line 0 depends on the
-previous job's length rather than on the media, it is not a per-medium property and the
-schema needs rethinking. Two consecutive same-length prints settle it. The legacy C#
-carried a fixed −5 mm for every roll, which is weak evidence that it is constant — and
-weak evidence is what it is, since the measured value here is −3.13 mm.
+**Outstanding: is the vertical dead zone actually a machine constant?** The schema now
+*claims* it is - it is the printer's `deadTopUm`, seeded at 3133 um from square25 - and
+that is what makes the question answerable at last: a roll needing a different figure has
+to say so in its own `marginTopUm` instead of silently disagreeing with the first. Two
+consecutive same-length prints on two different rolls settle it. Every measurement so far
+followed a job that *overran* the label, so if raster line 0 depends on the previous job's
+length rather than on the machine, both numbers are wrong together.
+
+**Outstanding: none of the calibration work has touched hardware.** The model split, the
+centre-origin grid, the pattern modes and the Print page rewrite are host-tested and
+build-verified only. The first flash should check three things in order: that `media get
+square25` still reports 283 x 258 printable and prints where it always did, which is the
+whole back-compat claim; that `-pattern calibration` renders and its centre marker is
+findable on paper; and that an offset override moves the marker by exactly what was
+typed.
 
 **Outstanding: the calibrated label is good, not perfect.** Deliberately parked rather
 than chased; the residual is small and the next real information comes from a second roll,
