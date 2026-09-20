@@ -30,9 +30,10 @@ character references before ThorVG parses, because ThorVG resolves none - a labe
 written `AT&amp;T` printed the entity. Host tests cover the function; what is unchecked
 is that a real label draws `&`. (2) The Print page's preview asks for `format: "png"`
 instead of the device's raw ARGB, which was three quarters of a megabyte down a
-512-byte session window. `check_amp.py` (written to the session scratchpad, not kept)
-drives both over the wire; the ampersand check is decisive on its own, because a
-`&amp;` render and a CDATA `&` render must come back byte-identical.
+512-byte session window. `assets/labels/thorvg-text-check.svg` exercises both in one
+sheet - five font pairs that must match and five character references that must
+read as the source above them - so `render svg` at 638 x 827 settles it without
+printing anything. Its own README says what each row must show.
 
 **Outstanding: the browser Print button is still the one path never physically
 exercised.** Everything it calls has been driven from a script and works, and the page

@@ -15,6 +15,7 @@ between the two calibration files below.
 | `cal54x70-overrun.svg` | 672 x 900 | Finding an unknown offset on 54 x 70 mm stock |
 | `cal54x70-fit.svg` | 638 x 827 | Confirming one, at scale 1 |
 | `bc547-square25.svg` | 295 x 295 | An ordinary label for the 25 x 25 mm stock |
+| `thorvg-text-check.svg` | 638 x 827 | Checking the two text fixes after a ThorVG change |
 
 ## How the calibration designs work
 
@@ -39,3 +40,45 @@ bottom-right corner marks land on the paper's bottom-right corner and the rulers
 read the label's real size at the far edges. Its top and left strokes are
 *expected* to be missing: that is the unprintable margin, and seeing it absent is
 a confirmation rather than a defect.
+
+## The text check
+
+`thorvg-text-check.svg` exists because ThorVG's SVG loader gets two things wrong
+that this firmware corrects *before* the parser sees the buffer - inherited font
+properties ([SvgFontAttrs.h](../../main/lib/common/SvgFontAttrs.h)) and character
+references ([XmlEntities.h](../../main/lib/common/XmlEntities.h)) - and both fail
+**silently**: the label simply comes out with the wrong size or the entity spelled
+out, and nothing anywhere says so. Render this sheet after changing either pass, or
+after moving ThorVG's version, and read it.
+
+Rendering is enough; it does not have to be printed. `render svg` at 638 x 827 shows
+everything the paper would.
+
+**Section 1 is five pairs, and a pair that does not match is the bug.** The left
+column asks for its font through inheritance, the right column spells the same font
+out on the element itself, and both draw `Hxp 34`. If the inheritance pass regressed,
+the left column comes out at ThorVG's default 10 - a quarter of the height, unmissable
+next to its own reference. Row e also inherits `DejaVuSans-Bold`, so a family that
+failed to inherit resolves to nothing and that line is *blank* rather than small.
+
+**Section 2 is five results, each under the source text that produced it.** A caption
+is escaped one level, so it prints what the file literally contains:
+
+| Row | The test line contains | Must print |
+|---|---|---|
+| f | `AT&amp;T` | `AT&T` |
+| g | `&#65;&#66;&#67;` | `ABC` |
+| h | `25&#176;C` and `10&#x3A9;` | `25°C` and `10Ω` |
+| i | `&amp;lt;` | `&lt;` - four characters, **not** `<` |
+| j | `&lt;` | `&lt;` - four characters |
+
+Rows i and j are the two that look wrong and are not. Row i is the decoder's one-pass
+property: it resolves left to right and never rescans what it wrote, so `&amp;lt;`
+becomes the four characters `&lt;` and is not then read as `<`. Row j is the deliberate
+residue - `&lt;` is left alone, because putting a `<` into character data would make
+ThorVG parse the rest of the file as markup, which destroys the label instead of
+printing one wrong character. So i and j print identically, and that is the pass
+working.
+
+Every caption and heading on the sheet carries its own `font-family` and `font-size`,
+so the page stays readable even when the thing it is testing is broken.
