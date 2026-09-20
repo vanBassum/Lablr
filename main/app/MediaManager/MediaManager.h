@@ -3,6 +3,7 @@
 #include "AppProvider.h"
 #include "InitState.h"
 #include "CommandEntry.h"
+#include "DotGeometry.h"
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
@@ -79,8 +80,42 @@ public:
         char    name[MAX_NAME] = {};
         int32_t widthUm   = 0;
         int32_t heightUm  = 0;
+
+        /// Where the artwork goes, and NOTHING else. Signed, measured by eye
+        /// against a printed grid. Zero means "at the first dot the machine can
+        /// reach", which is the honest state of an uncalibrated roll.
+        int32_t alignXUm = 0;
+        int32_t alignYUm = 0;
+
+        /// What THIS roll loses beyond what the machine loses - paper sitting
+        /// off-centre in the guide. Non-negative; the machine's own dead zone
+        /// is on the printer and is not repeated here.
+        int32_t marginLeftUm = 0;
+        int32_t marginTopUm  = 0;
+
+        /// Set when the file still carries the pre-split `offsetXUm`/`offsetYUm`,
+        /// which meant placement AND crop at once. Those are then used as the
+        /// finished placement, verbatim, so a calibrated roll does not move the
+        /// day the firmware changes. Writing the medium again clears it.
+        bool    legacyOffsets = false;
         int32_t offsetXUm = 0;
         int32_t offsetYUm = 0;
+
+        /// This medium as the pure geometry model wants it.
+        dots::LabelSpec spec() const
+        {
+            dots::LabelSpec s;
+            s.widthUm         = widthUm;
+            s.heightUm        = heightUm;
+            s.marginLeftUm    = marginLeftUm;
+            s.marginTopUm     = marginTopUm;
+            s.alignXUm        = alignXUm;
+            s.alignYUm        = alignYUm;
+            s.legacy          = legacyOffsets;
+            s.legacyOffsetXUm = offsetXUm;
+            s.legacyOffsetYUm = offsetYUm;
+            return s;
+        }
     };
 
     explicit MediaManager(AppProvider& app);
@@ -99,27 +134,18 @@ public:
     /// printer's and is passed in, because this layer does not own one.
     static int32_t UmToDots(int32_t um, uint32_t dpi)
     {
-        const int64_t n = static_cast<int64_t>(um) * dpi;
-        return static_cast<int32_t>((n >= 0 ? n + 12700 : n - 12700) / 25400);
+        return dots::FromUm(um, dpi);
     }
 
-    /// How much of the label can actually be printed, in dots. DERIVED from the
-    /// offsets and never stored - a second copy would be one more thing to keep
-    /// in step, and these change the moment a calibration does.
+    /// This medium's geometry on a given machine: which dots exist, which can
+    /// carry ink, and where the artwork lands. One function so that `media
+    /// get`, the preview and a real print cannot disagree.
     ///
-    /// Both axes lose whatever falls before the head's own origin: the head
-    /// cannot print a negative dot column, and the printer cannot emit a raster
-    /// line before its first. A negative offset therefore means that much of
-    /// the label is unreachable, which is a fact about the paper and the
-    /// machine rather than a bug. On the 25 x 25 mm stock measured here it is
-    /// 1.0 mm at the left edge and 3.1 mm at the leading edge.
-    static int32_t PrintableDots(int32_t sizeUm, int32_t offsetUm, uint32_t dpi)
-    {
-        const int32_t size   = UmToDots(sizeUm, dpi);
-        const int32_t offset = UmToDots(offsetUm, dpi);
-        const int32_t lost   = offset < 0 ? -offset : 0;
-        return size > lost ? size - lost : 0;
-    }
+    /// Replaces the old PrintableDots, which took the medium's single signed
+    /// offset and read a negative one as unreachable paper - the conflation
+    /// this whole split exists to remove. The dead zone belongs to the printer
+    /// and arrives here from it.
+    void Geometry(const Medium& m, dots::LabelGeometry& out) const;
 
 private:
     AppProvider& app_;

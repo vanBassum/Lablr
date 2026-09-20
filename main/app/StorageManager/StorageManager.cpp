@@ -61,7 +61,7 @@ void StorageManager::Mount()
     // Created every boot rather than only after a format: a directory someone
     // deleted over the wire should come back, and mkdir on an existing path is
     // a no-op that costs nothing.
-    static const char* const dirs[] = { "labels", "fonts", "media" };
+    static const char* const dirs[] = { "labels", "fonts", "media", "printers" };
     for (const char* d : dirs)
     {
         char path[64];

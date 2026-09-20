@@ -21,6 +21,10 @@
 //   svg::ExpandQrCodes  - the third, where the geometry decides whether a
 //                         printed code scans at all, and where the encoder
 //                         itself is the one part a host cannot check.
+//   dots::Resolve       - the calibration model: which dots can carry ink and
+//                         where the artwork lands. Pure arithmetic that decides
+//                         where ink goes, including whether media calibrated
+//                         under the older model still print in the same place.
 //
 // Everything else about this firmware needs a printer, a WiFi network or a
 // flash partition, and is checked by driving the device over its own wire. See
@@ -35,6 +39,7 @@
 #include "XmlEntities.h"
 #include "SvgFontAttrs.h"
 #include "SvgQrCode.h"
+#include "DotGeometry.h"
 
 #include <cstdio>
 #include <cstring>
@@ -871,6 +876,203 @@ static void test_qr_never_writes_past_the_cap()
     }
 }
 
+// ──────────────────────────────────────────────────────────────
+// dots::Resolve
+//
+// The calibration model: which dots exist, and where the artwork lands. It is
+// pure arithmetic and it decides where ink goes, so it is checked here rather
+// than by printing labels and measuring them - and the case that matters most
+// is the one nobody would think to look at, which is that media written before
+// the model changed still print in exactly the same place.
+// ──────────────────────────────────────────────────────────────
+
+// The built-in DYMO LabelWriter 450, as PrinterManager::BuiltIn declares it.
+static constexpr uint32_t DPI       = 300;
+static constexpr int32_t  DEAD_LEFT = 1016;   // um, measured
+static constexpr int32_t  DEAD_TOP  = 3133;   // um, measured
+
+static void test_geometry_um_to_dots()
+{
+    CHECK(dots::FromUm(25400, 300) == 300);       // one inch
+    CHECK(dots::FromUm(1016, 300) == 12);
+    CHECK(dots::FromUm(3133, 300) == 37);
+    CHECK(dots::FromUm(0, 300) == 0);
+    // Symmetric about zero - a negative alignment must not round the other way.
+    CHECK(dots::FromUm(-1016, 300) == -12);
+    CHECK(dots::FromUm(-3133, 300) == -37);
+
+    // Round trip, to the nearest dot the unit can express.
+    CHECK(dots::ToUm(300, 300) == 25400);
+    CHECK(dots::ToUm(12, 300) == 1016);
+    CHECK(dots::ToUm(-12, 300) == -1016);
+}
+
+static void test_geometry_printable_subtracts_both()
+{
+    // 25 mm at 300 dpi is 295 dots; the machine loses 12 and the roll loses
+    // nothing, so 283 can carry ink.
+    CHECK(dots::Printable(25000, DEAD_LEFT, 0, DPI) == 283);
+    CHECK(dots::Printable(25000, DEAD_TOP, 0, DPI) == 258);
+
+    // A roll that sits further into the guide loses its own extra on top.
+    CHECK(dots::Printable(25000, DEAD_LEFT, 1016, DPI) == 271);
+
+    // Negative is not a direction here - it is an amount of paper, and there is
+    // no such thing as a negative amount of it.
+    CHECK(dots::Printable(25000, -5000, 0, DPI) == 295);
+
+    // A dead zone bigger than the label prints nothing, not a negative amount.
+    CHECK(dots::Printable(25000, 30000, 0, DPI) == 0);
+}
+
+static void test_geometry_alignment_never_changes_printable()
+{
+    // THE property the split exists for. Alignment moves the artwork and
+    // nothing else; the old single offset could not express this, because the
+    // number that placed the design was the number that cropped it.
+    dots::LabelSpec spec;
+    spec.widthUm = spec.heightUm = 25000;
+
+    dots::LabelGeometry a, b;
+    dots::Resolve(spec, DEAD_LEFT, DEAD_TOP, DPI, a);
+
+    spec.alignXUm = 2000;
+    spec.alignYUm = -1500;
+    dots::Resolve(spec, DEAD_LEFT, DEAD_TOP, DPI, b);
+
+    CHECK(a.printableWidthDots  == b.printableWidthDots);
+    CHECK(a.printableHeightDots == b.printableHeightDots);
+    CHECK(b.placeXDots == a.placeXDots + dots::FromUm(2000, DPI));
+    CHECK(b.placeYDots == a.placeYDots + dots::FromUm(-1500, DPI));
+}
+
+static void test_geometry_zero_alignment_lands_on_the_first_printable_dot()
+{
+    // With nothing calibrated, the artwork's top-left goes exactly where the
+    // machine's first reachable dot is - so the design fills the printable area
+    // rather than starting off the edge.
+    dots::LabelSpec spec;
+    spec.widthUm = spec.heightUm = 25000;
+
+    dots::LabelGeometry g;
+    dots::Resolve(spec, DEAD_LEFT, DEAD_TOP, DPI, g);
+
+    CHECK(g.placeXDots == -g.deadLeftDots);
+    CHECK(g.placeYDots == -g.deadTopDots);
+    CHECK(g.deadLeftDots == 12);
+    CHECK(g.deadTopDots == 37);
+}
+
+static void test_geometry_medium_margin_adds_to_the_machines()
+{
+    dots::LabelSpec spec;
+    spec.widthUm = spec.heightUm = 25000;
+    spec.marginLeftUm = 1016;          // this roll loses another 12 dots
+    spec.marginTopUm  = 0;
+
+    dots::LabelGeometry g;
+    dots::Resolve(spec, DEAD_LEFT, DEAD_TOP, DPI, g);
+
+    CHECK(g.marginLeftDots == 12);
+    CHECK(g.printableWidthDots == 295 - 12 - 12);
+    CHECK(g.placeXDots == -24);        // pushed clear of both
+    CHECK(g.printableHeightDots == 258);
+}
+
+static void test_geometry_legacy_medium_prints_exactly_where_it_used_to()
+{
+    // square25 as it exists on the device today: offsets that were measured
+    // when one number meant both things. The old code placed the design at
+    // UmToDots(offset) and reported printable as size - |offset|. Both answers
+    // must survive the split, or a calibrated roll silently moves.
+    dots::LabelSpec spec;
+    spec.widthUm = spec.heightUm = 25000;
+    spec.legacy = true;
+    spec.legacyOffsetXUm = -1016;
+    spec.legacyOffsetYUm = -3133;
+
+    dots::LabelGeometry g;
+    dots::Resolve(spec, DEAD_LEFT, DEAD_TOP, DPI, g);
+
+    CHECK(g.placeXDots == -12);              // where it has always printed
+    CHECK(g.placeYDots == -37);
+    CHECK(g.printableWidthDots  == 283);     // what it has always reported
+    CHECK(g.printableHeightDots == 258);
+    CHECK(g.widthDots == 295 && g.heightDots == 295);
+}
+
+static void test_geometry_legacy_offsets_do_not_also_crop()
+{
+    // A legacy medium whose offsets were GUESSED rather than measured - roll54
+    // carried -1100/-5000 - keeps printing where it did, but its printable area
+    // now comes from the machine instead of from the guess. That is the point:
+    // the guess never was a statement about what the printer can reach.
+    dots::LabelSpec spec;
+    spec.widthUm  = 54000;
+    spec.heightUm = 70000;
+    spec.legacy = true;
+    spec.legacyOffsetXUm = -1100;
+    spec.legacyOffsetYUm = -5000;
+
+    dots::LabelGeometry g;
+    dots::Resolve(spec, DEAD_LEFT, DEAD_TOP, DPI, g);
+
+    CHECK(g.placeXDots == dots::FromUm(-1100, DPI));
+    CHECK(g.placeYDots == dots::FromUm(-5000, DPI));
+    CHECK(g.printableWidthDots  == g.widthDots  - 12);
+    CHECK(g.printableHeightDots == g.heightDots - 37);
+}
+
+static void test_geometry_migrating_a_legacy_medium_does_not_move_it()
+{
+    // MediaManager::Cmd_MediaSet converts rather than copies when it rewrites a
+    // legacy medium: an old offset named the finished placement, alignment is
+    // measured from the first reachable dot, and the two differ by the dead
+    // zone. Copying the number straight across subtracts it twice and shifts
+    // every calibrated roll - which would look like a printer fault, not a
+    // firmware one.
+    dots::LabelSpec legacy;
+    legacy.widthUm = legacy.heightUm = 25000;
+    legacy.legacy = true;
+    legacy.legacyOffsetXUm = -1016;
+    legacy.legacyOffsetYUm = -3133;
+
+    dots::LabelGeometry before;
+    dots::Resolve(legacy, DEAD_LEFT, DEAD_TOP, DPI, before);
+
+    dots::LabelSpec migrated;
+    migrated.widthUm  = migrated.heightUm = 25000;
+    migrated.alignXUm = legacy.legacyOffsetXUm + DEAD_LEFT;   // + margin, which is 0
+    migrated.alignYUm = legacy.legacyOffsetYUm + DEAD_TOP;
+
+    dots::LabelGeometry after;
+    dots::Resolve(migrated, DEAD_LEFT, DEAD_TOP, DPI, after);
+
+    CHECK(after.placeXDots == before.placeXDots);
+    CHECK(after.placeYDots == before.placeYDots);
+    CHECK(after.printableWidthDots  == before.printableWidthDots);
+    CHECK(after.printableHeightDots == before.printableHeightDots);
+
+    // And what the conversion SAYS about that roll: it was never being nudged,
+    // it was being cropped. A measured medium migrates to zero alignment.
+    CHECK(migrated.alignXUm == 0);
+    CHECK(migrated.alignYUm == 0);
+}
+
+static void test_geometry_a_printer_with_no_dead_zone()
+{
+    // Nothing in the model requires a dead zone. A machine that can reach the
+    // whole label places artwork at the origin and prints all of it.
+    dots::LabelSpec spec;
+    spec.widthUm = spec.heightUm = 25000;
+
+    dots::LabelGeometry g;
+    dots::Resolve(spec, 0, 0, DPI, g);
+
+    CHECK(g.placeXDots == 0 && g.placeYDots == 0);
+    CHECK(g.printableWidthDots == 295 && g.printableHeightDots == 295);
+}
+
 int main()
 {
     test_resolve_joins();
@@ -922,6 +1124,16 @@ int main()
     test_qr_swallows_a_separate_closing_tag();
     test_qr_expands_every_placeholder();
     test_qr_never_writes_past_the_cap();
+
+    test_geometry_um_to_dots();
+    test_geometry_printable_subtracts_both();
+    test_geometry_alignment_never_changes_printable();
+    test_geometry_zero_alignment_lands_on_the_first_printable_dot();
+    test_geometry_medium_margin_adds_to_the_machines();
+    test_geometry_legacy_medium_prints_exactly_where_it_used_to();
+    test_geometry_legacy_offsets_do_not_also_crop();
+    test_geometry_migrating_a_legacy_medium_does_not_move_it();
+    test_geometry_a_printer_with_no_dead_zone();
 
     if (failures == 0) std::printf("all host tests passed\n");
     else               std::printf("%d host check(s) failed\n", failures);

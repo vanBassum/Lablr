@@ -3,6 +3,8 @@
 #include "CommandManager.h"
 #include "StorageManager.h"
 #include "PrintManager.h"
+#include "PrinterManager/PrinterManager.h"
+#include "DotGeometry.h"
 #include "JsonHelpers.h"
 #include "esp_log.h"
 #include <cstdio>
@@ -82,10 +84,31 @@ bool MediaManager::Load(const char* id, Medium& out) const
     if (!ExtractJsonString(json, "name", out.name, sizeof(out.name)))
         snprintf(out.name, sizeof(out.name), "%s", id);
 
-    out.widthUm   = ExtractJsonInt(json, "widthUm",   0);
-    out.heightUm  = ExtractJsonInt(json, "heightUm",  0);
+    out.widthUm  = ExtractJsonInt(json, "widthUm",  0);
+    out.heightUm = ExtractJsonInt(json, "heightUm", 0);
+
+    out.alignXUm     = ExtractJsonInt(json, "alignXUm",     0);
+    out.alignYUm     = ExtractJsonInt(json, "alignYUm",     0);
+    out.marginLeftUm = ExtractJsonInt(json, "marginLeftUm", 0);
+    out.marginTopUm  = ExtractJsonInt(json, "marginTopUm",  0);
+
+    // A file written before the printer and the paper were told apart carries
+    // offsetXUm/offsetYUm and none of the four above. Those offsets meant
+    // placement AND crop at once, so they are kept as the finished placement
+    // rather than reinterpreted - a roll somebody calibrated by printing labels
+    // must not move because the firmware learned a new vocabulary. Saving the
+    // medium again writes the new form and the flag goes.
+    const bool hasNew = FindJsonField(json, "alignXUm")     || FindJsonField(json, "alignYUm") ||
+                        FindJsonField(json, "marginLeftUm") || FindJsonField(json, "marginTopUm");
+    const bool hasOld = FindJsonField(json, "offsetXUm")    || FindJsonField(json, "offsetYUm");
+
+    out.legacyOffsets = !hasNew && hasOld;
     out.offsetXUm = ExtractJsonInt(json, "offsetXUm", 0);
     out.offsetYUm = ExtractJsonInt(json, "offsetYUm", 0);
+
+    // A margin is an amount of paper; a negative one would grow the label.
+    if (out.marginLeftUm < 0) out.marginLeftUm = 0;
+    if (out.marginTopUm  < 0) out.marginTopUm  = 0;
 
     // A medium with no size is not a medium. Refusing here means every caller
     // downstream can divide by it.
@@ -132,11 +155,16 @@ bool MediaManager::Save(const Medium& m) const
     WriteJsonString(f, m.id);
     fputs(",\"name\":", f);
     WriteJsonString(f, m.name);
+    // Always the new form: writing a medium is what migrates it, and a file
+    // that carried the old offsets loses them here rather than keeping two
+    // notions of placement side by side.
     const int written = fprintf(f,
         ",\"widthUm\":%ld,\"heightUm\":%ld,"
-        "\"offsetXUm\":%ld,\"offsetYUm\":%ld}\n",
+        "\"alignXUm\":%ld,\"alignYUm\":%ld,"
+        "\"marginLeftUm\":%ld,\"marginTopUm\":%ld}\n",
         (long)m.widthUm, (long)m.heightUm,
-        (long)m.offsetXUm, (long)m.offsetYUm);
+        (long)m.alignXUm, (long)m.alignYUm,
+        (long)m.marginLeftUm, (long)m.marginTopUm);
     const bool streamOk = ferror(f) == 0;
     fclose(f);
 
@@ -145,10 +173,18 @@ bool MediaManager::Save(const Medium& m) const
         ESP_LOGE(TAG, "could not write %s", full);
         return false;
     }
-    ESP_LOGI(TAG, "saved '%s': %ld x %ld um, offset %ld,%ld um",
+    ESP_LOGI(TAG, "saved '%s': %ld x %ld um, align %ld,%ld um, margin %ld,%ld um",
              m.id, (long)m.widthUm, (long)m.heightUm,
-             (long)m.offsetXUm, (long)m.offsetYUm);
+             (long)m.alignXUm, (long)m.alignYUm,
+             (long)m.marginLeftUm, (long)m.marginTopUm);
     return true;
+}
+
+void MediaManager::Geometry(const Medium& m, dots::LabelGeometry& out) const
+{
+    PrinterManager::Printer p;
+    app_.getPrinterManager().Active(p);
+    dots::Resolve(m.spec(), p.deadLeftUm, p.deadTopUm, p.dpi, out);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -170,9 +206,16 @@ RequestError MediaManager::Cmd_MediaList(CommandContext& ctx)
 
     resp.field("ok", true);
 
-    const uint32_t dpi = PrintManager::DPI;
+    // The machine, reported once rather than per medium: every dot figure
+    // below is converted through it, and the dead zone is the printer's.
+    PrinterManager::Printer pr;
+    app_.getPrinterManager().Active(pr);
+    const uint32_t dpi = pr.dpi;
     resp.field("dpi", dpi);
-    resp.field("headDots", PrintManager::HEAD_DOTS);
+    resp.field("headDots", pr.headDots);
+    resp.field("printer", pr.id);
+    resp.field("deadLeftDots", dots::FromUm(pr.deadLeftUm, dpi));
+    resp.field("deadTopDots", dots::FromUm(pr.deadTopUm, dpi));
 
     char dirPath[288];
     StorageManager::Resolve(MEDIA_DIR, dirPath, sizeof(dirPath));
@@ -194,17 +237,25 @@ RequestError MediaManager::Cmd_MediaList(CommandContext& ctx)
             Medium m;
             if (!Load(id, m)) continue;
 
+            dots::LabelGeometry g;
+            Geometry(m, g);
+
             auto item = arr.object();
             item.field("id", m.id);
             item.field("name", m.name);
             item.field("widthUm", m.widthUm);
             item.field("heightUm", m.heightUm);
-            item.field("offsetXUm", m.offsetXUm);
-            item.field("offsetYUm", m.offsetYUm);
-            item.field("widthDots", UmToDots(m.widthUm, dpi));
-            item.field("heightDots", UmToDots(m.heightUm, dpi));
-            item.field("printableWidthDots",  PrintableDots(m.widthUm,  m.offsetXUm, dpi));
-            item.field("printableHeightDots", PrintableDots(m.heightUm, m.offsetYUm, dpi));
+            item.field("alignXUm", m.alignXUm);
+            item.field("alignYUm", m.alignYUm);
+            item.field("marginLeftUm", m.marginLeftUm);
+            item.field("marginTopUm", m.marginTopUm);
+            item.field("legacyOffsets", m.legacyOffsets);
+            item.field("widthDots", g.widthDots);
+            item.field("heightDots", g.heightDots);
+            item.field("printableWidthDots",  g.printableWidthDots);
+            item.field("printableHeightDots", g.printableHeightDots);
+            item.field("placeXDots", g.placeXDots);
+            item.field("placeYDots", g.placeYDots);
         }
         closedir(d);
     }
@@ -233,28 +284,62 @@ RequestError MediaManager::Cmd_MediaGet(CommandContext& ctx)
         return RequestError::Ok;
     }
 
-    const uint32_t dpi = PrintManager::DPI;
+    PrinterManager::Printer pr;
+    app_.getPrinterManager().Active(pr);
+    const uint32_t dpi = pr.dpi;
+
+    dots::LabelGeometry g;
+    Geometry(m, g);
+
     resp.field("ok", true);
     resp.field("id", m.id);
     resp.field("name", m.name);
     resp.field("widthUm", m.widthUm);
     resp.field("heightUm", m.heightUm);
-    resp.field("offsetXUm", m.offsetXUm);
-    resp.field("offsetYUm", m.offsetYUm);
+
+    // Placement, which is a preference.
+    resp.field("alignXUm", m.alignXUm);
+    resp.field("alignYUm", m.alignYUm);
+
+    // Unreachable paper, which is not. The machine's share is on the printer;
+    // only this roll's own extra is here.
+    resp.field("marginLeftUm", m.marginLeftUm);
+    resp.field("marginTopUm", m.marginTopUm);
+
+    // True while this medium still carries the pre-split offsets, which are
+    // being honoured as its placement. Write it once with 'media set' to move
+    // it over; nothing about where it prints changes when you do.
+    resp.field("legacyOffsets", m.legacyOffsets);
+    if (m.legacyOffsets)
+    {
+        resp.field("offsetXUm", m.offsetXUm);
+        resp.field("offsetYUm", m.offsetYUm);
+    }
 
     // What it works out to on THIS printer. The dots are derived, never stored:
     // the paper does not change when the printer does.
+    resp.field("printer", pr.id);
     resp.field("dpi", dpi);
-    resp.field("headDots", PrintManager::HEAD_DOTS);
-    resp.field("widthDots", UmToDots(m.widthUm, dpi));
-    resp.field("heightDots", UmToDots(m.heightUm, dpi));
-    resp.field("offsetXDots", UmToDots(m.offsetXUm, dpi));
-    resp.field("offsetYDots", UmToDots(m.offsetYUm, dpi));
+    resp.field("headDots", pr.headDots);
+    resp.field("widthDots", g.widthDots);
+    resp.field("heightDots", g.heightDots);
 
-    // What a design can actually use. A negative offset puts that much of the
-    // label before the head's origin, where nothing can be printed.
-    resp.field("printableWidthDots",  PrintableDots(m.widthUm,  m.offsetXUm, dpi));
-    resp.field("printableHeightDots", PrintableDots(m.heightUm, m.offsetYUm, dpi));
+    // The dead zone, split by whose fault it is.
+    resp.field("deadLeftDots", g.deadLeftDots);
+    resp.field("deadTopDots", g.deadTopDots);
+    resp.field("marginLeftDots", g.marginLeftDots);
+    resp.field("marginTopDots", g.marginTopDots);
+
+    // Where the artwork's top-left lands in head coordinates. Negative means
+    // that much of it falls on paper the machine cannot reach.
+    resp.field("placeXDots", g.placeXDots);
+    resp.field("placeYDots", g.placeYDots);
+
+    // What a design can actually use: size minus the machine's dead zone minus
+    // this roll's own margin. Alignment is not in it, and moving the artwork
+    // will not change it.
+    resp.field("printableWidthDots",  g.printableWidthDots);
+    resp.field("printableHeightDots", g.printableHeightDots);
     return RequestError::Ok;
 }
 
@@ -269,10 +354,14 @@ RequestError MediaManager::Cmd_MediaSet(CommandContext& ctx)
 
     char    id[MAX_ID]     = {};
     char    name[MAX_NAME] = {};
-    int32_t widthUm   = UNSET;
-    int32_t heightUm  = UNSET;
-    int32_t offsetXUm = UNSET;
-    int32_t offsetYUm = UNSET;
+    int32_t widthUm      = UNSET;
+    int32_t heightUm     = UNSET;
+    int32_t alignXUm     = UNSET;
+    int32_t alignYUm     = UNSET;
+    int32_t marginLeftUm = UNSET;
+    int32_t marginTopUm  = UNSET;
+    int32_t offsetXUm    = UNSET;     // accepted for callers written earlier
+    int32_t offsetYUm    = UNSET;
 
     RETURN_IF_ERROR(ctx.readArgs(
         Required("id",        id,
@@ -287,15 +376,34 @@ RequestError MediaManager::Cmd_MediaSet(CommandContext& ctx)
         Optional("heightUm",  heightUm,
                  "Label length ALONG the feed, in micrometres. Required when "
                  "creating."),
+        Optional("alignXUm",  alignXUm,
+                 "ALIGNMENT across the head, in micrometres: how far to move "
+                 "the artwork from where it would otherwise land. Signed, and "
+                 "it does NOT change how much of the label can be printed. "
+                 "Zero puts the design at the first dot the machine can reach, "
+                 "which is the right value until a printed grid says otherwise."),
+        Optional("alignYUm",  alignYUm,
+                 "ALIGNMENT along the feed, in micrometres. Positive moves the "
+                 "artwork further down the label. Signed, and it does not "
+                 "change the printable area either."),
+        Optional("marginLeftUm", marginLeftUm,
+                 "Extra unreachable paper along this roll's LEFT edge, in "
+                 "micrometres, BEYOND what the machine itself cannot reach. "
+                 "Non-negative. Most rolls want 0: the printer's own dead zone "
+                 "is on the printer ('printer get') and is already subtracted. "
+                 "Use this only when a particular stock sits further into the "
+                 "guide than the rest."),
+        Optional("marginTopUm", marginTopUm,
+                 "Extra unreachable paper along this roll's LEADING edge, "
+                 "beyond the machine's own. Non-negative, and 0 for most rolls."),
         Optional("offsetXUm", offsetXUm,
-                 "Where the label's left edge sits across the head, in "
-                 "micrometres from the head's own left edge. Calibration, not a "
-                 "design choice - measure it, do not guess it."),
+                 "DEPRECATED, and kept so older callers still work: the "
+                 "pre-split offset that meant placement and crop at once. It is "
+                 "taken as alignXUm. Prefer alignXUm and marginLeftUm, which "
+                 "say which of the two you meant."),
         Optional("offsetYUm", offsetYUm,
-                 "Where the label's top edge sits relative to the first raster "
-                 "line, in micrometres. NEGATIVE when the printer starts "
-                 "printing after the label's edge has passed, which crops that "
-                 "much off the top of the design. Calibration.")
+                 "DEPRECATED. Taken as alignYUm; prefer alignYUm and "
+                 "marginTopUm.")
     ));
 
     auto resp = ctx.reply.object();
@@ -323,11 +431,46 @@ RequestError MediaManager::Cmd_MediaSet(CommandContext& ctx)
         m = Medium{};
         snprintf(m.id, sizeof(m.id), "%s", id);
     }
-    if (name[0])            snprintf(m.name, sizeof(m.name), "%s", name);
-    if (widthUm   != UNSET) m.widthUm   = widthUm;
-    if (heightUm  != UNSET) m.heightUm  = heightUm;
-    if (offsetXUm != UNSET) m.offsetXUm = offsetXUm;
-    if (offsetYUm != UNSET) m.offsetYUm = offsetYUm;
+    if (name[0])              snprintf(m.name, sizeof(m.name), "%s", name);
+    if (widthUm      != UNSET) m.widthUm      = widthUm;
+    if (heightUm     != UNSET) m.heightUm     = heightUm;
+    if (alignXUm     != UNSET) m.alignXUm     = alignXUm;
+    if (alignYUm     != UNSET) m.alignYUm     = alignYUm;
+    if (marginLeftUm != UNSET) m.marginLeftUm = marginLeftUm;
+    if (marginTopUm  != UNSET) m.marginTopUm  = marginTopUm;
+
+    // An old offset is CONVERTED, never copied. It named the finished
+    // placement - the head column the label's edge sat at - whereas alignment
+    // is measured from the first dot the machine can reach. Those differ by
+    // exactly the dead zone, so
+    //
+    //     align = oldOffset + printerDead + mediumMargin
+    //
+    // and -1016 um of old offset on a machine that loses 1016 um becomes an
+    // alignment of zero: the artwork was never being nudged, it was being
+    // cropped. Copying the number across instead would subtract the dead zone
+    // twice and shift every calibrated roll by that much.
+    PrinterManager::Printer pr;
+    app_.getPrinterManager().Active(pr);
+    const int32_t lostXUm = pr.deadLeftUm + m.marginLeftUm;
+    const int32_t lostYUm = pr.deadTopUm  + m.marginTopUm;
+
+    if (alignXUm == UNSET && offsetXUm != UNSET) m.alignXUm = offsetXUm + lostXUm;
+    if (alignYUm == UNSET && offsetYUm != UNSET) m.alignYUm = offsetYUm + lostYUm;
+
+    // Writing a medium is what migrates it: from here on its placement is
+    // alignXUm/alignYUm. Without this a legacy file edited through this command
+    // would go on honouring offsets the caller can no longer see or change.
+    if (m.legacyOffsets)
+    {
+        if (alignXUm == UNSET && offsetXUm == UNSET) m.alignXUm = m.offsetXUm + lostXUm;
+        if (alignYUm == UNSET && offsetYUm == UNSET) m.alignYUm = m.offsetYUm + lostYUm;
+        m.legacyOffsets = false;
+        m.offsetXUm = m.offsetYUm = 0;
+    }
+
+    if (m.marginLeftUm < 0) m.marginLeftUm = 0;
+    if (m.marginTopUm  < 0) m.marginTopUm  = 0;
 
     if (!m.name[0]) snprintf(m.name, sizeof(m.name), "%s", id);
 
@@ -345,21 +488,32 @@ RequestError MediaManager::Cmd_MediaSet(CommandContext& ctx)
         return RequestError::Ok;
     }
 
-    const uint32_t dpi = PrintManager::DPI;
+    PrinterManager::Printer prSet;
+    app_.getPrinterManager().Active(prSet);
+    const uint32_t dpi = prSet.dpi;
     resp.field("ok", true);
     resp.field("created", !existed);
     resp.field("id", m.id);
     resp.field("name", m.name);
     resp.field("widthUm", m.widthUm);
     resp.field("heightUm", m.heightUm);
-    resp.field("offsetXUm", m.offsetXUm);
-    resp.field("offsetYUm", m.offsetYUm);
-    resp.field("widthDots", UmToDots(m.widthUm, dpi));
-    resp.field("heightDots", UmToDots(m.heightUm, dpi));
-    resp.field("offsetXDots", UmToDots(m.offsetXUm, dpi));
-    resp.field("offsetYDots", UmToDots(m.offsetYUm, dpi));
-    resp.field("printableWidthDots",  PrintableDots(m.widthUm,  m.offsetXUm, dpi));
-    resp.field("printableHeightDots", PrintableDots(m.heightUm, m.offsetYUm, dpi));
+    resp.field("alignXUm", m.alignXUm);
+    resp.field("alignYUm", m.alignYUm);
+    resp.field("marginLeftUm", m.marginLeftUm);
+    resp.field("marginTopUm", m.marginTopUm);
+
+    // Echoing the geometry back is what lets a caller see, in one round trip,
+    // that an alignment it just changed moved the artwork and left the
+    // printable area alone.
+    dots::LabelGeometry g;
+    Geometry(m, g);
+    resp.field("dpi", dpi);
+    resp.field("widthDots", g.widthDots);
+    resp.field("heightDots", g.heightDots);
+    resp.field("placeXDots", g.placeXDots);
+    resp.field("placeYDots", g.placeYDots);
+    resp.field("printableWidthDots",  g.printableWidthDots);
+    resp.field("printableHeightDots", g.printableHeightDots);
     return RequestError::Ok;
 }
 

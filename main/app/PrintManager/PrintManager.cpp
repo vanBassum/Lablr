@@ -5,6 +5,8 @@
 #include "RenderManager.h"
 #include "StorageManager.h"
 #include "MediaManager.h"
+#include "PrinterManager/PrinterManager.h"
+#include "DotGeometry.h"
 #include "UsbHostManager.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -30,8 +32,10 @@ void PrintManager::Init()
     app_.getStrux().getCommandManager().Register(this, commands_);
 
     init.SetReady();
-    ESP_LOGI(TAG, "Initialized (%lu DPI, %lu-dot head)",
-             (unsigned long)DPI, (unsigned long)HEAD_DOTS);
+    PrinterManager::Printer pr;
+    app_.getPrinterManager().Active(pr);
+    ESP_LOGI(TAG, "Initialized (%s: %lu DPI, %lu-dot head)",
+             pr.id, (unsigned long)pr.dpi, (unsigned long)pr.headDots);
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -55,7 +59,7 @@ size_t PrintManager::WriteJobHeader(uint8_t* job, uint32_t lines, uint32_t bytes
 
 uint32_t PrintManager::BytesPerLine(const Placement& p)
 {
-    return raster::BytesPerLine(p.offsetX, p.width, HEAD_DOTS, p.fullHead);
+    return raster::BytesPerLine(p.offsetX, p.width, p.headDots, p.fullHead);
 }
 
 uint32_t PrintManager::RasteriseRow(const uint32_t* row, uint32_t width, uint8_t* line,
@@ -92,7 +96,8 @@ const char* PrintManager::SendJob(const uint32_t* pixels, const Placement& p, Jo
     // lead-in, a negative one crops that many rows off the top.
     const int64_t total = static_cast<int64_t>(p.height) + p.offsetY;
     if (total <= 0) return "the design is entirely above the first raster line";
-    if (total > MAX_LINES) return "too many raster lines - check the medium's height";
+    if (total > static_cast<int64_t>(p.maxLines))
+        return "too many raster lines - check the medium's height";
 
     const uint32_t lines        = static_cast<uint32_t>(total);
     const uint32_t bytesPerLine = BytesPerLine(p);
@@ -208,21 +213,37 @@ const char* PrintManager::Resolve(const char* mediaId, Placement& p,
                                   bool haveWidth, bool haveHeight,
                                   bool haveOffsetX, bool haveOffsetY)
 {
+    // The machine first: its resolution converts every micrometre below, and
+    // its dead zone is half of where the artwork lands.
+    PrinterManager::Printer pr;
+    app_.getPrinterManager().Active(pr);
+    p.headDots = pr.headDots;
+    p.maxLines = pr.maxLines;
+    p.dpi      = pr.dpi;
+
     if (mediaId && mediaId[0])
     {
         MediaManager::Medium m;
         if (!app_.getMediaManager().Load(mediaId, m))
             return "no such medium - 'media list' says what there is";
 
+        // One resolver for the whole model, shared with `media get` and the
+        // preview, so none of them can disagree about where a label is:
+        //
+        //     placement = alignment - printerDead - mediumMargin
+        //
+        // and a medium still carrying the pre-split offsets has them honoured
+        // verbatim instead, which is what keeps a calibrated roll where it is.
+        dots::LabelGeometry g;
+        dots::Resolve(m.spec(), pr.deadLeftUm, pr.deadTopUm, pr.dpi, g);
+
         // The medium supplies everything the caller did not override. Overrides
-        // exist for calibration: finding an offset means printing the same
+        // exist for calibration: finding an alignment means printing the same
         // design at several of them before one is worth storing.
-        if (!haveWidth)   p.width  = static_cast<uint32_t>(
-                              MediaManager::UmToDots(m.widthUm, DPI));
-        if (!haveHeight)  p.height = static_cast<uint32_t>(
-                              MediaManager::UmToDots(m.heightUm, DPI));
-        if (!haveOffsetX) p.offsetX = MediaManager::UmToDots(m.offsetXUm, DPI);
-        if (!haveOffsetY) p.offsetY = MediaManager::UmToDots(m.offsetYUm, DPI);
+        if (!haveWidth)   p.width   = static_cast<uint32_t>(g.widthDots);
+        if (!haveHeight)  p.height  = static_cast<uint32_t>(g.heightDots);
+        if (!haveOffsetX) p.offsetX = g.placeXDots;
+        if (!haveOffsetY) p.offsetY = g.placeYDots;
     }
     else if (!haveWidth || !haveHeight)
     {
@@ -230,8 +251,8 @@ const char* PrintManager::Resolve(const char* mediaId, Placement& p,
     }
 
     if (p.width == 0 || p.height == 0) return "width and height must be non-zero";
-    if (p.height > MAX_LINES)          return "height is more than the printer will feed";
-    if (p.offsetX >= static_cast<int32_t>(HEAD_DOTS))
+    if (p.height > p.maxLines)         return "height is more than the printer will feed";
+    if (p.offsetX >= static_cast<int32_t>(p.headDots))
         return "offsetX puts the label off the right of the head";
     if (p.threshold == 0 || p.threshold > 255) return "threshold must be 1 to 255";
     return nullptr;
@@ -317,7 +338,7 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
     resp.field("height", p.height);
     resp.field("offsetX", p.offsetX);
     resp.field("offsetY", p.offsetY);
-    resp.field("headDots", HEAD_DOTS);
+    resp.field("headDots", p.headDots);
     resp.field("bytesPerLine", stats.bytesPerLine);
     resp.field("lines", stats.lines);
     resp.field("jobBytes", stats.jobBytes);
@@ -340,6 +361,8 @@ RequestError PrintManager::Cmd_PrintSvg(CommandContext& ctx)
 
 RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
 {
+    PrinterManager::Printer pr;
+    app_.getPrinterManager().Active(pr);
     uint32_t height = 300;
     RETURN_IF_ERROR(ctx.readArgs(
         Optional("height", height,
@@ -349,14 +372,14 @@ RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
     auto& usb = app_.getUsbHostManager();
 
     const char* error = nullptr;
-    uint32_t bytesPerLine = (HEAD_DOTS + 7u) / 8u;
+    uint32_t bytesPerLine = (pr.headDots + 7u) / 8u;
     size_t   n = 0;
     uint8_t* job = nullptr;
     int      sent = -1;
     int64_t  t0 = 0, t1 = 0;
 
     if (!usb.IsReady())                          error = "no printer attached";
-    else if (height == 0 || height > MAX_LINES)  error = "height must be 1 to 4000 dots";
+    else if (height == 0 || height > pr.maxLines)  error = "height must be 1 to 4000 dots";
 
     if (!error)
     {
@@ -402,7 +425,7 @@ RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
     if (error)     resp.field("error", error);
     else if (!ok)  resp.field("error", sent < 0 ? "usb transfer failed"
                                                 : "printer stopped accepting the job");
-    resp.field("headDots", HEAD_DOTS);
+    resp.field("headDots", pr.headDots);
     resp.field("bytesPerLine", bytesPerLine);
     resp.field("lines", height);
     resp.field("jobBytes", static_cast<uint32_t>(n));
@@ -412,6 +435,8 @@ RequestError PrintManager::Cmd_PrintTest(CommandContext& ctx)
 
 RequestError PrintManager::Cmd_PrintCalibrate(CommandContext& ctx)
 {
+    PrinterManager::Printer pr;
+    app_.getPrinterManager().Active(pr);
     uint32_t height = 400;
     uint32_t minor  = 25;
     uint32_t major  = 100;
@@ -430,13 +455,13 @@ RequestError PrintManager::Cmd_PrintCalibrate(CommandContext& ctx)
     auto& usb = app_.getUsbHostManager();
 
     const char* error = nullptr;
-    const uint32_t bytesPerLine = (HEAD_DOTS + 7u) / 8u;
+    const uint32_t bytesPerLine = (pr.headDots + 7u) / 8u;
     size_t   n = 0;
     uint8_t* job = nullptr;
     int      sent = -1;
 
     if (!usb.IsReady())                         error = "no printer attached";
-    else if (height == 0 || height > MAX_LINES) error = "height must be 1 to 4000 dots";
+    else if (height == 0 || height > pr.maxLines) error = "height must be 1 to 4000 dots";
     else if (minor == 0 || major == 0)          error = "minor and major must be non-zero";
 
     if (!error)
@@ -475,7 +500,7 @@ RequestError PrintManager::Cmd_PrintCalibrate(CommandContext& ctx)
                 continue;
             }
 
-            for (uint32_t x = 0; x < HEAD_DOTS; ++x)
+            for (uint32_t x = 0; x < pr.headDots; ++x)
             {
                 const bool axisX  = (x < 4);                   // head column 0
                 const bool ruleX  = (x % minor) == 0;
@@ -496,7 +521,7 @@ RequestError PrintManager::Cmd_PrintCalibrate(CommandContext& ctx)
     if (error)     resp.field("error", error);
     else if (!ok)  resp.field("error", sent < 0 ? "usb transfer failed"
                                                 : "printer stopped accepting the job");
-    resp.field("headDots", HEAD_DOTS);
+    resp.field("headDots", pr.headDots);
     resp.field("lines", height);
     resp.field("minorDots", minor);
     resp.field("majorDots", major);
@@ -508,6 +533,8 @@ RequestError PrintManager::Cmd_PrintCalibrate(CommandContext& ctx)
 
 RequestError PrintManager::Cmd_PrintStatus(CommandContext& ctx)
 {
+    PrinterManager::Printer pr;
+    app_.getPrinterManager().Active(pr);
     RETURN_IF_ERROR(ctx.readArgs());
 
     auto& usb = app_.getUsbHostManager();
@@ -521,7 +548,7 @@ RequestError PrintManager::Cmd_PrintStatus(CommandContext& ctx)
     resp.field("ok", true);
     resp.field("ready", attached);
     resp.field("dpi", DPI);
-    resp.field("headDots", HEAD_DOTS);
+    resp.field("headDots", pr.headDots);
 
     if (!attached)
     {

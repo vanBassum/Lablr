@@ -91,6 +91,10 @@ public:
     // measured 25 mm on paper, and 295 / 300 inch is 24.98 mm.
 
     /// Dots per inch, both axes.
+    /// The built-in machine's values. Still here because a Placement needs
+    /// defaults before Resolve fills it, and because PrinterManager::BuiltIn
+    /// declares the same numbers - but nothing in a job should read these
+    /// directly any more. Use the Placement's copy.
     static constexpr uint32_t DPI = 300;
 
     /// Print head width in dots. 672 at 300 DPI is 56.9 mm - wider than any
@@ -123,7 +127,15 @@ private:
         uint32_t threshold = THRESHOLD_DEFAULT;
         bool     invert  = false;
         bool     feed    = true;
-        bool     fullHead = false; ///< emit all HEAD_DOTS columns, not just to the right edge
+        bool     fullHead = false; ///< emit all head columns, not just to the right edge
+
+        /// The machine this job is for, copied in by Resolve. They are here
+        /// rather than read from constants because the active printer decides
+        /// them now, and a job half-built from one printer's numbers and half
+        /// from another's would be a very quiet bug.
+        uint32_t headDots = HEAD_DOTS;
+        uint32_t maxLines = MAX_LINES;
+        uint32_t dpi      = DPI;
     };
 
     /// What a finished job cost, reported back so the bench has numbers.

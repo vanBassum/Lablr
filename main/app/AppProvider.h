@@ -15,6 +15,7 @@ class StruxProvider;
 class StorageManager;
 class RenderManager;
 class UsbHostManager;
+class PrinterManager;
 class MediaManager;
 class PrintManager;
 
@@ -40,9 +41,15 @@ public:
     /// UsbHostManager.h for why that split is here.
     virtual UsbHostManager& getUsbHostManager() = 0;
 
+    /// What the MACHINE is - /printers, one definition per model, plus a
+    /// compiled-in default so a device with no files still prints. Owns the
+    /// resolution, the head width and the dead zone every medium is measured
+    /// against, which is why MediaManager and PrintManager both read it.
+    virtual PrinterManager& getPrinterManager() = 0;
+
     /// What the physical label stock IS - /media, one definition per roll,
     /// written at runtime. Describes paper only; the printer's DPI and head
-    /// width are PrintManager's.
+    /// width are the printer's.
     virtual MediaManager& getMediaManager() = 0;
 
     /// The printer's raster dialect. Draws through RenderManager, sizes through

@@ -8,6 +8,7 @@
 #include "StorageManager/StorageManager.h"
 #include "RenderManager/RenderManager.h"
 #include "UsbHostManager/UsbHostManager.h"
+#include "PrinterManager/PrinterManager.h"
 #include "MediaManager/MediaManager.h"
 #include "PrintManager/PrintManager.h"
 
@@ -54,6 +55,10 @@ public:
         // Media before print: a print command resolves its geometry through
         // MediaManager, and the two together are what makes `print svg -media`
         // answerable the moment the command surface is up.
+        // The printer before the paper: a medium's printable area is its size
+        // minus the machine's dead zone, so MediaManager cannot answer anything
+        // geometric until the active printer is known.
+        printerManager_.Init();
         mediaManager_.Init();
         printManager_.Init();
     }
@@ -63,6 +68,7 @@ public:
     StorageManager& getStorageManager() override { return storageManager_; }
     RenderManager& getRenderManager() override { return renderManager_; }
     UsbHostManager& getUsbHostManager() override { return usbHostManager_; }
+    PrinterManager& getPrinterManager() override { return printerManager_; }
     MediaManager& getMediaManager() override { return mediaManager_; }
     PrintManager& getPrintManager() override { return printManager_; }
 
@@ -73,6 +79,7 @@ private:
     StorageManager storageManager_{*this};
     RenderManager renderManager_{*this};
     UsbHostManager usbHostManager_{*this};
+    PrinterManager printerManager_{*this};
     MediaManager mediaManager_{*this};
     PrintManager printManager_{*this};
 };
